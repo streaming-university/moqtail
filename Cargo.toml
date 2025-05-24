@@ -1,0 +1,3 @@
+[workspace]
+members = ["apps/relay", "apps/client-rs", "libs/moqtail-rs", "apps/catalog-server"]
+resolver = "2"

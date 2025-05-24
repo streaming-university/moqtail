@@ -1,0 +1,29 @@
+# dependencies
+/node_modules/
+
+# build output
+/dist/
+
+# TypeScript incremental build info
+/tsconfig.tsbuildinfo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# dotenv environment variables
+.env
+.env.local
+.env.*.local
+
+# Editor folders and system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# OS junk
+*.swp
+*~

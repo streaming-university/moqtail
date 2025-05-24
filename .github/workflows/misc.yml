@@ -1,0 +1,72 @@
+name: Pull Request Checks
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+    branches:
+      - main
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check-pr-commits:
+    name: Check PR Commits
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+
+      - name: Install commitlint
+        run: npm install -g @commitlint/config-conventional @commitlint/cli
+
+      - name: Run commitlint
+        shell: bash
+        working-directory: .github
+        run: |
+          cat <<EOF > pr_details.txt
+          ${{ github.event.pull_request.title }}
+
+          ${{ github.event.pull_request.body }}
+          EOF
+
+          set +e
+          echo "PR title and body:"
+          echo "---------------------"
+          cat pr_details.txt | commitlint
+          title_exit=$?
+
+          echo "PR commits:"
+          echo "---------------------"
+          commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
+          commit_exit=$?
+
+          if [ $title_exit -ne 0 ]; then
+            echo "::error title=PR title and body check failed::The PR title or body does not meet the required standards."
+          fi
+          if [ $commit_exit -ne 0 ]; then
+            echo "::error title=PR commits check failed::One or more commits do not meet the required standards."
+          fi
+          if [ $title_exit -ne 0 ] && [ $commit_exit -ne 0 ]; then
+            exit 1
+          fi
+
+  editorconfig:
+    name: EditorConfig Check
+    if: github.event.action == 'opened' || github.event.action == 'synchronize'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Problem Matchers
+        run: echo "::add-matcher::${{ github.workspace }}/.github/matchers.json"
+
+      - name: Install EditorConfig CLI
+        uses: editorconfig-checker/action-editorconfig-checker@main
+
+      - name: Run EditorConfig Check
+        run: editorconfig-checker -format gcc

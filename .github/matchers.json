@@ -1,0 +1,59 @@
+{
+  "problemMatcher": [
+    {
+      "owner": "rustc",
+      "pattern": [
+        {
+          "regexp": "^(warning|error)[^:]*: (.+)$",
+          "severity": 1,
+          "message": 2
+        },
+        {
+          "regexp": "^\\s*--> ([^:]+):(\\d+):(\\d+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3
+        }
+      ]
+    },
+    {
+      "owner": "rustfmt",
+      "pattern": [
+        {
+          "regexp": "^(Diff in ([^:]+)):(\\d+)",
+          "message": 1,
+          "file": 2,
+          "line": 3
+        }
+      ]
+    },
+    {
+      "owner": "rust-panic",
+      "pattern": [
+        {
+          "regexp": "^.*panicked\\s+at\\s+(.*):(\\d+):(\\d+)",
+          "file": 1,
+          "line": 2,
+          "column": 3
+        },
+        {
+          "regexp": "(.*)",
+          "message": 1
+        }
+      ]
+    },
+    {
+      "owner": "editorconfig",
+      "pattern": [
+        {
+          "regexp": "^([^:]+):(\\d+):(\\d+):\\s+(error|warning|note):\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        }
+      ]
+    }
+  ]
+}

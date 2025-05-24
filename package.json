@@ -1,0 +1,22 @@
+{
+  "workspaces": [
+    "apps/client-js",
+    "apps/client-js-demo",
+    "libs/moqtail-ts"
+  ],
+  "scripts": {
+    "build:client": "npm --prefix apps/client-js-demo run build",
+    "build:moqtail": "npm --prefix libs/moqtail-ts run build",
+    "test:client": "npm --prefix apps/client-js-demo run test -- run",
+    "test:moqtail": "npm --prefix libs/moqtail-ts run test -- run",
+    "format:client": "npm --prefix apps/client-js-demo run format",
+    "format:moqtail": "npm --prefix libs/moqtail-ts run format",
+    "build": "npm-run-all --continue-on-error build:moqtail build:client",
+    "test": "npm-run-all --continue-on-error test:client test:moqtail",
+    "format": "npm-run-all --continue-on-error format:client format:moqtail"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5",
+    "prettier": "^3.5.3"
+  }
+}

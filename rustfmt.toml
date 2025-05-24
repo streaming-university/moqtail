@@ -1,0 +1,3 @@
+# Match `.editorconfig`'s indent_style = space and indent_size = 2
+hard_tabs = false
+tab_spaces = 2

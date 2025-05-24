@@ -1,0 +1,25 @@
+{
+  "extends": ["@tsconfig/strictest/tsconfig"],
+  "compilerOptions": {
+    "rootDir": ".",
+    "declaration": false,
+    "noUnusedLocals": false,
+    "moduleResolution": "node",
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "importHelpers": true,
+    "target": "es2022",
+    "module": "esnext",
+    "lib": ["es2024", "dom", "webworker"],
+    "skipLibCheck": true,
+    "skipDefaultLibCheck": true,
+    "checkJs": false,
+    "types": ["vitest/importMeta"],
+    "baseUrl": ".",
+    "paths": {
+      "@": ["./src"],
+      "@/*": ["./src/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist"]
+}
