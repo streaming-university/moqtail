@@ -97,15 +97,18 @@ impl TrackCache {
   }
 
   // Add helper methods to retrieve data from the cache
+  #[allow(dead_code)]
   pub async fn get_header(&self, header_id: &str) -> Option<HeaderInfo> {
     self.headers.read().await.get(header_id).cloned()
   }
 
+  #[allow(dead_code)]
   pub async fn get_objects(&self, header_id: &str) -> Option<Vec<Object>> {
     self.objects.read().await.get(header_id).cloned()
   }
 
   // Get all headers in order from newest to oldest
+  #[allow(dead_code)]
   pub async fn get_all_headers_ordered(&self) -> Vec<(String, HeaderInfo)> {
     let headers = self.headers.read().await;
     let header_queue = self.header_queue.read().await;

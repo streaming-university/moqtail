@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 use bytes::Bytes;
 use moqtail::{
   model::{
@@ -18,13 +19,16 @@ use wtransport::{Connection, SendStream};
 pub(crate) struct MOQTClient {
   pub connection_id: usize,
   pub connection: Arc<RwLock<Connection>>,
+  #[allow(dead_code)]
   pub client_setup: Arc<ClientSetup>,
   pub announced_track_namespaces: Arc<RwLock<Vec<Tuple>>>, // the track namespaces the publisher announced
   pub subscribers: Arc<RwLock<Vec<usize>>>, // the subscribers the client is subscribed to
-  pub publishers: Arc<RwLock<Vec<usize>>>,  // the publishers the subscriber is subscribed to
+  #[allow(dead_code)]
+  pub publishers: Arc<RwLock<Vec<usize>>>, // the publishers the subscriber is subscribed to
 
   pub message_queue: Arc<RwLock<VecDeque<ControlMessage>>>, // the control messages the client has sent
 
+  #[allow(dead_code)]
   pub subgroup_object_queue: Arc<RwLock<HashMap<String, RwLock<VecDeque<Bytes>>>>>, // the objects that will be delivered to the client (very basic implementation :))
 
   pub send_streams: Arc<RwLock<HashMap<String, Arc<Mutex<SendStream>>>>>, // the streams the client has opened, key is the track alias + _ + subgroup_id
@@ -65,6 +69,7 @@ impl MOQTClient {
     message_queue.push_back(control_message);
   }
 
+  #[allow(dead_code)]
   pub(crate) async fn queue_subgroup_object(
     &mut self,
     track_alias: u64,
@@ -80,6 +85,7 @@ impl MOQTClient {
     queue.push_back(object);
   }
 
+  #[allow(dead_code)]
   pub(crate) async fn get_next_subgroup_object(
     &mut self,
     track_alias: u64,
@@ -95,6 +101,7 @@ impl MOQTClient {
     }
   }
 
+  #[allow(dead_code)]
   pub(crate) async fn get_next_message(&mut self) -> Option<ControlMessage> {
     let mut message_queue = self.message_queue.write().await;
     message_queue.pop_front()
@@ -105,6 +112,7 @@ impl MOQTClient {
     announced_track_namespaces.push(track_namespace);
   }
 
+  #[allow(dead_code)]
   pub(crate) async fn remove_announced_track_namespace(&mut self, track_namespace: &Tuple) {
     let mut announced_track_namespaces = self.announced_track_namespaces.write().await;
     announced_track_namespaces.retain(|x| x != track_namespace);
@@ -115,16 +123,19 @@ impl MOQTClient {
     subscribers.push(subscriber_id);
   }
 
+  #[allow(dead_code)]
   pub(crate) async fn remove_subscriber(&mut self, subscriber_id: usize) {
     let mut subscribers = self.subscribers.write().await;
     subscribers.retain(|&x| x != subscriber_id);
   }
 
+  #[allow(dead_code)]
   pub(crate) async fn add_publisher(&mut self, publisher_id: usize) {
     let mut publishers = self.publishers.write().await;
     publishers.push(publisher_id);
   }
 
+  #[allow(dead_code)]
   pub(crate) async fn remove_publisher(&mut self, publisher_id: usize) {
     let mut publishers = self.publishers.write().await;
     publishers.retain(|&x| x != publisher_id);

@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use tracing::error;
 use tracing::info;
-use wtransport::{ClientConfig, Endpoint, connection};
+use wtransport::{ClientConfig, Endpoint};
 
 pub(crate) struct Client {
   pub endpoint: String,
@@ -218,7 +218,6 @@ impl Client {
     info!("Subscribe sent successfully");
 
     // TODO: for this demo, we don't pass those
-    let pending_subscribes = Arc::new(RwLock::new(BTreeMap::new()));
     let pending_fetches = Arc::new(RwLock::new(BTreeMap::new()));
 
     tokio::spawn(async move {
@@ -228,11 +227,7 @@ impl Client {
         let stream = Arc::new(Mutex::new(connection.accept_uni().await.unwrap()));
         info!("Accepted unidirectional stream");
 
-        let mut stream_handler = &RecvDataStream::new(
-          stream.clone(),
-          pending_fetches.clone(),
-          pending_subscribes.clone(),
-        );
+        let mut stream_handler = &RecvDataStream::new(stream.clone(), pending_fetches.clone());
 
         loop {
           let next = stream_handler.next_object().await;
@@ -242,10 +237,9 @@ impl Client {
               // Handle the object
               stream_handler = handler;
             }
-            (handler, None) => {
+            (_, None) => {
               // error!("Failed to receive object: {:?}", e);
               info!("No more objects in the stream, closing...");
-              stream_handler = handler;
               break;
             }
           }

@@ -30,7 +30,7 @@ impl ClientManager {
 
   pub(crate) async fn get(&self, connection_id: usize) -> Option<Arc<RwLock<MOQTClient>>> {
     let clients = self.clients.read().await;
-    clients.get(&connection_id).map(|client| client.clone())
+    clients.get(&connection_id).cloned()
   }
 
   // TODO: same namespace can be used by different publishers
