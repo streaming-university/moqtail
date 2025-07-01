@@ -472,8 +472,7 @@ impl Session {
         error!(
           "Error in writing to stream for subscriber {}, error: {:?}",
           subscriber.connection_id, e
-        );
-        return;
+        )
       }
     }
   }
@@ -704,8 +703,8 @@ impl Session {
           let request_id = msg.request_id;
 
           /* TODO: requests are keyed with track_id, not request_id
-                   That's a problem. Different requests can have the same track_id but
-                   from different subscribers.
+                    That's a problem. Different requests can have the same track_id but
+                    from different subscribers.
           */
           let mut sub_request = {
             let client = client.read().await;

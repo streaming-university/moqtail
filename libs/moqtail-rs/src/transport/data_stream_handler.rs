@@ -910,70 +910,64 @@ mod tests {
   }
 
   /* TODO: rewrite this test
-      #[tokio::test]
-    async fn test_timeout_on_header() {
-      let (_send, recv) = setup_stream_pair().await;
-      let mut pending_fetchs = Arc::new(RwLock::new(BTreeMap::new()));
-      let mut pending_subscribes = Arc::new(RwLock::new(BTreeMap::new()));
-
-      // Don't send any header, just wait for timeout
-      let result = RecvDataStream::new(
-        Arc::new(Mutex::new(recv)),
-        pending_fetchs,
-        pending_subscribes,
-      );
-
-      match result {
-        Err(ParseError::Timeout { .. }) => {}
-        _ => panic!("Should timeout"),
-      }
+  #[tokio::test]
+  async fn test_timeout_on_header() {
+    let (_send, recv) = setup_stream_pair().await;
+    let mut pending_fetchs = Arc::new(RwLock::new(BTreeMap::new()));
+    let mut pending_subscribes = Arc::new(RwLock::new(BTreeMap::new()));
+    // Don't send any header, just wait for timeout
+    let result = RecvDataStream::new(
+      Arc::new(Mutex::new(recv)),
+      pending_fetchs,
+      pending_subscribes,
+    );
+    match result {
+      Err(ParseError::Timeout { .. }) => {}
+      _ => panic!("Should timeout"),
     }
+  }
   */
 
   /*
-   #[tokio::test]
-   async fn test_partial_object_timeout() {
-     let (send, recv) = setup_stream_pair().await;
-     let (fetch_header, fetch_req) = make_fetch_header_and_request();
-     let mut pending_fetchs = BTreeMap::new();
-     pending_fetchs.insert(
-       fetch_req.request_id,
-       FetchRequest {
-         request_id: fetch_req.request_id,
-         requested_by: 1,
-         fetch_request: fetch_req.clone(),
-         track_alias: 1,
-       },
-     );
-     let mut pending_subscribes = BTreeMap::new();
-
-     // Send only the header, not the object
-     let mut _sender = SendDataStream::new(
-       Arc::new(Mutex::new(send)),
-       HeaderInfo::Fetch {
-         header: fetch_header.clone(),
-         fetch_request: fetch_req.clone(),
-       },
-     )
-     .await
-     .unwrap();
-
-     let pending_fetchs = Arc::new(RwLock::new(pending_fetchs));
-     let pending_subscribes = Arc::new(RwLock::new(pending_subscribes));
-
-     let mut receiver = RecvDataStream::new(
-       Arc::new(Mutex::new(recv)),
-       pending_fetchs,
-       pending_subscribes,
-     );
-
-     // Don't send any object, just wait for timeout
-     let result = receiver.next_object().await;
-     match result {
-       Err(ParseError::Timeout { .. }) => {}
-       other => panic!("Expected timeout, got {:?}", other),
-     }
-   }
+  #[tokio::test]
+  async fn test_partial_object_timeout() {
+    let (send, recv) = setup_stream_pair().await;
+    let (fetch_header, fetch_req) = make_fetch_header_and_request();
+    let mut pending_fetchs = BTreeMap::new();
+    pending_fetchs.insert(
+      fetch_req.request_id,
+      FetchRequest {
+        request_id: fetch_req.request_id,
+        requested_by: 1,
+        fetch_request: fetch_req.clone(),
+        track_alias: 1,
+      },
+    );
+    let mut pending_subscribes = BTreeMap::new();
+    // Send only the header, not the object
+    let mut _sender = SendDataStream::new(
+      Arc::new(Mutex::new(send)),
+      HeaderInfo::Fetch {
+        header: fetch_header.clone(),
+        fetch_request: fetch_req.clone(),
+      },
+    )
+    .await
+    .unwrap();
+    let pending_fetchs = Arc::new(RwLock::new(pending_fetchs));
+    let pending_subscribes = Arc::new(RwLock::new(pending_subscribes));
+    let mut receiver = RecvDataStream::new(
+      Arc::new(Mutex::new(recv)),
+      pending_fetchs,
+      pending_subscribes,
+    );
+    // Don't send any object, just wait for timeout
+    let result = receiver.next_object().await;
+    match result {
+      Err(ParseError::Timeout { .. }) => {}
+      other => panic!("Expected timeout, got {:?}", other),
+    }
+  }
   */
   #[tokio::test]
   async fn test_partial_object_completion() {

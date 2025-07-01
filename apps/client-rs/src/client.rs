@@ -158,7 +158,8 @@ impl Client {
                     info!("Sending object with id: {}", object_id);
                     let payload = format!(
                       "payload {}",
-                      "x".to_string()
+                      "x"
+                        .to_string()
                         .repeat(object_id as usize)
                         .chars()
                         .collect::<String>()
