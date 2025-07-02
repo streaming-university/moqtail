@@ -8,9 +8,12 @@ import { LiveContentSource } from '../../../../libs/moqtail-ts/src/client/track/
 import { FullTrackName, MoqtObject } from '../../../../libs/moqtail-ts/src/model/data'
 import { Location } from '../../../../libs/moqtail-ts/src/model/common/location'
 import { AkamaiOffset } from '../../../../libs/moqtail-ts/src/util/get_akamai_offset'
-import { PullPlayoutBuffer } from '../../../../libs/moqtail-ts/src/util/pull_playout_buffer'
+import { PlayoutBuffer } from '../../../../libs/moqtail-ts/src/util/playout_buffer'
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
 import { RefObject } from 'react'
+import { ClockNormalizer } from '../../../../libs/moqtail-ts/src/util/clock_normalizer'
+
+const clockNormal = await ClockNormalizer.create()
 
 async function initTransport(url: string) {
   const transport = new WebTransport(url)
@@ -469,7 +472,7 @@ export async function startVideoEncoder({
         }
 
         const locHeaders = new ExtensionHeaders()
-          .addCaptureTimestamp(captureTime)
+          .addCaptureTimestamp(clockNormal.now())
           .addVideoFrameMarking(chunk.type === 'key' ? 1 : 0)
 
         const desc = meta?.decoderConfig?.description
@@ -594,7 +597,7 @@ async function setupAudioPlayback(audioContext: AudioContext) {
   return audioNode
 }
 
-function subscribeAndPipeToBuffer(
+function subscribeAndPipeToWorker(
   moqClient: MoqtailClient,
   subscribeMsg: Subscribe,
   worker: Worker,
@@ -602,12 +605,23 @@ function subscribeAndPipeToBuffer(
 ) {
   moqClient.subscribe(subscribeMsg).then((stream) => {
     if (stream instanceof ReadableStream) {
-      const buffer = new PullPlayoutBuffer(stream, {
-        bucketCapacity: 50, // ~2 seconds at 25fps
-        targetLatencyMs: 500, // Target 500ms latency
-        maxLatencyMs: 1500, // Drop GOPs if latency exceeds 1.5 seconds
-      })
-      consumeBufferPipeToWorker(buffer, worker, type)
+      const buffer = new PlayoutBuffer(stream,{targetLatencyMs:100,maxLatencyMs:1000,clockNormalizer:clockNormal})
+      buffer.onObject=(obj) => {
+      if (!obj) {
+        // Stream ended or error
+        console.warn(`Buffer terminated ${type}`)
+        return
+      }
+
+      if (!obj.payload) {
+        console.warn('Received MoqtObject without payload, skipping:', obj)
+        // Request next object immediately
+        return
+      }
+      // Send to worker
+      worker.postMessage({ type, extentions: obj.extensionHeaders, payload: obj }, [obj.payload.buffer])
+
+    }
 
       /* If you want to use without any buffering, you may use the following...
       const reader = stream.getReader();
@@ -628,36 +642,6 @@ function subscribeAndPipeToBuffer(
       console.error('Subscribe failed:', stream)
     }
   })
-}
-
-function consumeBufferPipeToWorker(buffer: PullPlayoutBuffer, worker: Worker, type: 'moq' | 'moq-audio') {
-  // Pull-based consumption: request next object when ready
-  const requestNextObject = () => {
-    buffer.nextObject((obj) => {
-      if (!obj) {
-        // Stream ended or error
-        console.log(`Stream ended for ${type}`)
-        return
-      }
-
-      if (!obj.payload) {
-        console.warn('Received MoqtObject without payload, skipping:', obj)
-        // Request next object immediately
-        requestNextObject()
-        return
-      }
-
-      // Send to worker
-      worker.postMessage({ type, extentions: obj.extensionHeaders, payload: obj }, [obj.payload.buffer])
-
-      // Request next object - this creates the pull-based rate control
-      // The worker will determine the rate by how fast it processes objects
-      setTimeout(requestNextObject, 0) // Immediate for now, but worker processing will naturally rate-limit
-    })
-  }
-
-  // Start the pull chain
-  requestNextObject()
 }
 
 function handleWorkerMessages(worker: Worker, audioNode: AudioWorkletNode, telemetry?: NetworkTelemetry) {
@@ -773,7 +757,7 @@ export function useVideoSubscriber(
       true,
       [],
     )
-    subscribeAndPipeToBuffer(moqClient, subscribeAudio, worker, 'moq-audio')
+    subscribeAndPipeToWorker(moqClient, subscribeAudio, worker, 'moq-audio')
     console.log('Subscribed to audio', audioFullTrackName)
 
     const subscribeVideo = Subscribe.newLatestObject(
@@ -786,7 +770,7 @@ export function useVideoSubscriber(
       [],
     )
     console.log('Subscribed to video', videoFullTrackName)
-    subscribeAndPipeToBuffer(moqClient, subscribeVideo, worker, 'moq')
+    subscribeAndPipeToWorker(moqClient, subscribeVideo, worker, 'moq')
     return true
   }
   return setup
