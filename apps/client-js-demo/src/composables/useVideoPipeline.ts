@@ -13,7 +13,14 @@ import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry
 import { RefObject } from 'react'
 import { ClockNormalizer } from '../../../../libs/moqtail-ts/src/util/clock_normalizer'
 
-const clockNormal = await ClockNormalizer.create()
+let clockNormal: ClockNormalizer
+async function setupClockNormalizer() {
+  clockNormal = await ClockNormalizer.create(
+    window.appSettings.clockNormalizationConfig.timeServerUrl,
+    window.appSettings.clockNormalizationConfig.numberOfSamples,
+  )
+}
+setupClockNormalizer()
 
 async function initTransport(url: string) {
   const transport = new WebTransport(url)
@@ -604,24 +611,28 @@ function subscribeAndPipeToWorker(
   type: 'moq' | 'moq-audio',
 ) {
   moqClient.subscribe(subscribeMsg).then((stream) => {
+    window.appSettings.playoutBufferConfig.maxLatencyMs
     if (stream instanceof ReadableStream) {
-      const buffer = new PlayoutBuffer(stream,{targetLatencyMs:100,maxLatencyMs:1000,clockNormalizer:clockNormal})
-      buffer.onObject=(obj) => {
-      if (!obj) {
-        // Stream ended or error
-        console.warn(`Buffer terminated ${type}`)
-        return
-      }
+      const buffer = new PlayoutBuffer(stream, {
+        targetLatencyMs: window.appSettings.playoutBufferConfig.targetLatencyMs,
+        maxLatencyMs: window.appSettings.playoutBufferConfig.maxLatencyMs,
+        clockNormalizer: clockNormal,
+      })
+      buffer.onObject = (obj) => {
+        if (!obj) {
+          // Stream ended or error
+          console.warn(`Buffer terminated ${type}`)
+          return
+        }
 
-      if (!obj.payload) {
-        console.warn('Received MoqtObject without payload, skipping:', obj)
-        // Request next object immediately
-        return
+        if (!obj.payload) {
+          console.warn('Received MoqtObject without payload, skipping:', obj)
+          // Request next object immediately
+          return
+        }
+        // Send to worker
+        worker.postMessage({ type, extentions: obj.extensionHeaders, payload: obj }, [obj.payload.buffer])
       }
-      // Send to worker
-      worker.postMessage({ type, extentions: obj.extensionHeaders, payload: obj }, [obj.payload.buffer])
-
-    }
 
       /* If you want to use without any buffering, you may use the following...
       const reader = stream.getReader();

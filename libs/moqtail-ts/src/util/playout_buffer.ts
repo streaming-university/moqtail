@@ -106,7 +106,7 @@ export class PlayoutBuffer {
         if (timeUntilReady <= 0) {
           const bufferedObj = this.#buffer.pop()!
           this.onObject(bufferedObj.object)
-          console.log(`[PlayoutBuffer] Playout time: ${(now - oldest.createdAt)}ms`)
+          console.log(`[PlayoutBuffer] Playout time: ${now - oldest.createdAt}ms`)
         } else {
           const sleepTime = Math.min(timeUntilReady, 50)
           await new Promise((resolve) => setTimeout(resolve, sleepTime))
@@ -129,7 +129,7 @@ export class PlayoutBuffer {
 
         const bufferedObject: BufferedObject = {
           object: value,
-          createdAt: this.#extractCreatedAt(value)
+          createdAt: this.#extractCreatedAt(value),
         }
 
         this.#buffer.push(bufferedObject)

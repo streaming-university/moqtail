@@ -1,5 +1,5 @@
 const DEFAULT_SAMPLE_SIZE = 5
-const DEFAULT_TIME_SERVER = "https://time.akamai.com/?ms"
+const DEFAULT_TIME_SERVER = 'https://time.akamai.com/?ms'
 
 export class ClockNormalizer {
   private offset: number
@@ -13,7 +13,7 @@ export class ClockNormalizer {
   }
 
   public static async create(timeServerUrl?: string, numberOfSamples?: number): Promise<ClockNormalizer> {
-    const url = timeServerUrl?timeServerUrl:DEFAULT_TIME_SERVER
+    const url = timeServerUrl ? timeServerUrl : DEFAULT_TIME_SERVER
     const numSamples = numberOfSamples ? numberOfSamples : DEFAULT_SAMPLE_SIZE
     const offset = await ClockNormalizer.calculateSkew(url, numSamples)
     return new ClockNormalizer(url, offset, numSamples)
