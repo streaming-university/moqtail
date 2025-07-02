@@ -100,9 +100,88 @@ function SessionPage() {
     return id === userId;
   };
 
+   const getUserInitials = (name: string): string => {
+    const words = name.trim().split(/\s+/);
+    if (words.length === 1) {
+      return words[0].substring(0, 2).toUpperCase();
+    } else {
+      return words.slice(0, 2).map(word => word.charAt(0)).join('').toUpperCase();
+    }
+  };
+
+  const getUserColor = (name: string): string => {
+    const colors = [
+      'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500',
+      'bg-indigo-500', 'bg-yellow-500', 'bg-red-500', 'bg-teal-500'
+    ];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
+  };
   // Toggle mic handler
   const handleToggle = (kind: 'mic' | 'cam') => {
-    const setter = kind === 'mic' ? setIsMicOn : setisCamOn
+    // If trying to toggle camera while screen sharing, stop screen sharing first
+    if (kind === 'cam' && isScreenSharing) {
+      handleToggleScreenShare(); // This will stop screen sharing
+      // After screen sharing stops, toggle the camera
+      setTimeout(() => {
+        const setter = setisCamOn;
+        setter((prev) => {
+          const newValue = !prev;
+          setUsers(users => {
+            const u = users[userId];
+            users[userId] = { ...u, hasVideo: newValue };
+            // Video track switching logic for camera
+            const audioTrack = selfMediaStream.current?.getAudioTracks()[0];
+            let newStream;
+            if (newValue) {
+              navigator.mediaDevices.getUserMedia({ video: { aspectRatio: 16 / 9 } }).then(videoStream => {
+                const realVideoTrack = videoStream.getVideoTracks()[0];
+                const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0];
+                if (oldVideoTrack) {
+                  oldVideoTrack.stop();
+                  selfMediaStream.current?.removeTrack(oldVideoTrack);
+                }
+                newStream = new MediaStream();
+                if (audioTrack) newStream.addTrack(audioTrack);
+                newStream.addTrack(realVideoTrack);
+                selfMediaStream.current = newStream;
+                if (videoEncoderObjRef.current) {
+                  videoEncoderObjRef.current.offset = akamaiOffsetRef.current;
+                  videoEncoderObjRef.current.start(selfMediaStream.current);
+                }
+                if (selfVideoRef.current) {
+                  selfVideoRef.current.srcObject = newStream;
+                  selfVideoRef.current.muted = true;
+                }
+              });
+            } else {
+              const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0];
+              if (oldVideoTrack) {
+                oldVideoTrack.stop();
+                selfMediaStream.current?.removeTrack(oldVideoTrack);
+              }
+              newStream = new MediaStream();
+              if (audioTrack) newStream.addTrack(audioTrack);
+              selfMediaStream.current = newStream;
+              if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream;
+              selfVideoRef.current!.muted = true;
+              if (videoEncoderObjRef.current) {
+                videoEncoderObjRef.current.stop();
+              }
+            }
+            return users;
+          });
+          contextSocket?.emit('toggle-button', { kind, value: newValue });
+          return newValue;
+        });
+      }, 100); // Small delay to ensure screen sharing stops first
+      return;
+    }
+
+     const setter = kind === 'mic' ? setIsMicOn : setisCamOn
     setter((prev) => {
       const newValue = !prev;
       setUsers(users => {
@@ -134,25 +213,22 @@ function SessionPage() {
               if (selfVideoRef.current) {
                 selfVideoRef.current.srcObject = newStream
                 selfVideoRef.current.muted = true; // Ensure muted
-                // selfVideoRef.current.muted = true;
               };
             });
           } else {
-            // Turn OFF: stop real, add new fake
             const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0];
             if (oldVideoTrack) {
               oldVideoTrack.stop(); // This will turn off the camera indicator
               selfMediaStream.current?.removeTrack(oldVideoTrack);
             }
-            const fakeVideoTrack = createFakeVideoTrack();
             newStream = new MediaStream();
             if (audioTrack) newStream.addTrack(audioTrack);
-            newStream.addTrack(fakeVideoTrack);
             selfMediaStream.current = newStream;
             if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream;
-            selfVideoRef.current!.muted = true; // Ensure muted
+            selfVideoRef.current!.muted = true;
+
             if (videoEncoderObjRef.current) {
-              videoEncoderObjRef.current.start(selfMediaStream.current);
+              videoEncoderObjRef.current.stop();
             }
           }
         }
@@ -171,14 +247,6 @@ function SessionPage() {
     }
   }
 
-  function toggleMediaStreamVideo(val: boolean) {
-    const mediaStream = selfMediaStream.current!
-    if (mediaStream) {
-      const tracks = mediaStream.getVideoTracks()
-      tracks.forEach(track => track.enabled = val)
-    }
-  }
-
   // Toggle video handler
   const handleToggleCam = () => {
     handleToggle('cam')
@@ -187,15 +255,15 @@ function SessionPage() {
     handleToggle('mic')
   };
 
-  const handleToggleScreenShare = async () => {
+   const handleToggleScreenShare = async () => {
     if (!isScreenSharing) {
       const someoneSharing = Object.values(users).some(
         u => u.hasScreenshare && u.id !== userId
-      );
-      if (!isScreenSharing && someoneSharing) {
+      );      if (!isScreenSharing && someoneSharing) {
         alert("Only one person can share their screen at a time.");
         return;
       }
+
       const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0];
       if (oldVideoTrack) {
         oldVideoTrack.stop();
@@ -213,20 +281,22 @@ function SessionPage() {
         if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream;
         if (selfVideoRef.current) selfVideoRef.current.muted = true; // Ensure muted
         if (videoEncoderObjRef.current) {
+          videoEncoderObjRef.current.offset = akamaiOffsetRef.current;
           videoEncoderObjRef.current.start(selfMediaStream.current);
         }
         setIsScreenSharing(true);
         contextSocket?.emit('screen-share-toggled', { userId, hasScreenshare: true });
         setUsers(users => ({
           ...users,
-          [userId]: { ...users[userId], hasScreenshare: true }
+          [userId]: { ...users[userId], hasScreenshare: true, hasVideo: true }
         }));
         screenTrack.onended = () => {
           setIsScreenSharing(false);
+          setisCamOn(false); // Turn off video button state
           contextSocket?.emit('screen-share-toggled', { userId, hasScreenshare: false });
           setUsers(users => ({
             ...users,
-            [userId]: { ...users[userId], hasScreenshare: false }
+            [userId]: { ...users[userId], hasScreenshare: false, hasVideo: false }
           }));
           handleRestoreCameraAfterScreenShare();
         };
@@ -240,28 +310,30 @@ function SessionPage() {
         selfMediaStream.current?.removeTrack(screenTrack);
       }
       setIsScreenSharing(false);
+      setisCamOn(false); // Turn off video button state
       contextSocket?.emit('screen-share-toggled', { userId, hasScreenshare: false });
       setUsers(users => ({
         ...users,
-        [userId]: { ...users[userId], hasScreenshare: false }
+        [userId]: { ...users[userId], hasScreenshare: false, hasVideo: false }
       }));
       handleRestoreCameraAfterScreenShare();
     }
   };
 
   function handleRestoreCameraAfterScreenShare() {
-    const fakeVideoTrack = createFakeVideoTrack();
     const audioTrack = selfMediaStream.current?.getAudioTracks()[0];
     const newStream = new MediaStream();
     if (audioTrack) newStream.addTrack(audioTrack);
-    newStream.addTrack(fakeVideoTrack);
+
+    // Always turn off video when screen share ends
     selfMediaStream.current = newStream;
     if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream;
-    if (selfVideoRef.current) selfVideoRef.current.muted = true; // Ensure muted
+    selfVideoRef.current!.muted = true;
     if (videoEncoderObjRef.current) {
-      videoEncoderObjRef.current.start(selfMediaStream.current);
+      videoEncoderObjRef.current.stop();
     }
   }
+
 
   useEffect(() => {
     async function startPublisher() {
@@ -279,7 +351,6 @@ function SessionPage() {
         selfMediaStream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
         const audioTracks = selfMediaStream.current.getAudioTracks()
         audioTracks.forEach(track => track.enabled = false)
-        selfMediaStream.current.addTrack(createFakeVideoTrack());
         //console.log('Got user media:', selfMediaStream.current);
         setMediaReady(true);
 
@@ -346,7 +417,15 @@ function SessionPage() {
           offset,
           objectForwardingPreference: ObjectForwardingPreference.Subgroup
         });
-        const videoPromise = videoEncoderObjRef.current.start(selfMediaStream.current);
+
+        // Only start video encoder if we have video tracks
+        const hasVideoTrack = selfMediaStream.current.getVideoTracks().length > 0;
+        let videoPromise: Promise<any> = Promise.resolve();
+
+        if (hasVideoTrack) {
+          videoPromise = videoEncoderObjRef.current.start(selfMediaStream.current);
+        }
+
         const audioPromise = startAudioEncoder({
           stream: selfMediaStream.current,
           audioFullTrackName,
@@ -478,6 +557,7 @@ function SessionPage() {
           ...prevUsers,
           [toggledUserId]: {
             ...prevUsers[toggledUserId],
+            hasVideo: hasScreenshare,
             hasScreenshare
           }
         };
@@ -648,10 +728,9 @@ function SessionPage() {
         canvasRef.current!.dataset.status = 'pending'
         // Initialize telemetry for this user if not already done
         initializeTelemetryForUser(userId);
-        const userTelemetry = telemetryInstances.current[userId];
 
         //console.log("subscribeToTrack - Use video subscriber called", videoTrackAlias, audioTrackAlias, videoFullTrackName, audioFullTrackName)
-        const [videoResult, chatResult] = await Promise.all([
+        const [videoResult] = await Promise.all([
           useVideoSubscriber(
             the_client,
             canvasRef,
@@ -687,43 +766,6 @@ function SessionPage() {
       if (canvasRef.current)
         canvasRef.current.dataset.status = ''
     }
-  }
-
-  function createFakeVideoTrack(width = 640, height = 360): MediaStreamTrack {
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    function draw() {
-      if (!ctx) return;
-      ctx.fillStyle = 'black';
-      ctx.fillRect(0, 0, width, height);
-      requestAnimationFrame(draw);
-    }
-    draw();
-
-    const track = canvas.captureStream(15).getVideoTracks()[0];
-
-    (track as any).isFake = true;
-    return track;
-  }
-
-  // Helper to create a fake video track
-  function createFakeVideoTrackWithColor(width = 640, height = 360): MediaStreamTrack {
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    let hue = 0;
-    function draw() {
-      if (!ctx) return;
-      ctx.fillStyle = `hsl(${hue}, 100%, 20%)`;
-      ctx.fillRect(0, 0, width, height);
-      hue = (hue + 2) % 360;
-      requestAnimationFrame(draw);
-    }
-    draw();
-    return canvas.captureStream(15).getVideoTracks()[0];
   }
 
   function leaveRoom() {
@@ -804,10 +846,31 @@ function SessionPage() {
                           objectFit: "cover"
                         }}
                       />
-                      {/* <canvas ref={selfCanvasRef} className="w-full h-full object-cover" /> */}
+                      {/* Show initials when video is off */}
+                      {!user.hasVideo && !isScreenSharing && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
+                          <div className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.name)}`}>
+                            <div className="text-white text-2xl font-bold">
+                              {getUserInitials(user.name)}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </>
                   ) : (
-                    <canvas ref={remoteCanvasRefs[user.id]} id={user.id} data-videotrackalias={user?.publishedTracks?.video?.alias} data-audiotrackalias={user?.publishedTracks?.audio?.alias} data-chattrackalias={user?.publishedTracks?.chat?.alias} data-announced={user?.publishedTracks?.video?.announced} className="w-full h-full object-cover" />
+                    <>
+                      <canvas ref={remoteCanvasRefs[user.id]} id={user.id} data-videotrackalias={user?.publishedTracks?.video?.alias} data-audiotrackalias={user?.publishedTracks?.audio?.alias} data-chattrackalias={user?.publishedTracks?.chat?.alias} data-announced={user?.publishedTracks?.video?.announced} className="w-full h-full object-cover" />
+                      {/* Show initials when remote video is off */}
+                      {!user.hasVideo && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
+                          <div className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.name)}`}>
+                            <div className="text-white text-2xl font-bold">
+                              {getUserInitials(user.name)}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                   {/* Participant Info Overlay */}
                   <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center">
