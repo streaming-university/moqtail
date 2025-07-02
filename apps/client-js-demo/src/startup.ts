@@ -1,4 +1,4 @@
-import { AppSettings } from './types/AppSettins'
+import { AppSettings } from './types/AppSettings'
 
 declare global {
   interface Window {

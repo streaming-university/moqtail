@@ -1,5 +1,5 @@
 use super::client::MOQTClient;
-use moqtail::model::{common::tuple::Tuple};
+use moqtail::model::common::tuple::Tuple;
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::{debug, info};
@@ -12,7 +12,7 @@ pub(crate) struct ClientManager {
 impl ClientManager {
   pub(crate) fn new() -> Self {
     ClientManager {
-      clients: Arc::new(RwLock::new(BTreeMap::new()))
+      clients: Arc::new(RwLock::new(BTreeMap::new())),
     }
   }
 
@@ -30,9 +30,7 @@ impl ClientManager {
 
   pub(crate) async fn get(&self, connection_id: usize) -> Option<Arc<RwLock<MOQTClient>>> {
     let clients = self.clients.read().await;
-    clients
-      .get(&connection_id)
-      .map(|client| client.clone())
+    clients.get(&connection_id).cloned()
   }
 
   // TODO: same namespace can be used by different publishers

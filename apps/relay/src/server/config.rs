@@ -55,7 +55,7 @@ impl AppConfig {
         max_idle_timeout: cli.max_idle_timeout,
         keep_alive_interval: cli.keep_alive_interval,
         cache_size: cli.cache_size,
-        log_folder: cli.log_folder
+        log_folder: cli.log_folder,
       }
     })
   }

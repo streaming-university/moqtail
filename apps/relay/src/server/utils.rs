@@ -1,5 +1,7 @@
 use bytes::Bytes;
-use moqtail::{model::control::control_message::ControlMessageTrait, transport::data_stream_handler::HeaderInfo};
+use moqtail::{
+  model::control::control_message::ControlMessageTrait, transport::data_stream_handler::HeaderInfo,
+};
 
 pub fn print_msg_bytes(msg: &impl ControlMessageTrait) {
   let bytes = msg.serialize();

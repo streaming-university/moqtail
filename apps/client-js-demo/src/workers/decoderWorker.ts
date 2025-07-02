@@ -8,13 +8,15 @@ let videoDecoder: VideoDecoder | null = null
 let audioDecoder: AudioDecoder | null = null
 let waitingForKeyframe = true;
 let akamaiOffset: number | null = null;
+let theDecoderConfig: VideoDecoderConfig | null = null;
 
 self.onmessage = (e) => {
-  const { type, canvas, offset, payload, extentions } = e.data
+  const { type, canvas, offset, payload, extentions, decoderConfig } = e.data
 
   if (type === 'init') {
     ctx = canvas?.getContext?.('2d') ?? null
     akamaiOffset = offset
+    theDecoderConfig = decoderConfig || null;
     return
   }
 
@@ -47,23 +49,23 @@ self.onmessage = (e) => {
     const headers = ExtensionHeaders.fromKeyValuePairs(extensionHeaders ?? [])
     const timestamp = Number(headers.find((h) => ExtensionHeader.isCaptureTimestamp(h))?.timestamp ?? 0n)
     const configHeader = headers.find((h) => ExtensionHeader.isVideoConfig(h))
+    const isKey = headers.some((h) => ExtensionHeader.isVideoFrameMarking(h) && h.value === 1n)
 
-    if (configHeader && !videoDecoder) {
+    if ((configHeader || isKey) && !videoDecoder && theDecoderConfig) {
       videoDecoder = new VideoDecoder({
         output: handleFrame,
         error: console.error,
       })
-      videoDecoder.configure({
-        codec: 'avc1.42E01E',
-        description: configHeader.config,
-        optimizeForLatency: true,
-        hardwareAcceleration: 'prefer-software',
-      })
+
+      const videoDecoderConfig = theDecoderConfig
+      console.log('Using video decoder config:', videoDecoderConfig)
+      if (configHeader?.config) {
+        videoDecoderConfig.description = configHeader.config
+      }
+      videoDecoder.configure(videoDecoderConfig)
     }
 
     if (!videoDecoder || videoDecoder.state !== 'configured') return
-
-    const isKey = headers.some((h) => ExtensionHeader.isVideoFrameMarking(h) && h.value === 1n)
 
     if (waitingForKeyframe && !isKey) {
       console.warn('Waiting for key frame, skipping delta frame');
