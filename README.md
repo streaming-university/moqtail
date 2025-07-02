@@ -28,6 +28,8 @@ README available at: [moqtail-ts/README.md](libs/moqtail-ts/README.md)
 # Clone the repository (if not already)
 git clone https://github.com/streaming-university/moqtail.git
 
+cd moqtail
+
 # Install dependencies
 npm install
 ```
@@ -49,7 +51,7 @@ npm run dev
 ```bash
 cd ./apps/relay
 
-cargo run --bin moqtail-relay -- --port 4445 --cert-file fullchain.pem --key-file privkey.pem
+cargo run --bin moqtail-relay -- --port 4433 --cert-file cert/cert.pem --key-file cert/key.pem
 ```
 
 The app will be available at [http://localhost:5173](http://localhost:5173) by default.
@@ -62,7 +64,7 @@ cd ./apps/ws-server
 # Install dependencies
 npm install
 
-# Run the development server
+# Run the development MOQtail Room Server
 npm run start
 # or
 npm run dev # for nodemon hot-reload
