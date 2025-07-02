@@ -8,7 +8,9 @@ import {
   Phone,
   Send,
   Users,
-  MessageSquare
+  MessageSquare,
+  Info,
+  X
 } from 'lucide-react';
 import { useSession } from "../contexts/SessionContext"
 import { RoomUser, ChatMessage, TrackUpdateResponse, ToggleResponse, UserDisconnectedMessage, TrackType, UpdateTrackRequest, RoomTimeoutMessage } from '../types/types';
@@ -37,6 +39,8 @@ function SessionPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [telemetryData, setTelemetryData] = useState<{ [userId: string]: { latency: number; throughput: number } }>({});
   const telemetryInstances = useRef<{ [userId: string]: NetworkTelemetry }>({});
+  const [latencyHistory, setLatencyHistory] = useState<{ [userId: string]: number[] }>({});
+  const [throughputHistory, setThroughputHistory] = useState<{ [userId: string]: number[] }>({});
   const [timeRemaining, setTimeRemaining] = useState<string>('--:--');
   const [timeRemainingColor, setTimeRemainingColor] = useState<string>('text-green-400');
   const selfVideoRef = useRef<HTMLVideoElement>(null);
@@ -47,6 +51,7 @@ function SessionPage() {
   const chatSenderRef = useRef<{ send: (msg: string) => void } | null>(null);
   const akamaiOffsetRef = useRef<number>(0);
   const [mediaReady, setMediaReady] = useState(false);
+  const [showInfoCards, setShowInfoCards] = useState<{ [userId: string]: boolean }>({});
 
   const handleSendMessage = async () => {
   if (chatMessage.trim()) {
@@ -77,7 +82,7 @@ function SessionPage() {
         timestamp: formattedTime,
       }
     ]);
-    setChatMessage(''); // Clear the input field after sending
+    setChatMessage('');
   }
 };
 
@@ -100,7 +105,17 @@ function SessionPage() {
     return id === userId;
   };
 
-  // Toggle mic handler
+  const toggleInfoCard = (userId: string) => {
+    if(isSelf(userId)) {
+      return;
+    }
+
+    setShowInfoCards(prev => ({
+      ...prev,
+      [userId]: !prev[userId]
+    }));
+  };
+
   const handleToggle = (kind: 'mic' | 'cam') => {
     const setter = kind === 'mic' ? setIsMicOn : setisCamOn
     setter((prev) => {
@@ -134,7 +149,6 @@ function SessionPage() {
               if (selfVideoRef.current) {
                 selfVideoRef.current.srcObject = newStream
                 selfVideoRef.current.muted = true; // Ensure muted
-                // selfVideoRef.current.muted = true;
               };
             });
           } else {
@@ -179,7 +193,6 @@ function SessionPage() {
     }
   }
 
-  // Toggle video handler
   const handleToggleCam = () => {
     handleToggle('cam')
   };
@@ -416,7 +429,7 @@ function SessionPage() {
         if (roomState && Object.values(users).length === 0) {
           const otherUsers = Object.keys(roomState.users).filter(uId => uId != userId)
           setUsers(roomState.users);
-          // Initialize telemetry for all existing users
+
           otherUsers.forEach(uId => initializeTelemetryForUser(uId));
           const canvasRefs = Object.fromEntries(
             otherUsers.map(uId => [uId, React.createRef<HTMLCanvasElement>()])
@@ -491,16 +504,19 @@ function SessionPage() {
         delete users[msg.userId]
         return users
       });
+
       const canvasRef = remoteCanvasRefs[msg.userId];
+
       if (canvasRef && canvasRef.current) {
         canvasRef.current.remove();
       }
+
       setRemoteCanvasRefs(prev => {
         const newRefs = { ...prev };
         delete newRefs[msg.userId];
         return newRefs;
       });
-      // Clean up telemetry
+
       delete telemetryInstances.current[msg.userId];
       setTelemetryData(prev => {
         const newData = { ...prev };
@@ -528,7 +544,6 @@ function SessionPage() {
     };
   }, [contextSocket]);
 
-  // Initialize telemetry instances for new users
   const initializeTelemetryForUser = (userId: string) => {
     if (!telemetryInstances.current[userId]) {
       telemetryInstances.current[userId] = new NetworkTelemetry(1000); // 1 second window
@@ -543,10 +558,32 @@ function SessionPage() {
       Object.keys(telemetryInstances.current).forEach(userId => {
         const telemetry = telemetryInstances.current[userId];
         if (telemetry) {
+          const currentLatency = Math.round(telemetry.latency);
+          const currentThroughput = Math.round(telemetry.throughput / 1024); // Convert to KB/s
           newTelemetryData[userId] = {
-            latency: Math.round(telemetry.latency),
-            throughput: Math.round(telemetry.throughput / 1024) // Convert to KB/s
+            latency: currentLatency,
+            throughput: currentThroughput
           };
+
+          // Latency history (last 20 points for graph)
+          setLatencyHistory(prev => {
+            const userHistory = prev[userId] || [];
+            const newHistory = [...userHistory, currentLatency].slice(-20);
+            return {
+              ...prev,
+              [userId]: newHistory
+            };
+          });
+
+          // Throughput history (last 20 points for graph)
+          setThroughputHistory(prev => {
+            const userHistory = prev[userId] || [];
+            const newHistory = [...userHistory, currentThroughput].slice(-20);
+            return {
+              ...prev,
+              [userId]: newHistory
+            };
+          });
         }
       });
 
@@ -756,7 +793,7 @@ function SessionPage() {
 
     clearSession();
 
-    window.location.href = '/'; //should force page refresh
+    window.location.href = '/';
   }
 
   const userCount = getUserCount()
@@ -840,6 +877,177 @@ function SessionPage() {
                   {user.hasScreenshare && (
                     <div className="absolute top-3 left-3 bg-green-600 px-2 py-1 rounded text-white text-xs font-medium">
                       Sharing Screen
+                    </div>
+                  )}
+                  {/* Info card toggle button */}
+                  {!isSelf(user.id) && (
+                    <div className="absolute top-3 right-3">
+                      <button
+                        onClick={() => toggleInfoCard(user.id)}
+                        className={`p-1 rounded-full transition-all duration-200 ${
+                          showInfoCards[user.id]
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                            : 'bg-gray-700 hover:bg-gray-600 text-white'
+                        }`}
+                      >
+                        <Info className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                  {/* Info card overlay */}
+                  {showInfoCards[user.id] && (
+                    <div className="absolute inset-0 bg-white flex flex-col p-3 rounded-lg overflow-hidden">
+                      {/* Close button */}
+                      <div className="absolute top-2 right-2 z-10">
+                        <button
+                          onClick={() => toggleInfoCard(user.id)}
+                          className="p-1 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-600 transition-all duration-200"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+
+                      <div className="w-full h-full flex flex-col min-h-0">
+                        {/* Header */}
+                        <div className="mb-2 flex-shrink-0">
+                          <h3 className="text-lg font-bold text-black leading-tight">Network Stats</h3>
+                        </div>
+
+                        {/* Legend */}
+                        <div className="grid grid-cols-3 gap-1 mb-2 flex-shrink-0">
+                          <div className="flex items-center space-x-1">
+                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                            <span className="text-xs font-medium text-gray-700">VIDEO</span>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
+                            <span className="text-xs font-medium text-gray-700">AUDIO</span>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                            <span className="text-xs font-medium text-gray-700">LATENCY</span>
+                          </div>
+                        </div>
+
+                        {/* Values */}
+                        <div className="grid grid-cols-3 gap-1 mb-3 flex-shrink-0">
+                          <span className="text-xs font-bold text-black">
+                            {!isSelf(user.id) && telemetryData[user.id]
+                              ? `${(telemetryData[user.id].throughput * 8 * 0.8 / 1000).toFixed(1)} Mbit/s`
+                              : 'N/A'
+                            }
+                          </span>
+                          <span className="text-xs font-bold text-black">
+                            {!isSelf(user.id) && telemetryData[user.id]
+                              ? `${(telemetryData[user.id].throughput * 8 * 0.2).toFixed(0)} Kbit/s`
+                              : 'N/A'
+                            }
+                          </span>
+                          <span className="text-xs font-bold text-black">
+                            {!isSelf(user.id) && telemetryData[user.id]
+                              ? `${telemetryData[user.id].latency}ms`
+                              : 'N/A'
+                            }
+                          </span>
+                        </div>
+
+                        {/* Network Stats Graph */}
+                        <div className="flex-1 relative min-h-0">
+                          {/* Graph container */}
+                          <div className="h-full bg-gray-50 rounded relative overflow-hidden border border-gray-200 min-h-16">
+                            {/* Left Y-axis labels (Bitrate) */}
+                            <div className="absolute left-1 top-1 text-xs text-gray-500 leading-none">10M</div>
+                            <div className="absolute left-1 top-1/2 text-xs text-gray-500 leading-none">5M</div>
+                            <div className="absolute left-1 bottom-1 text-xs text-gray-500 leading-none">0</div>
+
+                            {/* Right Y-axis labels (Latency) */}
+                            <div className="absolute right-1 top-1 text-xs text-red-500 leading-none">200ms</div>
+                            <div className="absolute right-1 top-1/2 text-xs text-red-500 leading-none">100ms</div>
+                            <div className="absolute right-1 bottom-1 text-xs text-red-500 leading-none">0ms</div>
+
+                            {/* Grid lines - fewer for cleaner look */}
+                            <div className="absolute inset-0 flex flex-col justify-between p-1">
+                              {[...Array(3)].map((_, i) => (
+                                <div key={i} className="border-t border-gray-300 opacity-30"></div>
+                              ))}
+                            </div>
+
+                            {/* Video bitrate line (blue) */}
+                            <div className="absolute inset-0 p-2">
+                              <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
+                                <polyline
+                                  fill="none"
+                                  stroke="#3b82f6"
+                                  strokeWidth="1.5"
+                                  points={
+                                    !isSelf(user.id) && throughputHistory[user.id] && throughputHistory[user.id].length > 0
+                                      ? throughputHistory[user.id]
+                                          .map((throughput, index) => {
+                                            // TODO: A/V bitrate must be calculated based on the actual throughput
+                                            // For testin, we assume 80% of throughput is video bitrate
+                                            // and 20% is audio bitrate
+                                            const x = (index / Math.max(throughputHistory[user.id].length - 1, 1)) * 300;
+                                            const videoThroughputMbits = (throughput * 8 * 0.8) / 1000;
+                                            const y = 100 - Math.min((videoThroughputMbits / 10) * 100, 100);
+                                            return `${x},${y}`;
+                                          })
+                                          .join(' ')
+                                      : "0,25 20,23 40,24 60,22 80,25 100,23 120,26 140,24 160,22 180,25 200,23 220,27 240,25 260,24 280,26 300,24"
+                                  }
+                                />
+                              </svg>
+                            </div>
+
+                            {/* Audio bitrate line (gray) - much lower */}
+                            <div className="absolute inset-0 p-2">
+                              <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
+                                <polyline
+                                  fill="none"
+                                  stroke="#6b7280"
+                                  strokeWidth="1.5"
+                                  points={
+                                    !isSelf(user.id) && throughputHistory[user.id] && throughputHistory[user.id].length > 0
+                                      ? throughputHistory[user.id]
+                                          .map((throughput, index) => {
+                                            // TODO: A/V bitrate must be calculated based on the actual throughput
+                                            // For testin, we assume 80% of throughput is video bitrate
+                                            // and 20% is audio bitrate
+                                            const x = (index / Math.max(throughputHistory[user.id].length - 1, 1)) * 300;
+                                            const audioThroughputKbits = (throughput * 8 * 0.2);
+                                            const y = 100 - Math.min((audioThroughputKbits / 500) * 100, 100);
+                                            return `${x},${y}`;
+                                          })
+                                          .join(' ')
+                                      : "0,95 20,94 40,95 60,93 80,95 100,94 120,96 140,95 160,93 180,95 200,94 220,96 240,95 260,94 280,95 300,94"
+                                  }
+                                />
+                              </svg>
+                            </div>
+
+                            {/* Latency line (red) - using right scale */}
+                            <div className="absolute inset-0 p-2">
+                              <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
+                                <polyline
+                                  fill="none"
+                                  stroke="#ef4444"
+                                  strokeWidth="1.5"
+                                  points={
+                                    !isSelf(user.id) && latencyHistory[user.id] && latencyHistory[user.id].length > 0
+                                      ? latencyHistory[user.id]
+                                          .map((latency, index) => {
+                                            const x = (index / Math.max(latencyHistory[user.id].length - 1, 1)) * 300;
+                                            const y = 100 - Math.min((latency / 200) * 100, 100);
+                                            return `${x},${y}`;
+                                          })
+                                          .join(' ')
+                                      : "0,85 20,83 40,87 60,84 80,86 100,85 120,88 140,82 160,85 180,87 200,84 220,89 240,83 260,86 280,84 300,85"
+                                  }
+                                />
+                              </svg>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
