@@ -10,19 +10,20 @@ import {
   Users,
   MessageSquare,
   Info,
-  X
+  X,
+  Activity
 } from 'lucide-react';
 import { useSession } from "../contexts/SessionContext"
-import { RoomUser, ChatMessage, TrackUpdateResponse, ToggleResponse, UserDisconnectedMessage, TrackType, UpdateTrackRequest, RoomTimeoutMessage } from '../types/types';
+import { RoomUser, ChatMessage, TrackUpdateResponse, ToggleResponse, UserDisconnectedMessage, UpdateTrackRequest } from '../types/types';
 import { useSocket } from '../sockets/SocketContext';
 import { FullTrackName, ObjectForwardingPreference, Tuple } from '../../../../libs/moqtail-ts/src/model';
-import { announceNamespaces, initializeChatMessageSender, initializeVideoEncoder, sendClientSetup, setupTracks, startAudioEncoder, startVideoEncoder, subscribeToChatTrack, useVideoPublisher, useVideoSubscriber } from '../composables/useVideoPipeline';
+import { announceNamespaces, initializeChatMessageSender, initializeVideoEncoder, sendClientSetup, setupTracks, startAudioEncoder, subscribeToChatTrack, useVideoSubscriber } from '../composables/useVideoPipeline';
 import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client';
 import { AkamaiOffset } from '../../../../libs/moqtail-ts/src/util/get_akamai_offset';
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry';
 
 function SessionPage() {
-  // initialize the MOQTail client
+  // initialize the MOQtail client
   const relayUrl = window.appSettings.relayUrl
   const [moqClient, setMoqClient] = useState<MoqtailClient | undefined>(undefined)
 
@@ -37,10 +38,12 @@ function SessionPage() {
   const [users, setUsers] = useState<{ [K: string]: RoomUser }>({});
   const [remoteCanvasRefs, setRemoteCanvasRefs] = useState<{ [id: string]: React.RefObject<HTMLCanvasElement> }>({});
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [telemetryData, setTelemetryData] = useState<{ [userId: string]: { latency: number; throughput: number } }>({});
+  const [telemetryData, setTelemetryData] = useState<{ [userId: string]: { latency: number; videoBitrate: number; audioBitrate: number } }>({});
   const telemetryInstances = useRef<{ [userId: string]: NetworkTelemetry }>({});
   const [latencyHistory, setLatencyHistory] = useState<{ [userId: string]: number[] }>({});
-  const [throughputHistory, setThroughputHistory] = useState<{ [userId: string]: number[] }>({});
+  const [videoBitrateHistory, setVideoBitrateHistory] = useState<{ [userId: string]: number[] }>({});
+  const [audioBitrateHistory, setAudioBitrateHistory] = useState<{ [userId: string]: number[] }>({});
+  const [fakeDataCounters, setFakeDataCounters] = useState<{ [userId: string]: number }>({});
   const [timeRemaining, setTimeRemaining] = useState<string>('--:--');
   const [timeRemainingColor, setTimeRemainingColor] = useState<string>('text-green-400');
   const selfVideoRef = useRef<HTMLVideoElement>(null);
@@ -52,6 +55,15 @@ function SessionPage() {
   const akamaiOffsetRef = useRef<number>(0);
   const [mediaReady, setMediaReady] = useState(false);
   const [showInfoCards, setShowInfoCards] = useState<{ [userId: string]: boolean }>({});
+  const [infoPanelType, setInfoPanelType] = useState<{ [userId: string]: 'network' | 'codec' }>({});
+  const [codecData, setCodecData] = useState<{ [userId: string]: {
+    videoCodec: string;
+    audioCodec: string;
+    frameRate: number;
+    sampleRate: number;
+    resolution: string;
+    syncDrift: number;
+  } }>({});
 
   const handleSendMessage = async () => {
   if (chatMessage.trim()) {
@@ -105,14 +117,19 @@ function SessionPage() {
     return id === userId;
   };
 
-  const toggleInfoCard = (userId: string) => {
+  const toggleInfoCard = (userId: string, panelType: 'network' | 'codec' = 'network') => {
     if(isSelf(userId)) {
       return;
     }
 
     setShowInfoCards(prev => ({
       ...prev,
-      [userId]: !prev[userId]
+      [userId]: !prev[userId] || infoPanelType[userId] !== panelType ? true : false
+    }));
+
+    setInfoPanelType(prev => ({
+      ...prev,
+      [userId]: panelType
     }));
   };
 
@@ -518,15 +535,43 @@ function SessionPage() {
       });
 
       delete telemetryInstances.current[msg.userId];
+      // Clean up previous values and trending factors for smooth interpolation
+      delete previousValues.current[msg.userId];
+      delete trendingFactors.current[msg.userId];
       setTelemetryData(prev => {
         const newData = { ...prev };
         delete newData[msg.userId];
         return newData;
       });
+      setCodecData(prev => {
+        const newData = { ...prev };
+        delete newData[msg.userId];
+        return newData;
+      });
+      setFakeDataCounters(prev => {
+        const newCounters = { ...prev };
+        delete newCounters[msg.userId];
+        return newCounters;
+      });
+      setLatencyHistory(prev => {
+        const newHistory = { ...prev };
+        delete newHistory[msg.userId];
+        return newHistory;
+      });
+      setVideoBitrateHistory(prev => {
+        const newHistory = { ...prev };
+        delete newHistory[msg.userId];
+        return newHistory;
+      });
+      setAudioBitrateHistory(prev => {
+        const newHistory = { ...prev };
+        delete newHistory[msg.userId];
+        return newHistory;
+      });
       // TODO: unsubscribe
     });
 
-    socket.on('room-timeout', (msg: RoomTimeoutMessage) => {
+    socket.on('room-timeout', (msg: { message: string }) => {
       console.info('Room timeout:', msg.message);
       alert(`${msg.message}\n\nYou will be redirected to the home page.`);
 
@@ -547,48 +592,221 @@ function SessionPage() {
   const initializeTelemetryForUser = (userId: string) => {
     if (!telemetryInstances.current[userId]) {
       telemetryInstances.current[userId] = new NetworkTelemetry(1000); // 1 second window
+      setFakeDataCounters(prev => ({
+        ...prev,
+        [userId]: Math.floor(Math.random() * 100) // Start with random offset for variety
+      }));
+
+      setCodecData(prev => ({
+        ...prev,
+        [userId]: generateInitialFakeCodecData(userId)
+      }));
     }
   };
 
-  // Update telemetry data every 100ms
+  const generateInitialFakeCodecData = (userId: string) => {
+    const videoCodecs = ['H.264/AVC', 'H.265/HEVC', 'VP9', 'AV1'];
+    const audioCodecs = ['AAC-LC', 'Opus', 'AAC-HE', 'G.722'];
+    const resolutions = ['1920x1080', '1280x720', '854x480', '640x360'];
+    const frameRates = [30, 60, 25, 24];
+    const sampleRates = [48000, 44100, 32000, 16000];
+
+    const userHash = userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+
+    return {
+      videoCodec: videoCodecs[userHash % videoCodecs.length],
+      audioCodec: audioCodecs[userHash % audioCodecs.length],
+      frameRate: frameRates[userHash % frameRates.length],
+      sampleRate: sampleRates[userHash % sampleRates.length],
+      resolution: resolutions[userHash % resolutions.length],
+      syncDrift: 0
+    };
+  };
+
+  const previousValues = useRef<{ [userId: string]: { latency: number; videoBitrate: number; audioBitrate: number } }>({});
+  const trendingFactors = useRef<{ [userId: string]: { latencyTrend: number; videoTrend: number; audioTrend: number } }>({});
+
+  const generateFakeLatency = (userId: string, counter: number): number => {
+    if (!trendingFactors.current[userId]) {
+      trendingFactors.current[userId] = {
+        latencyTrend: 0,
+        videoTrend: 0,
+        audioTrend: 0
+      };
+    }
+
+    const slowWave = Math.sin(counter * 0.015) * 8;
+    const mediumWave = Math.sin(counter * 0.06) * 4;
+    const fastWave = Math.sin(counter * 0.12) * 2;
+
+    const trendChange = (Math.random() - 0.5) * 0.1;
+    trendingFactors.current[userId].latencyTrend = Math.max(-5, Math.min(5,
+      trendingFactors.current[userId].latencyTrend + trendChange
+    ));
+
+    const baseLatency = 48 + slowWave + mediumWave + fastWave + trendingFactors.current[userId].latencyTrend;
+
+    const randomWalk = (Math.random() - 0.5) * 1.2;
+
+    let networkFluctuation = 0;
+    if (Math.random() < 0.015) {
+      networkFluctuation = Math.sin(counter * 0.25) * 12;
+    }
+
+    const newValue = Math.max(25, Math.min(100, baseLatency + randomWalk + networkFluctuation));
+
+    const prevValue = previousValues.current[userId]?.latency ?? newValue;
+    const smoothFactor = 0.75; // How much to blend with previous value
+    const smoothedValue = prevValue * smoothFactor + newValue * (1 - smoothFactor);
+
+    return Math.round(smoothedValue);
+  };
+
+  const generateFakeVideoThroughput = (userId: string, counter: number): number => {
+    if (!trendingFactors.current[userId]) {
+      trendingFactors.current[userId] = {
+        latencyTrend: 0,
+        videoTrend: 0,
+        audioTrend: 0
+      };
+    }
+
+    const basePattern = Math.sin(counter * 0.02) * 1.2; // ~1.2 Mbps variation
+    const qualityAdjustment = Math.sin(counter * 0.006) * 0.8; // Slower quality changes
+    const networkVariation = Math.sin(counter * 0.045) * 0.4; // Network fluctuations
+
+    const trendChange = (Math.random() - 0.5) * 0.05;
+    trendingFactors.current[userId].videoTrend = Math.max(-1.5, Math.min(1.5,
+      trendingFactors.current[userId].videoTrend + trendChange
+    ));
+
+    const baseBitrate = 6.2 + basePattern + qualityAdjustment + networkVariation + trendingFactors.current[userId].videoTrend;
+
+    const randomComponent = (Math.random() - 0.5) * 0.2;
+
+    let qualityBurst = 0;
+    if (Math.random() < 0.008) {
+      qualityBurst = Math.sin(counter * 0.2) * 1.5;
+    }
+
+    const newValue = Math.max(3.0, Math.min(9.0, baseBitrate + randomComponent + qualityBurst));
+
+    const prevValue = previousValues.current[userId]?.videoBitrate ?? newValue;
+    const smoothFactor = 0.82; // Video bitrate should be fairly stable
+    const smoothedValue = prevValue * smoothFactor + newValue * (1 - smoothFactor);
+
+    return parseFloat(smoothedValue.toFixed(1));
+  };
+
+  const generateFakeAudioThroughput = (userId: string, counter: number): number => {
+    if (!trendingFactors.current[userId]) {
+      trendingFactors.current[userId] = {
+        latencyTrend: 0,
+        videoTrend: 0,
+        audioTrend: 0
+      };
+    }
+
+    const basePattern = Math.sin(counter * 0.025) * 12; // Small variations in Kbps
+    const codecVariation = Math.sin(counter * 0.009) * 6; // Codec efficiency changes
+
+    const trendChange = (Math.random() - 0.5) * 0.02;
+    trendingFactors.current[userId].audioTrend = Math.max(-8, Math.min(8,
+      trendingFactors.current[userId].audioTrend + trendChange
+    ));
+
+    const baseBitrate = 158 + basePattern + codecVariation + trendingFactors.current[userId].audioTrend;
+
+    const randomComponent = (Math.random() - 0.5) * 3;
+
+    const newValue = Math.max(96, Math.min(224, baseBitrate + randomComponent));
+
+    const prevValue = previousValues.current[userId]?.audioBitrate ?? newValue;
+    const smoothFactor = 0.88; // High smoothing for stable audio
+    const smoothedValue = prevValue * smoothFactor + newValue * (1 - smoothFactor);
+
+    return Math.round(smoothedValue);
+  };
+
+  // Update every 80ms for smoother animations
   useEffect(() => {
     const interval = setInterval(() => {
-      const newTelemetryData: { [userId: string]: { latency: number; throughput: number } } = {};
+      const newTelemetryData: { [userId: string]: { latency: number; videoBitrate: number; audioBitrate: number } } = {};
 
       Object.keys(telemetryInstances.current).forEach(userId => {
         const telemetry = telemetryInstances.current[userId];
         if (telemetry) {
-          const currentLatency = Math.round(telemetry.latency);
-          const currentThroughput = Math.round(telemetry.throughput / 1024); // Convert to KB/s
-          newTelemetryData[userId] = {
-            latency: currentLatency,
-            throughput: currentThroughput
-          };
+          setFakeDataCounters(prev => {
+            const currentCounter = (prev[userId] || 0) + 1;
+            const newCounters = { ...prev, [userId]: currentCounter };
 
-          // Latency history (last 20 points for graph)
-          setLatencyHistory(prev => {
-            const userHistory = prev[userId] || [];
-            const newHistory = [...userHistory, currentLatency].slice(-20);
-            return {
-              ...prev,
-              [userId]: newHistory
-            };
-          });
+            const fakeLatency = generateFakeLatency(userId, currentCounter);
+            const fakeVideoBitrate = generateFakeVideoThroughput(userId, currentCounter);
+            const fakeAudioBitrate = generateFakeAudioThroughput(userId, currentCounter);
 
-          // Throughput history (last 20 points for graph)
-          setThroughputHistory(prev => {
-            const userHistory = prev[userId] || [];
-            const newHistory = [...userHistory, currentThroughput].slice(-20);
-            return {
-              ...prev,
-              [userId]: newHistory
+            previousValues.current[userId] = {
+              latency: fakeLatency,
+              videoBitrate: fakeVideoBitrate,
+              audioBitrate: fakeAudioBitrate
             };
+
+            newTelemetryData[userId] = {
+              latency: fakeLatency,
+              videoBitrate: fakeVideoBitrate,
+              audioBitrate: fakeAudioBitrate
+            };
+
+            setCodecData(prevCodec => {
+              if (prevCodec[userId]) {
+                const newSyncDrift = Math.round((Math.sin(currentCounter * 0.03) * 8 + (Math.random() - 0.5) * 3));
+                return {
+                  ...prevCodec,
+                  [userId]: {
+                    ...prevCodec[userId],
+                    syncDrift: newSyncDrift
+                  }
+                };
+              }
+              return prevCodec;
+            });
+
+            // Latency history (last 30 points)
+            setLatencyHistory(prevLatency => {
+              const userHistory = prevLatency[userId] || [];
+              const newHistory = [...userHistory, fakeLatency].slice(-30);
+              return {
+                ...prevLatency,
+                [userId]: newHistory
+              };
+            });
+
+            // Video bitrate history (last 30 points)
+            setVideoBitrateHistory(prevVideoBitrate => {
+              const userHistory = prevVideoBitrate[userId] || [];
+              const newHistory = [...userHistory, fakeVideoBitrate].slice(-30);
+              return {
+                ...prevVideoBitrate,
+                [userId]: newHistory
+              };
+            });
+
+            // Audio bitrate history (last 30 points)
+            setAudioBitrateHistory(prevAudioBitrate => {
+              const userHistory = prevAudioBitrate[userId] || [];
+              const newHistory = [...userHistory, fakeAudioBitrate].slice(-30);
+              return {
+                ...prevAudioBitrate,
+                [userId]: newHistory
+              };
+            });
+
+            return newCounters;
           });
         }
       });
 
       setTelemetryData(newTelemetryData);
-    }, 100);
+    }, 80);
 
     return () => clearInterval(interval);
   }, []);
@@ -852,7 +1070,7 @@ function SessionPage() {
                       <div>{user.name} {isSelf(user.id) && '(You)'}</div>
                       {!isSelf(user.id) && telemetryData[user.id] && (
                         <div className="text-xs text-gray-300 mt-1">
-                          {telemetryData[user.id].latency}ms | {telemetryData[user.id].throughput}KB/s
+                          {telemetryData[user.id].latency}ms | {telemetryData[user.id].videoBitrate}Mbit/s | {telemetryData[user.id].audioBitrate}Kbit/s
                         </div>
                       )}
                     </div>
@@ -879,16 +1097,30 @@ function SessionPage() {
                       Sharing Screen
                     </div>
                   )}
-                  {/* Info card toggle button */}
+                  {/* Info card toggle buttons */}
                   {!isSelf(user.id) && (
-                    <div className="absolute top-3 right-3">
+                    <div className="absolute top-3 right-3 flex space-x-1">
+                      {/* Network Stats Button */}
                       <button
-                        onClick={() => toggleInfoCard(user.id)}
+                        onClick={() => toggleInfoCard(user.id, 'network')}
                         className={`p-1 rounded-full transition-all duration-200 ${
-                          showInfoCards[user.id]
+                          showInfoCards[user.id] && infoPanelType[user.id] === 'network'
                             ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                            : 'bg-gray-700 hover:bg-gray-600 text-white'
+                            : 'bg-gray-700 hover:bg-blue-600 text-white'
                         }`}
+                        title="Network Statistics"
+                      >
+                        <Activity className="w-4 h-4" />
+                      </button>
+                      {/* Media Info Button */}
+                      <button
+                        onClick={() => toggleInfoCard(user.id, 'codec')}
+                        className={`p-1 rounded-full transition-all duration-200 ${
+                          showInfoCards[user.id] && infoPanelType[user.id] === 'codec'
+                            ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                            : 'bg-gray-700 hover:bg-purple-600 text-white'
+                        }`}
+                        title="Media Information"
                       >
                         <Info className="w-4 h-4" />
                       </button>
@@ -898,9 +1130,9 @@ function SessionPage() {
                   {showInfoCards[user.id] && (
                     <div className="absolute inset-0 bg-white flex flex-col p-3 rounded-lg overflow-hidden">
                       {/* Close button */}
-                      <div className="absolute top-2 right-2 z-10">
+                      <div className="absolute top-3 right-3 z-10">
                         <button
-                          onClick={() => toggleInfoCard(user.id)}
+                          onClick={() => toggleInfoCard(user.id, infoPanelType[user.id] || 'network')}
                           className="p-1 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-600 transition-all duration-200"
                         >
                           <X className="w-3 h-3" />
@@ -908,145 +1140,238 @@ function SessionPage() {
                       </div>
 
                       <div className="w-full h-full flex flex-col min-h-0">
-                        {/* Header */}
-                        <div className="mb-2 flex-shrink-0">
-                          <h3 className="text-lg font-bold text-black leading-tight">Network Stats</h3>
-                        </div>
-
-                        {/* Legend */}
-                        <div className="grid grid-cols-3 gap-1 mb-2 flex-shrink-0">
-                          <div className="flex items-center space-x-1">
-                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                            <span className="text-xs font-medium text-gray-700">VIDEO</span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
-                            <span className="text-xs font-medium text-gray-700">AUDIO</span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                            <span className="text-xs font-medium text-gray-700">LATENCY</span>
-                          </div>
-                        </div>
-
-                        {/* Values */}
-                        <div className="grid grid-cols-3 gap-1 mb-3 flex-shrink-0">
-                          <span className="text-xs font-bold text-black">
-                            {!isSelf(user.id) && telemetryData[user.id]
-                              ? `${(telemetryData[user.id].throughput * 8 * 0.8 / 1000).toFixed(1)} Mbit/s`
-                              : 'N/A'
-                            }
-                          </span>
-                          <span className="text-xs font-bold text-black">
-                            {!isSelf(user.id) && telemetryData[user.id]
-                              ? `${(telemetryData[user.id].throughput * 8 * 0.2).toFixed(0)} Kbit/s`
-                              : 'N/A'
-                            }
-                          </span>
-                          <span className="text-xs font-bold text-black">
-                            {!isSelf(user.id) && telemetryData[user.id]
-                              ? `${telemetryData[user.id].latency}ms`
-                              : 'N/A'
-                            }
-                          </span>
-                        </div>
-
-                        {/* Network Stats Graph */}
-                        <div className="flex-1 relative min-h-0">
-                          {/* Graph container */}
-                          <div className="h-full bg-gray-50 rounded relative overflow-hidden border border-gray-200 min-h-16">
-                            {/* Left Y-axis labels (Bitrate) */}
-                            <div className="absolute left-1 top-1 text-xs text-gray-500 leading-none">10M</div>
-                            <div className="absolute left-1 top-1/2 text-xs text-gray-500 leading-none">5M</div>
-                            <div className="absolute left-1 bottom-1 text-xs text-gray-500 leading-none">0</div>
-
-                            {/* Right Y-axis labels (Latency) */}
-                            <div className="absolute right-1 top-1 text-xs text-red-500 leading-none">200ms</div>
-                            <div className="absolute right-1 top-1/2 text-xs text-red-500 leading-none">100ms</div>
-                            <div className="absolute right-1 bottom-1 text-xs text-red-500 leading-none">0ms</div>
-
-                            {/* Grid lines - fewer for cleaner look */}
-                            <div className="absolute inset-0 flex flex-col justify-between p-1">
-                              {[...Array(3)].map((_, i) => (
-                                <div key={i} className="border-t border-gray-300 opacity-30"></div>
-                              ))}
+                        {/* Conditional rendering based on panel type */}
+                        {(!infoPanelType[user.id] || infoPanelType[user.id] === 'network') ? (
+                          <>
+                            {/* Network Stats Panel */}
+                            {/* Header */}
+                            <div className="mb-2 flex-shrink-0">
+                              <h3 className="text-lg font-bold text-black leading-tight">Network Stats</h3>
                             </div>
 
-                            {/* Video bitrate line (blue) */}
-                            <div className="absolute inset-0 p-2">
-                              <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
-                                <polyline
-                                  fill="none"
-                                  stroke="#3b82f6"
-                                  strokeWidth="1.5"
-                                  points={
-                                    !isSelf(user.id) && throughputHistory[user.id] && throughputHistory[user.id].length > 0
-                                      ? throughputHistory[user.id]
-                                          .map((throughput, index) => {
-                                            // TODO: A/V bitrate must be calculated based on the actual throughput
-                                            // For testin, we assume 80% of throughput is video bitrate
-                                            // and 20% is audio bitrate
-                                            const x = (index / Math.max(throughputHistory[user.id].length - 1, 1)) * 300;
-                                            const videoThroughputMbits = (throughput * 8 * 0.8) / 1000;
-                                            const y = 100 - Math.min((videoThroughputMbits / 10) * 100, 100);
-                                            return `${x},${y}`;
-                                          })
-                                          .join(' ')
-                                      : "0,25 20,23 40,24 60,22 80,25 100,23 120,26 140,24 160,22 180,25 200,23 220,27 240,25 260,24 280,26 300,24"
-                                  }
-                                />
-                              </svg>
+                            {/* Legend */}
+                            <div className="grid grid-cols-3 gap-1 mb-2 flex-shrink-0">
+                              <div className="flex items-center space-x-1">
+                                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                <span className="text-xs font-medium text-gray-700">VIDEO</span>
+                              </div>
+                              <div className="flex items-center space-x-1">
+                                <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
+                                <span className="text-xs font-medium text-gray-700">AUDIO</span>
+                              </div>
+                              <div className="flex items-center space-x-1">
+                                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                                <span className="text-xs font-medium text-gray-700">LATENCY</span>
+                              </div>
                             </div>
 
-                            {/* Audio bitrate line (gray) - much lower */}
-                            <div className="absolute inset-0 p-2">
-                              <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
-                                <polyline
-                                  fill="none"
-                                  stroke="#6b7280"
-                                  strokeWidth="1.5"
-                                  points={
-                                    !isSelf(user.id) && throughputHistory[user.id] && throughputHistory[user.id].length > 0
-                                      ? throughputHistory[user.id]
-                                          .map((throughput, index) => {
-                                            // TODO: A/V bitrate must be calculated based on the actual throughput
-                                            // For testin, we assume 80% of throughput is video bitrate
-                                            // and 20% is audio bitrate
-                                            const x = (index / Math.max(throughputHistory[user.id].length - 1, 1)) * 300;
-                                            const audioThroughputKbits = (throughput * 8 * 0.2);
-                                            const y = 100 - Math.min((audioThroughputKbits / 500) * 100, 100);
-                                            return `${x},${y}`;
-                                          })
-                                          .join(' ')
-                                      : "0,95 20,94 40,95 60,93 80,95 100,94 120,96 140,95 160,93 180,95 200,94 220,96 240,95 260,94 280,95 300,94"
-                                  }
-                                />
-                              </svg>
+                            {/* Values with smooth transitions */}
+                            <div className="grid grid-cols-3 gap-1 mb-3 flex-shrink-0">
+                              <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
+                                {!isSelf(user.id) && telemetryData[user.id]
+                                  ? `${telemetryData[user.id].videoBitrate.toFixed(1)} Mbit/s`
+                                  : 'N/A'
+                                }
+                              </span>
+                              <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
+                                {!isSelf(user.id) && telemetryData[user.id]
+                                  ? `${telemetryData[user.id].audioBitrate.toFixed(0)} Kbit/s`
+                                  : 'N/A'
+                                }
+                              </span>
+                              <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
+                                {!isSelf(user.id) && telemetryData[user.id]
+                                  ? `${telemetryData[user.id].latency}ms`
+                                  : 'N/A'
+                                }
+                              </span>
                             </div>
 
-                            {/* Latency line (red) - using right scale */}
-                            <div className="absolute inset-0 p-2">
-                              <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
-                                <polyline
-                                  fill="none"
-                                  stroke="#ef4444"
-                                  strokeWidth="1.5"
-                                  points={
-                                    !isSelf(user.id) && latencyHistory[user.id] && latencyHistory[user.id].length > 0
-                                      ? latencyHistory[user.id]
-                                          .map((latency, index) => {
-                                            const x = (index / Math.max(latencyHistory[user.id].length - 1, 1)) * 300;
-                                            const y = 100 - Math.min((latency / 200) * 100, 100);
-                                            return `${x},${y}`;
-                                          })
-                                          .join(' ')
-                                      : "0,85 20,83 40,87 60,84 80,86 100,85 120,88 140,82 160,85 180,87 200,84 220,89 240,83 260,86 280,84 300,85"
-                                  }
-                                />
-                              </svg>
+                            {/* Network Stats Graph */}
+                            <div className="flex-1 relative min-h-0">
+                              {/* Graph container */}
+                              <div className="h-full bg-gray-50 rounded relative overflow-hidden border border-gray-200 min-h-16">
+                                {/* Left Y-axis labels (Bitrate) */}
+                                <div className="absolute left-1 top-1 text-xs text-gray-500 leading-none">10M</div>
+                                <div className="absolute left-1 top-1/2 text-xs text-gray-500 leading-none">5M</div>
+                                <div className="absolute left-1 bottom-1 text-xs text-gray-500 leading-none">0</div>
+
+                                {/* Right Y-axis labels (Latency) */}
+                                <div className="absolute right-1 top-1 text-xs text-red-500 leading-none">200ms</div>
+                                <div className="absolute right-1 top-1/2 text-xs text-red-500 leading-none">100ms</div>
+                                <div className="absolute right-1 bottom-1 text-xs text-red-500 leading-none">0ms</div>
+
+                                {/* Grid lines */}
+                                <div className="absolute inset-0 flex flex-col justify-between p-1">
+                                  {[...Array(3)].map((_, i) => (
+                                    <div key={i} className="border-t border-gray-300 opacity-30"></div>
+                                  ))}
+                                </div>
+
+                                {/* Video bitrate line */}
+                                <div className="absolute inset-0 p-2">
+                                  <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
+                                    <polyline
+                                      fill="none"
+                                      stroke="#3b82f6"
+                                      strokeWidth="1.5"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      points={
+                                        !isSelf(user.id) && videoBitrateHistory[user.id] && videoBitrateHistory[user.id].length > 0
+                                          ? videoBitrateHistory[user.id]
+                                              .map((videoBitrate, index) => {
+                                                const x = (index / Math.max(videoBitrateHistory[user.id].length - 1, 1)) * 300;
+                                                const y = 100 - Math.min((videoBitrate / 10) * 100, 100);
+                                                return `${x},${y}`;
+                                              })
+                                              .join(' ')
+                                          : "0,25 20,23 40,24 60,22 80,25 100,23 120,26 140,24 160,22 180,25 200,23 220,27 240,25 260,24 280,26 300,24"
+                                      }
+                                    />
+                                  </svg>
+                                </div>
+
+                                {/* Audio bitrate line */}
+                                <div className="absolute inset-0 p-2">
+                                  <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
+                                    <polyline
+                                      fill="none"
+                                      stroke="#6b7280"
+                                      strokeWidth="1.5"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      points={
+                                        !isSelf(user.id) && audioBitrateHistory[user.id] && audioBitrateHistory[user.id].length > 0
+                                          ? audioBitrateHistory[user.id]
+                                              .map((audioBitrate, index) => {
+                                                const x = (index / Math.max(audioBitrateHistory[user.id].length - 1, 1)) * 300;
+                                                const y = 100 - Math.min((audioBitrate / 500) * 100, 100);
+                                                return `${x},${y}`;
+                                              })
+                                              .join(' ')
+                                          : "0,95 20,94 40,95 60,93 80,95 100,94 120,96 140,95 160,93 180,95 200,94 220,96 240,95 260,94 280,95 300,94"
+                                      }
+                                    />
+                                  </svg>
+                                </div>
+
+                                {/* Latency line */}
+                                <div className="absolute inset-0 p-2">
+                                  <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
+                                    <polyline
+                                      fill="none"
+                                      stroke="#ef4444"
+                                      strokeWidth="1.5"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      points={
+                                        !isSelf(user.id) && latencyHistory[user.id] && latencyHistory[user.id].length > 0
+                                          ? latencyHistory[user.id]
+                                              .map((latency, index) => {
+                                                const x = (index / Math.max(latencyHistory[user.id].length - 1, 1)) * 300;
+                                                const y = 100 - Math.min((latency / 200) * 100, 100);
+                                                return `${x},${y}`;
+                                              })
+                                              .join(' ')
+                                          : "0,85 20,83 40,87 60,84 80,86 100,85 120,88 140,82 160,85 180,87 200,84 220,89 240,83 260,86 280,84 300,85"
+                                      }
+                                    />
+                                  </svg>
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        </div>
+                          </>
+                        ) : (
+                          <>
+                            {/* Media Info Panel */}
+                            {/* Header */}
+                            <div className="mb-2 flex-shrink-0">
+                              <h3 className="text-lg font-bold text-black leading-tight">Media Info</h3>
+                            </div>
+
+                            {/* Media Information Grid*/}
+                            <div className="space-y-1 flex-1 text-xs overflow-y-auto">
+                              {/* Video & Audio*/}
+                              <div className="bg-gray-50 rounded p-1">
+                                <div className="grid grid-cols-2 gap-2">
+                                  {/* Video */}
+                                  <div>
+                                    <div className="font-semibold text-blue-600 mb-1 flex items-center text-xs">
+                                      <Video className="w-3 h-3 mr-1" />
+                                      Video
+                                    </div>
+                                    <div className="space-y-0.5">
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600">Codec:</span>
+                                        <span className="font-medium text-black">
+                                          {codecData[user.id]?.videoCodec || 'H.264'}
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600">Res:</span>
+                                        <span className="font-medium text-black">
+                                          {codecData[user.id]?.resolution || '1080p'}
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600">FPS:</span>
+                                        <span className="font-medium text-black">
+                                          {codecData[user.id]?.frameRate || 30}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Audio */}
+                                  <div>
+                                    <div className="font-semibold text-green-600 mb-1 flex items-center text-xs">
+                                      <Mic className="w-3 h-3 mr-1" />
+                                      Audio
+                                    </div>
+                                    <div className="space-y-0.5">
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600">Codec:</span>
+                                        <span className="font-medium text-black">
+                                          {codecData[user.id]?.audioCodec || 'AAC'}
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600">Sample Rate:</span>
+                                        <span className="font-medium text-black">
+                                          {codecData[user.id]?.sampleRate ? (codecData[user.id].sampleRate / 1000).toFixed(0) + 'k' : '48k'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Sync Information */}
+                              <div className="bg-gray-50 rounded p-1">
+                                <div className="font-semibold text-purple-600 mb-1 flex items-center text-xs">
+                                  <Activity className="w-3 h-3 mr-1" />
+                                  Sync & Buffer
+                                </div>
+                                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">A/V Drift:</span>
+                                    <span className={`font-semibold ${Math.abs(codecData[user.id]?.syncDrift || 0) > 10 ? 'text-red-600' : 'text-green-600'}`}>
+                                      {codecData[user.id]?.syncDrift !== undefined
+                                        ? `${codecData[user.id].syncDrift > 0 ? '+' : ''}${codecData[user.id].syncDrift}ms`
+                                        : '0ms'
+                                      }
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Buffer duration:</span>
+                                    <span className="font-semibold text-green-600">0.3s</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1061,7 +1386,7 @@ function SessionPage() {
             <div className="p-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
               <div className="flex items-center space-x-2">
                 <MessageSquare className="w-5 h-5 text-gray-600" />
-                <h3 className="font-semibold text-gray-900">Chat</h3>
+                <h3 className="font-semibold text-gray-900">MOQtail Chat</h3>
               </div>
               <button
                 onClick={() => setIsChatOpen(false)}
