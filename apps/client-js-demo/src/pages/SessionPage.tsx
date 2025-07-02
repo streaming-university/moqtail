@@ -942,14 +942,14 @@ function SessionPage() {
           <Phone className="w-5 h-5 transform rotate-135" />
         </button>
         {/* Chat Toggle Button (when chat is closed) */}
-        {/* {!isChatOpen && (
+        {!isChatOpen && (
           <button
             onClick={() => setIsChatOpen(true)}
             className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 text-white transition-all duration-200"
           >
             <MessageSquare className="w-5 h-5" />
           </button>
-        )} */}
+        )}
       </div>
     </div>
   );

@@ -16,8 +16,6 @@ use moqtail::transport::{
   control_stream_handler::ControlStreamHandler,
   data_stream_handler::{HeaderInfo, RecvDataStream, SubscribeRequest},
 };
-use std::collections::BTreeMap;
-use std::io::Write;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use tracing::{Instrument, debug, error, info, info_span, warn};
@@ -46,9 +44,7 @@ impl SessionContext {
     }
   }
 }
-pub struct Session {
-  context: Arc<SessionContext>,
-}
+pub struct Session {}
 
 impl Session {
   pub async fn new(
@@ -77,7 +73,7 @@ impl Session {
     tokio::spawn(Self::handle_connection_close(context.clone()));
     tokio::spawn(Self::accept_control_stream(context.clone()));
 
-    Ok(Session { context })
+    Ok(Session {})
   }
 
   async fn accept_control_stream(context: Arc<SessionContext>) -> Result<()> {
@@ -152,14 +148,12 @@ impl Session {
         }
 
         dgram = context.connection.receive_datagram() => {
+          let connection_id = context.connection_id;
           tokio::spawn(async move {
             debug!("Received datagram");
-            /*
             let dgram = dgram.unwrap();
             let str_data = std::str::from_utf8(&dgram).unwrap();
             info!("Received (dgram) '{str_data}' from client {}", connection_id);
-            connection.send_datagram(b"ACK").unwrap();
-             */
           });
         }
       }
@@ -223,16 +217,12 @@ impl Session {
 
     let stream = Arc::new(Mutex::new(stream));
 
-    let mut stream_handler = &RecvDataStream::new(
-      stream.clone(),
-      client.fetch_requests.clone(),
-      Arc::new(RwLock::new(BTreeMap::new())),
-    );
+    let mut stream_handler = &RecvDataStream::new(stream.clone(), client.fetch_requests.clone());
 
     let mut first_object = true;
     let mut stream_id: String = "".into();
     let mut track_alias = 0u64;
-    let mut group_id = 0u64;
+    let mut group_id;
     let mut header_id = String::new();
     let mut header_payload = Bytes::new();
     let mut current_track: Option<Track> = None;
@@ -365,6 +355,7 @@ impl Session {
     Ok(())
   }
 
+  #[allow(clippy::too_many_arguments)]
   async fn send_subgroup_obj_to_subscriber(
     context: Arc<SessionContext>,
     track_alias: u64,
@@ -472,12 +463,12 @@ impl Session {
         error!(
           "Error in writing to stream for subscriber {}, error: {:?}",
           subscriber.connection_id, e
-        );
-        return;
+        )
       }
     }
   }
 
+  /*
   async fn write_to_track_log(track_alias: u64, message: &str) -> Result<()> {
     let log_file_name = format!("track_{}.log", track_alias);
     let mut file = std::fs::OpenOptions::new()
@@ -496,6 +487,7 @@ impl Session {
 
     Ok(())
   }
+  */
 
   async fn handle_control_messages(
     context: Arc<SessionContext>,
@@ -704,8 +696,8 @@ impl Session {
           let request_id = msg.request_id;
 
           /* TODO: requests are keyed with track_id, not request_id
-                   That's a problem. Different requests can have the same track_id but
-                   from different subscribers.
+                    That's a problem. Different requests can have the same track_id but
+                    from different subscribers.
           */
           let mut sub_request = {
             let client = client.read().await;
@@ -793,9 +785,8 @@ impl Session {
         }
         ControlMessage::Unsubscribe(m) => {
           info!("received Unsubscribe message: {:?}", m);
-          let msg = *m;
-
           // TODO: implement
+          // let msg = *m;
         }
         m => {
           info!("some message received");

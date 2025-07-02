@@ -5,7 +5,6 @@ use std::env;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::filter::LevelFilter;
-use wtransport::endpoint;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {

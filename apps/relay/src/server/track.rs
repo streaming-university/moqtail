@@ -8,8 +8,11 @@ use super::client::MOQTClient;
 
 #[derive(Debug, Clone)]
 pub struct Track {
+  #[allow(dead_code)]
   pub track_alias: u64,
+  #[allow(dead_code)]
   pub track_namespace: Tuple,
+  #[allow(dead_code)]
   pub track_name: String,
   subscribers: Arc<RwLock<BTreeMap<usize, Arc<RwLock<MOQTClient>>>>>,
   cache: TrackCache,

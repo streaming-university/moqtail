@@ -185,12 +185,7 @@ export async function startAudioEncoder({
       },
       error: console.error,
     })
-    audioEncoder.configure({
-      codec: 'opus',
-      sampleRate: 48000,
-      numberOfChannels: 1,
-      bitrate: 64_000,
-    })
+    audioEncoder.configure(window.appSettings.audioEncoderConfig)
   }
 
   let pcmBuffer: Float32Array[] = []
@@ -315,16 +310,8 @@ export function initializeVideoEncoder({
       },
       error: console.error,
     })
-    videoEncoder.configure({
-      codec: 'avc1.42E01E',
-      width: 640,
-      height: 360,
-      bitrate: 300_000,
-      framerate: 25,
-      avc: { format: 'avc' },
-      latencyMode: 'realtime',
-      hardwareAcceleration: 'prefer-software',
-    })
+    console.log('Configuring video encoder with settings:', window.appSettings.videoEncoderConfig)
+    videoEncoder.configure(window.appSettings.videoEncoderConfig)
   }
 
   createVideoEncoder()
@@ -391,10 +378,17 @@ export function initializeVideoEncoder({
             const captureTime = Math.round(performance.timeOrigin + performance.now() + offset);
             pendingVideoTimestamps.push(captureTime)
 
-            const insert_keyframe = frameCounter % 60 === 0
-
             try {
-              videoEncoder?.encode(result.value, { keyFrame: insert_keyframe })
+              let insert_keyframe = false
+              if (window.appSettings.keyFrameInterval !== "auto") {
+                insert_keyframe = frameCounter % (window.appSettings.keyFrameInterval || 0) === 0
+              }
+
+              if (insert_keyframe) {
+                videoEncoder?.encode(result.value, { keyFrame: insert_keyframe })
+              } else {
+                videoEncoder?.encode(result.value)
+              }
               frameCounter++
             } catch (encodeError) {
               console.error('Error encoding video frame:', encodeError)
@@ -505,16 +499,7 @@ export async function startVideoEncoder({
       },
       error: console.error,
     })
-    videoEncoder.configure({
-      codec: 'avc1.42E01E',
-      width: 640,
-      height: 360,
-      bitrate: 300_000,
-      framerate: 25,
-      avc: { format: 'avc' },
-      latencyMode: 'realtime',
-      hardwareAcceleration: 'prefer-software',
-    })
+    videoEncoder.configure(window.appSettings.videoEncoderConfig)
   }
 
   createVideoEncoder()
@@ -593,7 +578,7 @@ export async function startVideoEncoder({
 function initWorkerAndCanvas(canvas: HTMLCanvasElement, offset: number) {
   const worker = new Worker(new URL('@app/workers/decoderWorker.ts', import.meta.url), { type: 'module' })
   const offscreen = canvas.transferControlToOffscreen()
-  worker.postMessage({ type: 'init', canvas: offscreen, offset }, [offscreen])
+  worker.postMessage({ type: 'init', canvas: offscreen, offset, decoderConfig: window.appSettings.videoDecoderConfig }, [offscreen])
   return worker
 }
 
