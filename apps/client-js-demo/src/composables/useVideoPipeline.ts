@@ -38,7 +38,7 @@ export function setupTracks(
   chatFullTrackName: FullTrackName,
   audioTrackAlias: bigint,
   videoTrackAlias: bigint,
-  chatTrackAlias: bigint
+  chatTrackAlias: bigint,
 ) {
   let audioStreamController: ReadableStreamDefaultController<MoqtObject> | null = null
   const audioStream = new ReadableStream<MoqtObject>({
@@ -58,11 +58,15 @@ export function setupTracks(
       videoStreamController = null
     },
   })
-  let chatStreamController: ReadableStreamDefaultController<MoqtObject> | null = null;
+  let chatStreamController: ReadableStreamDefaultController<MoqtObject> | null = null
   const chatStream = new ReadableStream<MoqtObject>({
-    start(controller) { chatStreamController = controller; },
-    cancel() { chatStreamController = null; },
-  });
+    start(controller) {
+      chatStreamController = controller
+    },
+    cancel() {
+      chatStreamController = null
+    },
+  })
   const audioContentSource = new LiveContentSource(audioStream)
   moqClient.addOrUpdateTrack({
     fullTrackName: audioFullTrackName,
@@ -77,13 +81,13 @@ export function setupTracks(
     forwardingPreference: ObjectForwardingPreference.Subgroup,
     contentSource: videoContentSource,
   })
-  const chatContentSource = new LiveContentSource(chatStream);
+  const chatContentSource = new LiveContentSource(chatStream)
   moqClient.addOrUpdateTrack({
     fullTrackName: chatFullTrackName,
     trackAlias: chatTrackAlias,
     forwardingPreference: ObjectForwardingPreference.Subgroup,
     contentSource: chatContentSource,
-  });
+  })
   return {
     audioStream,
     videoStream,
@@ -103,18 +107,17 @@ export function initializeChatMessageSender({
   initialChatGroupId = 10001,
   initialChatObjectId = 0,
 }: {
-  chatFullTrackName: any,
-  chatStreamController: ReadableStreamDefaultController<any> | null,
-  publisherPriority?: number,
-  objectForwardingPreference: any,
-  offset?: number,
-  initialChatGroupId?: number,
-  initialChatObjectId?: number,
+  chatFullTrackName: any
+  chatStreamController: ReadableStreamDefaultController<any> | null
+  publisherPriority?: number
+  objectForwardingPreference: any
+  offset?: number
+  initialChatGroupId?: number
+  initialChatObjectId?: number
 }) {
-
   function send(message: string) {
-    if (!chatStreamController) return;
-    const payload = new TextEncoder().encode(message);
+    if (!chatStreamController) return
+    const payload = new TextEncoder().encode(message)
     const moqt = MoqtObject.newWithPayload(
       chatFullTrackName,
       new Location(BigInt(initialChatGroupId++), BigInt(initialChatObjectId)),
@@ -122,13 +125,13 @@ export function initializeChatMessageSender({
       objectForwardingPreference,
       BigInt(Math.round(performance.timeOrigin + performance.now() + offset)),
       null,
-      payload
-    );
-    chatStreamController.enqueue(moqt);
-    console.log("Chat message sent with location:", initialChatGroupId, initialChatObjectId);
+      payload,
+    )
+    chatStreamController.enqueue(moqt)
+    console.log('Chat message sent with location:', initialChatGroupId, initialChatObjectId)
   }
 
-  return { send };
+  return { send }
 }
 
 export async function startAudioEncoder({
@@ -256,7 +259,6 @@ export function initializeVideoEncoder({
   let videoReader: ReadableStreamDefaultReader<any> | null = null
 
   const createVideoEncoder = () => {
-
     isFirstKeyframeSent = false
     //videoGroupId = 0 //if problematic, open this
     videoObjectId = 0n
@@ -333,7 +335,7 @@ export function initializeVideoEncoder({
       } catch (e) {
         // ignore close errors
       }
-      videoEncoder = null;
+      videoEncoder = null
     }
   }
 
@@ -362,7 +364,7 @@ export function initializeVideoEncoder({
         return { videoEncoder: null, videoReader: null }
       }
 
-      const isFake = (videoTrack as any).isFake === true;
+      const isFake = (videoTrack as any).isFake === true
 
       videoReader = new (window as any).MediaStreamTrackProcessor({
         track: videoTrack,
@@ -375,12 +377,12 @@ export function initializeVideoEncoder({
             if (result.done) break
 
             // Use 0 timestamp for fake tracks, normal timing for real tracks
-            const captureTime = Math.round(performance.timeOrigin + performance.now() + offset);
+            const captureTime = Math.round(performance.timeOrigin + performance.now() + offset)
             pendingVideoTimestamps.push(captureTime)
 
             try {
               let insert_keyframe = false
-              if (window.appSettings.keyFrameInterval !== "auto") {
+              if (window.appSettings.keyFrameInterval !== 'auto') {
                 insert_keyframe = frameCounter % (window.appSettings.keyFrameInterval || 0) === 0
               }
 
@@ -431,8 +433,8 @@ export async function startVideoEncoder({
   objectForwardingPreference: ObjectForwardingPreference
 }) {
   if (!stream) {
-    console.error('No stream provided to video encoder');
-    return { stop: async () => { } };
+    console.error('No stream provided to video encoder')
+    return { stop: async () => {} }
   }
 
   let videoEncoder: VideoEncoder | null = null
@@ -504,13 +506,13 @@ export async function startVideoEncoder({
 
   createVideoEncoder()
 
-  const videoTrack = stream.getVideoTracks()[0];
+  const videoTrack = stream.getVideoTracks()[0]
   if (!videoTrack) {
-    console.error('No video track available in stream');
-    return { stop: async () => { } };
+    console.error('No video track available in stream')
+    return { stop: async () => {} }
   }
 
-  const isFake = (videoTrack as any).isFake === true;
+  const isFake = (videoTrack as any).isFake === true
 
   videoReader = new (window as any).MediaStreamTrackProcessor({
     track: videoTrack,
@@ -522,7 +524,7 @@ export async function startVideoEncoder({
         const result = await reader.read()
         if (result.done) break
 
-        const captureTime = Math.round(performance.timeOrigin + performance.now() + offset);
+        const captureTime = Math.round(performance.timeOrigin + performance.now() + offset)
         pendingVideoTimestamps.push(captureTime)
 
         // Our video is 25 fps. Each 2s, we can send a new keyframe.
@@ -547,28 +549,28 @@ export async function startVideoEncoder({
 
   if (!videoReader) {
     console.error('Failed to create video reader')
-    return { stop: async () => { } }
+    return { stop: async () => {} }
   }
   readAndEncode(videoReader)
 
   const stop = async () => {
-    encoderActive = false;
+    encoderActive = false
     if (videoReader) {
       try {
-        await videoReader.cancel();
+        await videoReader.cancel()
       } catch (e) {
         // ignore cancel errors
       }
-      videoReader = null;
+      videoReader = null
     }
     if (videoEncoder) {
       try {
-        await videoEncoder.flush();
-        videoEncoder.close();
+        await videoEncoder.flush()
+        videoEncoder.close()
       } catch (e) {
         // ignore close errors
       }
-      videoEncoder = null;
+      videoEncoder = null
     }
   }
 
@@ -578,7 +580,10 @@ export async function startVideoEncoder({
 function initWorkerAndCanvas(canvas: HTMLCanvasElement, offset: number) {
   const worker = new Worker(new URL('@app/workers/decoderWorker.ts', import.meta.url), { type: 'module' })
   const offscreen = canvas.transferControlToOffscreen()
-  worker.postMessage({ type: 'init', canvas: offscreen, offset, decoderConfig: window.appSettings.videoDecoderConfig }, [offscreen])
+  worker.postMessage(
+    { type: 'init', canvas: offscreen, offset, decoderConfig: window.appSettings.videoDecoderConfig },
+    [offscreen],
+  )
   return worker
 }
 
@@ -663,12 +668,12 @@ function handleWorkerMessages(worker: Worker, audioNode: AudioWorkletNode, telem
     }
     if (event.data.type === 'latency') {
       if (telemetry) {
-        telemetry.push({ latency: Math.abs(event.data.value), size: 0 }); // Size will be added from decoder
+        telemetry.push({ latency: Math.abs(event.data.value), size: 0 }) // Size will be added from decoder
       }
     }
     if (event.data.type === 'throughput') {
       if (telemetry) {
-        telemetry.push({ latency: 0, size: event.data.value });
+        telemetry.push({ latency: 0, size: event.data.value })
       }
     }
   }
@@ -793,10 +798,10 @@ export async function subscribeToChatTrack({
   chatFullTrackName,
   onMessage,
 }: {
-  moqClient: MoqtailClient,
-  chatTrackAlias: number,
-  chatFullTrackName: FullTrackName,
-  onMessage: (msg: any) => void,
+  moqClient: MoqtailClient
+  chatTrackAlias: number
+  chatFullTrackName: FullTrackName
+  onMessage: (msg: any) => void
 }) {
   const subscribeMsg = Subscribe.newLatestObject(
     moqClient.nextClientRequestId,
@@ -806,34 +811,33 @@ export async function subscribeToChatTrack({
     GroupOrder.Original,
     true,
     [],
-  );
+  )
 
   moqClient.subscribe(subscribeMsg).then((stream) => {
     if (stream instanceof ReadableStream) {
-      const reader = stream.getReader();
-      (async () => {
+      const reader = stream.getReader()
+      ;(async () => {
         while (true) {
-          const { done, value: obj } = await reader.read();
-          console.log("Received chat object:", obj?.location?.group?.toString(), obj?.location?.object?.toString());
-          if (!(obj instanceof MoqtObject)) throw new Error('Expected MoqtObject, got: ' + obj);
-          if (done) break;
+          const { done, value: obj } = await reader.read()
+          console.log('Received chat object:', obj?.location?.group?.toString(), obj?.location?.object?.toString())
+          if (!(obj instanceof MoqtObject)) throw new Error('Expected MoqtObject, got: ' + obj)
+          if (done) break
           if (!obj.payload) {
-            console.warn('Received MoqtObject without payload, skipping:', obj);
-            continue;
+            console.warn('Received MoqtObject without payload, skipping:', obj)
+            continue
           }
           try {
-            const decoded = new TextDecoder().decode(obj.payload);
-            const msgObj = JSON.parse(decoded);
-            console.log("Decoded chat message:", msgObj);
-            onMessage(msgObj);
-          }
-          catch (e) {
-            console.error("Failed to decode chat message", e);
+            const decoded = new TextDecoder().decode(obj.payload)
+            const msgObj = JSON.parse(decoded)
+            console.log('Decoded chat message:', msgObj)
+            onMessage(msgObj)
+          } catch (e) {
+            console.error('Failed to decode chat message', e)
           }
         }
-      })();
+      })()
     } else {
-      console.error('Subscribe failed:', stream);
+      console.error('Subscribe failed:', stream)
     }
-  });
+  })
 }

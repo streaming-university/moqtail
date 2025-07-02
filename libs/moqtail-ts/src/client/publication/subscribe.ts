@@ -161,9 +161,13 @@ export class SubscribePublication {
                 }
                 await this.lock.release()
               } catch (err) {
-                console.warn('error in closing stream: id, latestLocation.group, err', this.#id, this.latestLocation.group, err)
+                console.warn(
+                  'error in closing stream: id, latestLocation.group, err',
+                  this.#id,
+                  this.latestLocation.group,
+                  err,
+                )
               }
-
             }
             await this.lock.acquire()
             this.latestLocation = obj.location

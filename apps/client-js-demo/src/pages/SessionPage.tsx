@@ -1,23 +1,33 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react'
+import { Mic, MicOff, Video, VideoOff, MonitorUp, Phone, Send, Users, MessageSquare } from 'lucide-react'
+import { useSession } from '../contexts/SessionContext'
 import {
-  Mic,
-  MicOff,
-  Video,
-  VideoOff,
-  MonitorUp,
-  Phone,
-  Send,
-  Users,
-  MessageSquare
-} from 'lucide-react';
-import { useSession } from "../contexts/SessionContext"
-import { RoomUser, ChatMessage, TrackUpdateResponse, ToggleResponse, UserDisconnectedMessage, TrackType, UpdateTrackRequest, RoomTimeoutMessage } from '../types/types';
-import { useSocket } from '../sockets/SocketContext';
-import { FullTrackName, ObjectForwardingPreference, Tuple } from '../../../../libs/moqtail-ts/src/model';
-import { announceNamespaces, initializeChatMessageSender, initializeVideoEncoder, sendClientSetup, setupTracks, startAudioEncoder, startVideoEncoder, subscribeToChatTrack, useVideoPublisher, useVideoSubscriber } from '../composables/useVideoPipeline';
-import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client';
-import { AkamaiOffset } from '../../../../libs/moqtail-ts/src/util/get_akamai_offset';
-import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry';
+  RoomUser,
+  ChatMessage,
+  TrackUpdateResponse,
+  ToggleResponse,
+  UserDisconnectedMessage,
+  TrackType,
+  UpdateTrackRequest,
+  RoomTimeoutMessage,
+} from '../types/types'
+import { useSocket } from '../sockets/SocketContext'
+import { FullTrackName, ObjectForwardingPreference, Tuple } from '../../../../libs/moqtail-ts/src/model'
+import {
+  announceNamespaces,
+  initializeChatMessageSender,
+  initializeVideoEncoder,
+  sendClientSetup,
+  setupTracks,
+  startAudioEncoder,
+  startVideoEncoder,
+  subscribeToChatTrack,
+  useVideoPublisher,
+  useVideoSubscriber,
+} from '../composables/useVideoPipeline'
+import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client'
+import { AkamaiOffset } from '../../../../libs/moqtail-ts/src/util/get_akamai_offset'
+import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
 
 function SessionPage() {
   // initialize the MOQTail client
@@ -26,63 +36,63 @@ function SessionPage() {
 
   // initialize the variables
   const { userId, username, roomState, setSession, clearSession } = useSession()
-  const [isMicOn, setIsMicOn] = useState(false);
-  const [isCamOn, setisCamOn] = useState(false);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(true); // TODO: implement MoQ chat
-  const [chatMessage, setChatMessage] = useState('');
-  const { socket: contextSocket, reconnect } = useSocket();
-  const [users, setUsers] = useState<{ [K: string]: RoomUser }>({});
-  const [remoteCanvasRefs, setRemoteCanvasRefs] = useState<{ [id: string]: React.RefObject<HTMLCanvasElement> }>({});
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [telemetryData, setTelemetryData] = useState<{ [userId: string]: { latency: number; throughput: number } }>({});
-  const telemetryInstances = useRef<{ [userId: string]: NetworkTelemetry }>({});
-  const [timeRemaining, setTimeRemaining] = useState<string>('--:--');
-  const [timeRemainingColor, setTimeRemainingColor] = useState<string>('text-green-400');
-  const selfVideoRef = useRef<HTMLVideoElement>(null);
-  const selfMediaStream = useRef<MediaStream | null>(null);
+  const [isMicOn, setIsMicOn] = useState(false)
+  const [isCamOn, setisCamOn] = useState(false)
+  const [isScreenSharing, setIsScreenSharing] = useState(false)
+  const [isChatOpen, setIsChatOpen] = useState(true) // TODO: implement MoQ chat
+  const [chatMessage, setChatMessage] = useState('')
+  const { socket: contextSocket, reconnect } = useSocket()
+  const [users, setUsers] = useState<{ [K: string]: RoomUser }>({})
+  const [remoteCanvasRefs, setRemoteCanvasRefs] = useState<{ [id: string]: React.RefObject<HTMLCanvasElement> }>({})
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [telemetryData, setTelemetryData] = useState<{ [userId: string]: { latency: number; throughput: number } }>({})
+  const telemetryInstances = useRef<{ [userId: string]: NetworkTelemetry }>({})
+  const [timeRemaining, setTimeRemaining] = useState<string>('--:--')
+  const [timeRemainingColor, setTimeRemainingColor] = useState<string>('text-green-400')
+  const selfVideoRef = useRef<HTMLVideoElement>(null)
+  const selfMediaStream = useRef<MediaStream | null>(null)
   const publisherInitialized = useRef<boolean>(false)
   const moqtailClientInitStarted = useRef<boolean>(false)
-  const videoEncoderObjRef = useRef<any>(null);
-  const chatSenderRef = useRef<{ send: (msg: string) => void } | null>(null);
-  const akamaiOffsetRef = useRef<number>(0);
-  const [mediaReady, setMediaReady] = useState(false);
+  const videoEncoderObjRef = useRef<any>(null)
+  const chatSenderRef = useRef<{ send: (msg: string) => void } | null>(null)
+  const akamaiOffsetRef = useRef<number>(0)
+  const [mediaReady, setMediaReady] = useState(false)
 
   const handleSendMessage = async () => {
-  if (chatMessage.trim()) {
-    // Format timestamp as h.mmAM/PM
-    const now = new Date();
-    let hours = now.getHours();
-    const minutes = now.getMinutes();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    const formattedMinutes = minutes < 10 ? '0' + minutes : minutes;
-    const formattedTime = `${hours}:${formattedMinutes}${ampm}`;
-    if (chatSenderRef.current) {
-      chatSenderRef.current.send(
-        JSON.stringify({
+    if (chatMessage.trim()) {
+      // Format timestamp as h.mmAM/PM
+      const now = new Date()
+      let hours = now.getHours()
+      const minutes = now.getMinutes()
+      const ampm = hours >= 12 ? 'PM' : 'AM'
+      hours = hours % 12
+      hours = hours ? hours : 12
+      const formattedMinutes = minutes < 10 ? '0' + minutes : minutes
+      const formattedTime = `${hours}:${formattedMinutes}${ampm}`
+      if (chatSenderRef.current) {
+        chatSenderRef.current.send(
+          JSON.stringify({
+            sender: username,
+            message: chatMessage,
+            timestamp: formattedTime,
+          }),
+        )
+      }
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: Math.random().toString(10).slice(2),
           sender: username,
           message: chatMessage,
           timestamp: formattedTime,
-        })
-      );
+        },
+      ])
+      setChatMessage('') // Clear the input field after sending
     }
-    setChatMessages(prev => [
-      ...prev,
-      {
-        id: Math.random().toString(10).slice(2),
-        sender: username,
-        message: chatMessage,
-        timestamp: formattedTime,
-      }
-    ]);
-    setChatMessage(''); // Clear the input field after sending
   }
-};
 
   const addUser = (user: RoomUser): void => {
-    setUsers(prev => {
+    setUsers((prev) => {
       const users = { ...prev }
       users[user.id] = user
       return users
@@ -90,282 +100,290 @@ function SessionPage() {
   }
 
   const createCanvasRef = (userId: string): void => {
-    setRemoteCanvasRefs(prev => ({
+    setRemoteCanvasRefs((prev) => ({
       ...prev,
-      [userId]: React.createRef<HTMLCanvasElement>()
-    }));
+      [userId]: React.createRef<HTMLCanvasElement>(),
+    }))
   }
 
   const isSelf = (id: string): boolean => {
-    return id === userId;
-  };
+    return id === userId
+  }
 
-   const getUserInitials = (name: string): string => {
-    const words = name.trim().split(/\s+/);
+  const getUserInitials = (name: string): string => {
+    const words = name.trim().split(/\s+/)
     if (words.length === 1) {
-      return words[0].substring(0, 2).toUpperCase();
+      return words[0].substring(0, 2).toUpperCase()
     } else {
-      return words.slice(0, 2).map(word => word.charAt(0)).join('').toUpperCase();
+      return words
+        .slice(0, 2)
+        .map((word) => word.charAt(0))
+        .join('')
+        .toUpperCase()
     }
-  };
+  }
 
   const getUserColor = (name: string): string => {
     const colors = [
-      'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500',
-      'bg-indigo-500', 'bg-yellow-500', 'bg-red-500', 'bg-teal-500'
-    ];
-    let hash = 0;
+      'bg-blue-500',
+      'bg-green-500',
+      'bg-purple-500',
+      'bg-pink-500',
+      'bg-indigo-500',
+      'bg-yellow-500',
+      'bg-red-500',
+      'bg-teal-500',
+    ]
+    let hash = 0
     for (let i = 0; i < name.length; i++) {
-      hash = name.charCodeAt(i) + ((hash << 5) - hash);
+      hash = name.charCodeAt(i) + ((hash << 5) - hash)
     }
-    return colors[Math.abs(hash) % colors.length];
-  };
+    return colors[Math.abs(hash) % colors.length]
+  }
   // Toggle mic handler
   const handleToggle = (kind: 'mic' | 'cam') => {
     // If trying to toggle camera while screen sharing, stop screen sharing first
     if (kind === 'cam' && isScreenSharing) {
-      handleToggleScreenShare(); // This will stop screen sharing
+      handleToggleScreenShare() // This will stop screen sharing
       // After screen sharing stops, toggle the camera
       setTimeout(() => {
-        const setter = setisCamOn;
+        const setter = setisCamOn
         setter((prev) => {
-          const newValue = !prev;
-          setUsers(users => {
-            const u = users[userId];
-            users[userId] = { ...u, hasVideo: newValue };
+          const newValue = !prev
+          setUsers((users) => {
+            const u = users[userId]
+            users[userId] = { ...u, hasVideo: newValue }
             // Video track switching logic for camera
-            const audioTrack = selfMediaStream.current?.getAudioTracks()[0];
-            let newStream;
+            const audioTrack = selfMediaStream.current?.getAudioTracks()[0]
+            let newStream
             if (newValue) {
-              navigator.mediaDevices.getUserMedia({ video: { aspectRatio: 16 / 9 } }).then(videoStream => {
-                const realVideoTrack = videoStream.getVideoTracks()[0];
-                const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0];
+              navigator.mediaDevices.getUserMedia({ video: { aspectRatio: 16 / 9 } }).then((videoStream) => {
+                const realVideoTrack = videoStream.getVideoTracks()[0]
+                const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
                 if (oldVideoTrack) {
-                  oldVideoTrack.stop();
-                  selfMediaStream.current?.removeTrack(oldVideoTrack);
+                  oldVideoTrack.stop()
+                  selfMediaStream.current?.removeTrack(oldVideoTrack)
                 }
-                newStream = new MediaStream();
-                if (audioTrack) newStream.addTrack(audioTrack);
-                newStream.addTrack(realVideoTrack);
-                selfMediaStream.current = newStream;
+                newStream = new MediaStream()
+                if (audioTrack) newStream.addTrack(audioTrack)
+                newStream.addTrack(realVideoTrack)
+                selfMediaStream.current = newStream
                 if (videoEncoderObjRef.current) {
-                  videoEncoderObjRef.current.offset = akamaiOffsetRef.current;
-                  videoEncoderObjRef.current.start(selfMediaStream.current);
+                  videoEncoderObjRef.current.offset = akamaiOffsetRef.current
+                  videoEncoderObjRef.current.start(selfMediaStream.current)
                 }
                 if (selfVideoRef.current) {
-                  selfVideoRef.current.srcObject = newStream;
-                  selfVideoRef.current.muted = true;
+                  selfVideoRef.current.srcObject = newStream
+                  selfVideoRef.current.muted = true
                 }
-              });
+              })
             } else {
-              const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0];
+              const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
               if (oldVideoTrack) {
-                oldVideoTrack.stop();
-                selfMediaStream.current?.removeTrack(oldVideoTrack);
+                oldVideoTrack.stop()
+                selfMediaStream.current?.removeTrack(oldVideoTrack)
               }
-              newStream = new MediaStream();
-              if (audioTrack) newStream.addTrack(audioTrack);
-              selfMediaStream.current = newStream;
-              if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream;
-              selfVideoRef.current!.muted = true;
+              newStream = new MediaStream()
+              if (audioTrack) newStream.addTrack(audioTrack)
+              selfMediaStream.current = newStream
+              if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream
+              selfVideoRef.current!.muted = true
               if (videoEncoderObjRef.current) {
-                videoEncoderObjRef.current.stop();
+                videoEncoderObjRef.current.stop()
               }
             }
-            return users;
-          });
-          contextSocket?.emit('toggle-button', { kind, value: newValue });
-          return newValue;
-        });
-      }, 100); // Small delay to ensure screen sharing stops first
-      return;
+            return users
+          })
+          contextSocket?.emit('toggle-button', { kind, value: newValue })
+          return newValue
+        })
+      }, 100) // Small delay to ensure screen sharing stops first
+      return
     }
 
-     const setter = kind === 'mic' ? setIsMicOn : setisCamOn
+    const setter = kind === 'mic' ? setIsMicOn : setisCamOn
     setter((prev) => {
-      const newValue = !prev;
-      setUsers(users => {
+      const newValue = !prev
+      setUsers((users) => {
         const u = users[userId]
         if (kind === 'mic') {
-          users[userId] = { ...u, hasAudio: newValue };
-          toggleMediaStreamAudio(newValue);
+          users[userId] = { ...u, hasAudio: newValue }
+          toggleMediaStreamAudio(newValue)
         } else if (kind === 'cam') {
-          users[userId] = { ...u, hasVideo: newValue };
+          users[userId] = { ...u, hasVideo: newValue }
           // --- Video track switching logic ---
-          const audioTrack = selfMediaStream.current?.getAudioTracks()[0];
-          let newStream;
+          const audioTrack = selfMediaStream.current?.getAudioTracks()[0]
+          let newStream
           if (newValue) {
-            navigator.mediaDevices.getUserMedia({ video: { aspectRatio: 16 / 9 } }).then(videoStream => {
-              const realVideoTrack = videoStream.getVideoTracks()[0];
-              const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0];
+            navigator.mediaDevices.getUserMedia({ video: { aspectRatio: 16 / 9 } }).then((videoStream) => {
+              const realVideoTrack = videoStream.getVideoTracks()[0]
+              const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
               if (oldVideoTrack) {
-                oldVideoTrack.stop();
-                selfMediaStream.current?.removeTrack(oldVideoTrack);
+                oldVideoTrack.stop()
+                selfMediaStream.current?.removeTrack(oldVideoTrack)
               }
-              newStream = new MediaStream();
-              if (audioTrack) newStream.addTrack(audioTrack);
-              newStream.addTrack(realVideoTrack);
-              selfMediaStream.current = newStream;
+              newStream = new MediaStream()
+              if (audioTrack) newStream.addTrack(audioTrack)
+              newStream.addTrack(realVideoTrack)
+              selfMediaStream.current = newStream
               if (videoEncoderObjRef.current) {
-                videoEncoderObjRef.current.offset = akamaiOffsetRef.current;
-                videoEncoderObjRef.current.start(selfMediaStream.current);
+                videoEncoderObjRef.current.offset = akamaiOffsetRef.current
+                videoEncoderObjRef.current.start(selfMediaStream.current)
               }
               if (selfVideoRef.current) {
                 selfVideoRef.current.srcObject = newStream
-                selfVideoRef.current.muted = true; // Ensure muted
-              };
-            });
+                selfVideoRef.current.muted = true // Ensure muted
+              }
+            })
           } else {
-            const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0];
+            const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
             if (oldVideoTrack) {
-              oldVideoTrack.stop(); // This will turn off the camera indicator
-              selfMediaStream.current?.removeTrack(oldVideoTrack);
+              oldVideoTrack.stop() // This will turn off the camera indicator
+              selfMediaStream.current?.removeTrack(oldVideoTrack)
             }
-            newStream = new MediaStream();
-            if (audioTrack) newStream.addTrack(audioTrack);
-            selfMediaStream.current = newStream;
-            if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream;
-            selfVideoRef.current!.muted = true;
+            newStream = new MediaStream()
+            if (audioTrack) newStream.addTrack(audioTrack)
+            selfMediaStream.current = newStream
+            if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream
+            selfVideoRef.current!.muted = true
 
             if (videoEncoderObjRef.current) {
-              videoEncoderObjRef.current.stop();
+              videoEncoderObjRef.current.stop()
             }
           }
         }
-        return users;
-      });
-      contextSocket?.emit('toggle-button', { kind, value: newValue });
-      return newValue;
-    });
-  };
+        return users
+      })
+      contextSocket?.emit('toggle-button', { kind, value: newValue })
+      return newValue
+    })
+  }
 
   function toggleMediaStreamAudio(val: boolean) {
     const mediaStream = selfMediaStream.current!
     if (mediaStream) {
       const tracks = mediaStream.getAudioTracks()
-      tracks.forEach(track => track.enabled = val)
+      tracks.forEach((track) => (track.enabled = val))
     }
   }
 
   // Toggle video handler
   const handleToggleCam = () => {
     handleToggle('cam')
-  };
+  }
   const handleToggleMic = () => {
     handleToggle('mic')
-  };
+  }
 
-   const handleToggleScreenShare = async () => {
+  const handleToggleScreenShare = async () => {
     if (!isScreenSharing) {
-      const someoneSharing = Object.values(users).some(
-        u => u.hasScreenshare && u.id !== userId
-      );      if (!isScreenSharing && someoneSharing) {
-        alert("Only one person can share their screen at a time.");
-        return;
+      const someoneSharing = Object.values(users).some((u) => u.hasScreenshare && u.id !== userId)
+      if (!isScreenSharing && someoneSharing) {
+        alert('Only one person can share their screen at a time.')
+        return
       }
 
-      const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0];
+      const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
       if (oldVideoTrack) {
-        oldVideoTrack.stop();
-        selfMediaStream.current?.removeTrack(oldVideoTrack);
+        oldVideoTrack.stop()
+        selfMediaStream.current?.removeTrack(oldVideoTrack)
       }
 
       try {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-        const screenTrack = screenStream.getVideoTracks()[0];
-        const audioTrack = selfMediaStream.current?.getAudioTracks()[0];
-        const newStream = new MediaStream();
-        if (audioTrack) newStream.addTrack(audioTrack);
-        newStream.addTrack(screenTrack);
-        selfMediaStream.current = newStream;
-        if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream;
-        if (selfVideoRef.current) selfVideoRef.current.muted = true; // Ensure muted
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true })
+        const screenTrack = screenStream.getVideoTracks()[0]
+        const audioTrack = selfMediaStream.current?.getAudioTracks()[0]
+        const newStream = new MediaStream()
+        if (audioTrack) newStream.addTrack(audioTrack)
+        newStream.addTrack(screenTrack)
+        selfMediaStream.current = newStream
+        if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream
+        if (selfVideoRef.current) selfVideoRef.current.muted = true // Ensure muted
         if (videoEncoderObjRef.current) {
-          videoEncoderObjRef.current.offset = akamaiOffsetRef.current;
-          videoEncoderObjRef.current.start(selfMediaStream.current);
+          videoEncoderObjRef.current.offset = akamaiOffsetRef.current
+          videoEncoderObjRef.current.start(selfMediaStream.current)
         }
-        setIsScreenSharing(true);
-        contextSocket?.emit('screen-share-toggled', { userId, hasScreenshare: true });
-        setUsers(users => ({
+        setIsScreenSharing(true)
+        contextSocket?.emit('screen-share-toggled', { userId, hasScreenshare: true })
+        setUsers((users) => ({
           ...users,
-          [userId]: { ...users[userId], hasScreenshare: true, hasVideo: true }
-        }));
+          [userId]: { ...users[userId], hasScreenshare: true, hasVideo: true },
+        }))
         screenTrack.onended = () => {
-          setIsScreenSharing(false);
-          setisCamOn(false); // Turn off video button state
-          contextSocket?.emit('screen-share-toggled', { userId, hasScreenshare: false });
-          setUsers(users => ({
+          setIsScreenSharing(false)
+          setisCamOn(false) // Turn off video button state
+          contextSocket?.emit('screen-share-toggled', { userId, hasScreenshare: false })
+          setUsers((users) => ({
             ...users,
-            [userId]: { ...users[userId], hasScreenshare: false, hasVideo: false }
-          }));
-          handleRestoreCameraAfterScreenShare();
-        };
+            [userId]: { ...users[userId], hasScreenshare: false, hasVideo: false },
+          }))
+          handleRestoreCameraAfterScreenShare()
+        }
       } catch (err) {
-        console.error('Failed to start screen sharing', err);
+        console.error('Failed to start screen sharing', err)
       }
     } else {
-      const screenTrack = selfMediaStream.current?.getVideoTracks()[0];
+      const screenTrack = selfMediaStream.current?.getVideoTracks()[0]
       if (screenTrack) {
-        screenTrack.stop();
-        selfMediaStream.current?.removeTrack(screenTrack);
+        screenTrack.stop()
+        selfMediaStream.current?.removeTrack(screenTrack)
       }
-      setIsScreenSharing(false);
-      setisCamOn(false); // Turn off video button state
-      contextSocket?.emit('screen-share-toggled', { userId, hasScreenshare: false });
-      setUsers(users => ({
+      setIsScreenSharing(false)
+      setisCamOn(false) // Turn off video button state
+      contextSocket?.emit('screen-share-toggled', { userId, hasScreenshare: false })
+      setUsers((users) => ({
         ...users,
-        [userId]: { ...users[userId], hasScreenshare: false, hasVideo: false }
-      }));
-      handleRestoreCameraAfterScreenShare();
-    }
-  };
-
-  function handleRestoreCameraAfterScreenShare() {
-    const audioTrack = selfMediaStream.current?.getAudioTracks()[0];
-    const newStream = new MediaStream();
-    if (audioTrack) newStream.addTrack(audioTrack);
-
-    // Always turn off video when screen share ends
-    selfMediaStream.current = newStream;
-    if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream;
-    selfVideoRef.current!.muted = true;
-    if (videoEncoderObjRef.current) {
-      videoEncoderObjRef.current.stop();
+        [userId]: { ...users[userId], hasScreenshare: false, hasVideo: false },
+      }))
+      handleRestoreCameraAfterScreenShare()
     }
   }
 
+  function handleRestoreCameraAfterScreenShare() {
+    const audioTrack = selfMediaStream.current?.getAudioTracks()[0]
+    const newStream = new MediaStream()
+    if (audioTrack) newStream.addTrack(audioTrack)
+
+    // Always turn off video when screen share ends
+    selfMediaStream.current = newStream
+    if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream
+    selfVideoRef.current!.muted = true
+    if (videoEncoderObjRef.current) {
+      videoEncoderObjRef.current.stop()
+    }
+  }
 
   useEffect(() => {
     async function startPublisher() {
       try {
         //console.log('Starting publisher for user:', userId);
         if (!userId) {
-          console.error('User ID is not defined');
-          return;
+          console.error('User ID is not defined')
+          return
         }
         if (!roomState) {
-          console.error('Room state is not defined');
-          return;
+          console.error('Room state is not defined')
+          return
         }
 
-        selfMediaStream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+        selfMediaStream.current = await navigator.mediaDevices.getUserMedia({ audio: true })
         const audioTracks = selfMediaStream.current.getAudioTracks()
-        audioTracks.forEach(track => track.enabled = false)
+        audioTracks.forEach((track) => (track.enabled = false))
         //console.log('Got user media:', selfMediaStream.current);
-        setMediaReady(true);
+        setMediaReady(true)
 
         if (selfVideoRef.current) {
-          selfVideoRef.current.srcObject = selfMediaStream.current;
-          selfVideoRef.current.muted = true; // Ensure muted
+          selfVideoRef.current.srcObject = selfMediaStream.current
+          selfVideoRef.current.muted = true // Ensure muted
           //console.log('Set video srcObject');
         } else {
-          console.error('selfVideoRef.current is null');
-          return;
+          console.error('selfVideoRef.current is null')
+          return
         }
-        const roomName = roomState?.name;
+        const roomName = roomState?.name
         if (!roomName) {
-          console.error('Room name is not defined');
-          return;
+          console.error('Room name is not defined')
+          return
         }
 
         const videoFullTrackName = getTrackname(roomName, userId, 'video')
@@ -373,32 +391,32 @@ function SessionPage() {
         const chatFullTrackName = getTrackname(roomName, userId, 'chat')
         //console.log('Constructed track names:', videoFullTrackName, audioFullTrackName);
 
-        const selfUser = roomState.users[userId];
+        const selfUser = roomState.users[userId]
         if (!selfUser) {
-          console.error('Self user not found in room state: %s', userId);
-          return;
+          console.error('Self user not found in room state: %s', userId)
+          return
         }
         //console.log('Self user found:', selfUser);
-        const videoTrack = selfUser?.publishedTracks['video'];
-        const videoTrackAlias = videoTrack?.alias;
+        const videoTrack = selfUser?.publishedTracks['video']
+        const videoTrackAlias = videoTrack?.alias
 
-        const audioTrack = selfUser?.publishedTracks['audio'];
-        const audioTrackAlias = audioTrack?.alias;
+        const audioTrack = selfUser?.publishedTracks['audio']
+        const audioTrackAlias = audioTrack?.alias
 
-        const chatTrack = selfUser?.publishedTracks['chat'];
-        const chatTrackAlias = chatTrack?.alias;
+        const chatTrack = selfUser?.publishedTracks['chat']
+        const chatTrackAlias = chatTrack?.alias
 
         if (isNaN(videoTrackAlias ?? undefined)) {
-          console.error("Video track alias not found for user:", userId);
-          return;
+          console.error('Video track alias not found for user:', userId)
+          return
         }
         if (isNaN(audioTrackAlias ?? undefined)) {
-          console.error("Audio track alias not found for user:", userId);
-          return;
+          console.error('Audio track alias not found for user:', userId)
+          return
         }
 
-        const offset = await AkamaiOffset.getClockSkew();
-        akamaiOffsetRef.current = offset;
+        const offset = await AkamaiOffset.getClockSkew()
+        akamaiOffsetRef.current = offset
         announceNamespaces(moqClient!, videoFullTrackName.namespace)
         let tracks = setupTracks(
           moqClient!,
@@ -407,7 +425,7 @@ function SessionPage() {
           chatFullTrackName,
           BigInt(audioTrackAlias),
           BigInt(videoTrackAlias),
-          BigInt(chatTrackAlias)
+          BigInt(chatTrackAlias),
         )
 
         videoEncoderObjRef.current = initializeVideoEncoder({
@@ -415,15 +433,15 @@ function SessionPage() {
           videoStreamController: tracks.getVideoStreamController(),
           publisherPriority: 1,
           offset,
-          objectForwardingPreference: ObjectForwardingPreference.Subgroup
-        });
+          objectForwardingPreference: ObjectForwardingPreference.Subgroup,
+        })
 
         // Only start video encoder if we have video tracks
-        const hasVideoTrack = selfMediaStream.current.getVideoTracks().length > 0;
-        let videoPromise: Promise<any> = Promise.resolve();
+        const hasVideoTrack = selfMediaStream.current.getVideoTracks().length > 0
+        let videoPromise: Promise<any> = Promise.resolve()
 
         if (hasVideoTrack) {
-          videoPromise = videoEncoderObjRef.current.start(selfMediaStream.current);
+          videoPromise = videoEncoderObjRef.current.start(selfMediaStream.current)
         }
 
         const audioPromise = startAudioEncoder({
@@ -433,15 +451,15 @@ function SessionPage() {
           publisherPriority: 1,
           audioGroupId: 0,
           offset,
-          objectForwardingPreference: ObjectForwardingPreference.Subgroup
-        });
+          objectForwardingPreference: ObjectForwardingPreference.Subgroup,
+        })
         chatSenderRef.current = initializeChatMessageSender({
           chatFullTrackName,
           chatStreamController: tracks.getChatStreamController(),
           publisherPriority: 1,
           objectForwardingPreference: ObjectForwardingPreference.Subgroup,
           offset,
-        });
+        })
 
         await Promise.all([videoPromise, audioPromise])
 
@@ -450,7 +468,7 @@ function SessionPage() {
         // and they can subscribe
         const updateTrackRequest: UpdateTrackRequest = {
           trackType: 'video',
-          event: 'announce'
+          event: 'announce',
         }
         contextSocket?.emit('update-track', updateTrackRequest)
 
@@ -459,9 +477,8 @@ function SessionPage() {
 
         updateTrackRequest.trackType = 'chat'
         contextSocket?.emit('update-track', updateTrackRequest)
-
       } catch (err) {
-        console.error('Error in publisher setup:', err);
+        console.error('Error in publisher setup:', err)
       }
     }
     //console.log('before startPublisher', moqClient, userId, selfVideoRef.current, publisherInitialized)
@@ -476,13 +493,12 @@ function SessionPage() {
         }
       }, 1000)
     }
-  }, [userId, roomState, moqClient]);
-
+  }, [userId, roomState, moqClient])
 
   useEffect(() => {
     if (!username || !roomState) {
-      leaveRoom();
-      return;
+      leaveRoom()
+      return
     }
 
     if (!moqtailClientInitStarted.current) {
@@ -493,195 +509,194 @@ function SessionPage() {
         setMoqClient(client)
         //console.log('initClient', client)
         if (roomState && Object.values(users).length === 0) {
-          const otherUsers = Object.keys(roomState.users).filter(uId => uId != userId)
-          setUsers(roomState.users);
+          const otherUsers = Object.keys(roomState.users).filter((uId) => uId != userId)
+          setUsers(roomState.users)
           // Initialize telemetry for all existing users
-          otherUsers.forEach(uId => initializeTelemetryForUser(uId));
-          const canvasRefs = Object.fromEntries(
-            otherUsers.map(uId => [uId, React.createRef<HTMLCanvasElement>()])
-          )
-          setRemoteCanvasRefs(canvasRefs);
+          otherUsers.forEach((uId) => initializeTelemetryForUser(uId))
+          const canvasRefs = Object.fromEntries(otherUsers.map((uId) => [uId, React.createRef<HTMLCanvasElement>()]))
+          setRemoteCanvasRefs(canvasRefs)
         }
       }
 
       initClient()
     }
 
-
-    if (!contextSocket) return;
-    const socket = contextSocket;
+    if (!contextSocket) return
+    const socket = contextSocket
 
     socket.on('user-joined', (user: RoomUser) => {
-      console.info(`User joined: ${user.name} (${user.id})`);
+      console.info(`User joined: ${user.name} (${user.id})`)
       addUser(user)
-      initializeTelemetryForUser(user.id);
-      setRemoteCanvasRefs(prev => ({
+      initializeTelemetryForUser(user.id)
+      setRemoteCanvasRefs((prev) => ({
         ...prev,
-        [user.id]: React.createRef<HTMLCanvasElement>()
-      }));
-    });
+        [user.id]: React.createRef<HTMLCanvasElement>(),
+      }))
+    })
 
     socket.on('track-updated', (response: TrackUpdateResponse) => {
-      setUsers(prevUsers => {
+      setUsers((prevUsers) => {
         //console.log('track-updated', prevUsers, response)
-        const updatedUser = prevUsers[response.userId];
+        const updatedUser = prevUsers[response.userId]
         if (updatedUser) {
-          const track = response.track;
+          const track = response.track
           if (track.kind === 'video' || track.kind === 'audio' || track.kind === 'chat') {
-            updatedUser.publishedTracks[track.kind] = track;
+            updatedUser.publishedTracks[track.kind] = track
           }
         }
-        return { ...prevUsers };
-      });
-    });
+        return { ...prevUsers }
+      })
+    })
 
     socket.on('button-toggled', (response: ToggleResponse) => {
-      setUsers(prevUsers => {
-        const updatedUsers = { ...prevUsers };
-        const user = updatedUsers[response.userId];
+      setUsers((prevUsers) => {
+        const updatedUsers = { ...prevUsers }
+        const user = updatedUsers[response.userId]
         if (user) {
           if (response.kind === 'mic') {
-            user.hasAudio = response.value;
+            user.hasAudio = response.value
           }
           if (response.kind === 'cam') {
-            user.hasVideo = response.value;
+            user.hasVideo = response.value
           }
         }
-        return updatedUsers;
-      });
-    });
+        return updatedUsers
+      })
+    })
     socket.on('screen-share-toggled', ({ userId: toggledUserId, hasScreenshare }) => {
-      setUsers(prevUsers => {
-        if (!prevUsers[toggledUserId]) return prevUsers;
+      setUsers((prevUsers) => {
+        if (!prevUsers[toggledUserId]) return prevUsers
         return {
           ...prevUsers,
           [toggledUserId]: {
             ...prevUsers[toggledUserId],
             hasVideo: hasScreenshare,
-            hasScreenshare
-          }
-        };
-      });
-    });
+            hasScreenshare,
+          },
+        }
+      })
+    })
 
     socket.on('user-disconnect', (msg: UserDisconnectedMessage) => {
-      console.info(`User disconnected: ${msg.userId}`);
-      setUsers(prev => {
+      console.info(`User disconnected: ${msg.userId}`)
+      setUsers((prev) => {
         const users = { ...prev }
         delete users[msg.userId]
         return users
-      });
-      const canvasRef = remoteCanvasRefs[msg.userId];
+      })
+      const canvasRef = remoteCanvasRefs[msg.userId]
       if (canvasRef && canvasRef.current) {
-        canvasRef.current.remove();
+        canvasRef.current.remove()
       }
-      setRemoteCanvasRefs(prev => {
-        const newRefs = { ...prev };
-        delete newRefs[msg.userId];
-        return newRefs;
-      });
+      setRemoteCanvasRefs((prev) => {
+        const newRefs = { ...prev }
+        delete newRefs[msg.userId]
+        return newRefs
+      })
       // Clean up telemetry
-      delete telemetryInstances.current[msg.userId];
-      setTelemetryData(prev => {
-        const newData = { ...prev };
-        delete newData[msg.userId];
-        return newData;
-      });
+      delete telemetryInstances.current[msg.userId]
+      setTelemetryData((prev) => {
+        const newData = { ...prev }
+        delete newData[msg.userId]
+        return newData
+      })
       // TODO: unsubscribe
-    });
+    })
 
     socket.on('room-timeout', (msg: RoomTimeoutMessage) => {
-      console.info('Room timeout:', msg.message);
-      alert(`${msg.message}\n\nYou will be redirected to the home page.`);
+      console.info('Room timeout:', msg.message)
+      alert(`${msg.message}\n\nYou will be redirected to the home page.`)
 
-      leaveRoom();
-    });
-
+      leaveRoom()
+    })
 
     return () => {
-      socket.off('user-joined');
-      socket.off('track-updated');
-      socket.off('button-toggled');
-      socket.off('user-disconnect');
-      socket.off('room-timeout');
-      socket.off('screen-share-toggled');
-    };
-  }, [contextSocket]);
+      socket.off('user-joined')
+      socket.off('track-updated')
+      socket.off('button-toggled')
+      socket.off('user-disconnect')
+      socket.off('room-timeout')
+      socket.off('screen-share-toggled')
+    }
+  }, [contextSocket])
 
   // Initialize telemetry instances for new users
   const initializeTelemetryForUser = (userId: string) => {
     if (!telemetryInstances.current[userId]) {
-      telemetryInstances.current[userId] = new NetworkTelemetry(1000); // 1 second window
+      telemetryInstances.current[userId] = new NetworkTelemetry(1000) // 1 second window
     }
-  };
+  }
 
   // Update telemetry data every 100ms
   useEffect(() => {
     const interval = setInterval(() => {
-      const newTelemetryData: { [userId: string]: { latency: number; throughput: number } } = {};
+      const newTelemetryData: { [userId: string]: { latency: number; throughput: number } } = {}
 
-      Object.keys(telemetryInstances.current).forEach(userId => {
-        const telemetry = telemetryInstances.current[userId];
+      Object.keys(telemetryInstances.current).forEach((userId) => {
+        const telemetry = telemetryInstances.current[userId]
         if (telemetry) {
           newTelemetryData[userId] = {
             latency: Math.round(telemetry.latency),
-            throughput: Math.round(telemetry.throughput / 1024) // Convert to KB/s
-          };
+            throughput: Math.round(telemetry.throughput / 1024), // Convert to KB/s
+          }
         }
-      });
+      })
 
-      setTelemetryData(newTelemetryData);
-    }, 100);
+      setTelemetryData(newTelemetryData)
+    }, 100)
 
-    return () => clearInterval(interval);
-  }, []);
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
-    Object.values(remoteCanvasRefs).forEach(ref => {
+    Object.values(remoteCanvasRefs).forEach((ref) => {
       handleRemoteVideo(ref)
     })
   }, [remoteCanvasRefs, users])
 
   useEffect(() => {
     const handlePopState = (_event: PopStateEvent) => {
-      leaveRoom();
-    };
+      leaveRoom()
+    }
 
-    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('popstate', handlePopState)
 
     return () => {
-      window.removeEventListener('popstate', handlePopState);
-    };
-  }, []);
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [])
 
   // Timer
   useEffect(() => {
-    if (!roomState?.created) return; const interval = setInterval(() => {
-      const now = Date.now();
-      const elapsed = now - roomState.created;
-      const remaining = Math.max(0, 10 * 60 * 1000 - elapsed); // 10 mins
+    if (!roomState?.created) return
+    const interval = setInterval(() => {
+      const now = Date.now()
+      const elapsed = now - roomState.created
+      const remaining = Math.max(0, 10 * 60 * 1000 - elapsed) // 10 mins
       if (remaining <= 0) {
-        setTimeRemaining('0:00');
-        setTimeRemainingColor('text-red-500');
-        clearInterval(interval);
-        return;
+        setTimeRemaining('0:00')
+        setTimeRemainingColor('text-red-500')
+        clearInterval(interval)
+        return
       }
 
-      const minutes = Math.floor(remaining / 60000);
-      const seconds = Math.floor((remaining % 60000) / 1000);
-      setTimeRemaining(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+      const minutes = Math.floor(remaining / 60000)
+      const seconds = Math.floor((remaining % 60000) / 1000)
+      setTimeRemaining(`${minutes}:${seconds.toString().padStart(2, '0')}`)
 
-      if (remaining <= 60000) { // 1 minute
-        setTimeRemainingColor('text-red-500');
-      } else if (remaining <= 120000) { // 2 minutes
-        setTimeRemainingColor('text-yellow-400');
+      if (remaining <= 60000) {
+        // 1 minute
+        setTimeRemainingColor('text-red-500')
+      } else if (remaining <= 120000) {
+        // 2 minutes
+        setTimeRemainingColor('text-yellow-400')
       } else {
-        setTimeRemainingColor('text-green-400');
+        setTimeRemainingColor('text-green-400')
       }
-    }, 1000);
+    }, 1000)
 
-    return () => clearInterval(interval);
-  }, [roomState?.created]);
+    return () => clearInterval(interval)
+  }, [roomState?.created])
 
   function getUserCount() {
     return Object.entries(users).length
@@ -689,10 +704,7 @@ function SessionPage() {
 
   function getTrackname(roomName: string, userId: string, kind: 'video' | 'audio' | 'chat'): FullTrackName {
     // Returns a FullTrackName for the given room, user, and track kind
-    return FullTrackName.tryNew(
-      Tuple.fromUtf8Path(`/moqtail/${roomName}/${userId}`),
-      new TextEncoder().encode(kind)
-    );
+    return FullTrackName.tryNew(Tuple.fromUtf8Path(`/moqtail/${roomName}/${userId}`), new TextEncoder().encode(kind))
   }
 
   function handleRemoteVideo(canvasRef: React.RefObject<HTMLCanvasElement>) {
@@ -714,7 +726,15 @@ function SessionPage() {
       }, 500)
   }
 
-  async function subscribeToTrack(roomName: string, userId: string, videoTrackAlias: number, audioTrackAlias: number, chatTrackAlias: number, canvasRef: React.RefObject<HTMLCanvasElement>, client: MoqtailClient | undefined = undefined) {
+  async function subscribeToTrack(
+    roomName: string,
+    userId: string,
+    videoTrackAlias: number,
+    audioTrackAlias: number,
+    chatTrackAlias: number,
+    canvasRef: React.RefObject<HTMLCanvasElement>,
+    client: MoqtailClient | undefined = undefined,
+  ) {
     try {
       const the_client = client ? client : moqClient!
       //console.log('subscribeToTrack', roomName, userId, videoTrackAlias, audioTrackAlias, canvasRef)
@@ -724,10 +744,10 @@ function SessionPage() {
         //console.log("subscribeToTrack - Now will try to subscribe")
         const videoFullTrackName = getTrackname(roomName, userId, 'video')
         const audioFullTrackName = getTrackname(roomName, userId, 'audio')
-        const chatFullTrackName = getTrackname(roomName, userId, 'chat');
+        const chatFullTrackName = getTrackname(roomName, userId, 'chat')
         canvasRef.current!.dataset.status = 'pending'
         // Initialize telemetry for this user if not already done
-        initializeTelemetryForUser(userId);
+        initializeTelemetryForUser(userId)
 
         //console.log("subscribeToTrack - Use video subscriber called", videoTrackAlias, audioTrackAlias, videoFullTrackName, audioFullTrackName)
         const [videoResult] = await Promise.all([
@@ -737,7 +757,7 @@ function SessionPage() {
             videoTrackAlias,
             audioTrackAlias,
             audioFullTrackName,
-            videoFullTrackName
+            videoFullTrackName,
           )(),
           subscribeToChatTrack({
             moqClient: the_client,
@@ -752,10 +772,10 @@ function SessionPage() {
                   message: msgObj.message,
                   timestamp: msgObj.timestamp,
                 },
-              ]);
+              ])
             },
           }),
-        ]);
+        ])
         //console.log('subscribeToTrack result', result)
         // TODO: result comes true all the time, refactor...
         canvasRef.current!.dataset.status = videoResult ? 'playing' : ''
@@ -763,42 +783,41 @@ function SessionPage() {
     } catch (err) {
       console.error('Error in subscribing', roomName, userId, err)
       // reset status
-      if (canvasRef.current)
-        canvasRef.current.dataset.status = ''
+      if (canvasRef.current) canvasRef.current.dataset.status = ''
     }
   }
 
   function leaveRoom() {
     //console.log('Leaving room...');
 
-    setMoqClient(undefined);
+    setMoqClient(undefined)
     if (selfMediaStream.current) {
-      const tracks = selfMediaStream.current.getTracks();
-      tracks.forEach(track => {
-        track.stop();
-      });
-      selfMediaStream.current = null;
+      const tracks = selfMediaStream.current.getTracks()
+      tracks.forEach((track) => {
+        track.stop()
+      })
+      selfMediaStream.current = null
     }
 
     if (videoEncoderObjRef.current && videoEncoderObjRef.current.stop) {
       //console.log('Stopping video encoder...');
-      videoEncoderObjRef.current.stop();
-      videoEncoderObjRef.current = null;
+      videoEncoderObjRef.current.stop()
+      videoEncoderObjRef.current = null
     }
 
     if (selfVideoRef.current) {
-      selfVideoRef.current.srcObject = null;
+      selfVideoRef.current.srcObject = null
     }
 
     if (contextSocket && contextSocket.connected) {
-      contextSocket.disconnect();
+      contextSocket.disconnect()
     }
-    moqClient?.disconnect();
+    moqClient?.disconnect()
     //console.log('Disconnected from socket and MoQtail client', moqClient);
 
-    clearSession();
+    clearSession()
 
-    window.location.href = '/'; //should force page refresh
+    window.location.href = '/' //should force page refresh
   }
 
   const userCount = getUserCount()
@@ -811,7 +830,9 @@ function SessionPage() {
           <h1 className="text-white text-xl font-semibold">MOQtail Demo - Room: {roomState?.name}</h1>
           <div className="flex items-center space-x-2 text-gray-300">
             <Users className="w-4 h-4" />
-            <span className="text-sm">{getUserCount()} participant{userCount > 1 ? 's' : ''}</span>
+            <span className="text-sm">
+              {getUserCount()} participant{userCount > 1 ? 's' : ''}
+            </span>
           </div>
         </div>
         <div className={`flex items-center space-x-2 ${timeRemainingColor}`}>
@@ -826,12 +847,9 @@ function SessionPage() {
           <div className={`grid gap-3 h-full grid-cols-3 grid-rows-2`}>
             {Object.entries(users)
               .sort((a, b) => (isSelf(b[0]) ? 1 : 0) - (isSelf(a[0]) ? 1 : 0)) // self card first
-              .map(item => item[1])
+              .map((item) => item[1])
               .map((user) => (
-                <div
-                  key={user.id}
-                  className="relative bg-gray-800 rounded-lg overflow-hidden group aspect-video"
-                >
+                <div key={user.id} className="relative bg-gray-800 rounded-lg overflow-hidden group aspect-video">
                   {isSelf(user.id) ? (
                     <>
                       {/* Self participant video and canvas refs */}
@@ -840,33 +858,41 @@ function SessionPage() {
                         autoPlay
                         muted
                         style={{
-                          transform: isScreenSharing ? "none" : "scaleX(-1)",
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover"
+                          transform: isScreenSharing ? 'none' : 'scaleX(-1)',
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
                         }}
                       />
                       {/* Show initials when video is off */}
                       {!user.hasVideo && !isScreenSharing && (
                         <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
-                          <div className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.name)}`}>
-                            <div className="text-white text-2xl font-bold">
-                              {getUserInitials(user.name)}
-                            </div>
+                          <div
+                            className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.name)}`}
+                          >
+                            <div className="text-white text-2xl font-bold">{getUserInitials(user.name)}</div>
                           </div>
                         </div>
                       )}
                     </>
                   ) : (
                     <>
-                      <canvas ref={remoteCanvasRefs[user.id]} id={user.id} data-videotrackalias={user?.publishedTracks?.video?.alias} data-audiotrackalias={user?.publishedTracks?.audio?.alias} data-chattrackalias={user?.publishedTracks?.chat?.alias} data-announced={user?.publishedTracks?.video?.announced} className="w-full h-full object-cover" />
+                      <canvas
+                        ref={remoteCanvasRefs[user.id]}
+                        id={user.id}
+                        data-videotrackalias={user?.publishedTracks?.video?.alias}
+                        data-audiotrackalias={user?.publishedTracks?.audio?.alias}
+                        data-chattrackalias={user?.publishedTracks?.chat?.alias}
+                        data-announced={user?.publishedTracks?.video?.announced}
+                        className="w-full h-full object-cover"
+                      />
                       {/* Show initials when remote video is off */}
                       {!user.hasVideo && (
                         <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
-                          <div className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.name)}`}>
-                            <div className="text-white text-2xl font-bold">
-                              {getUserInitials(user.name)}
-                            </div>
+                          <div
+                            className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.name)}`}
+                          >
+                            <div className="text-white text-2xl font-bold">{getUserInitials(user.name)}</div>
                           </div>
                         </div>
                       )}
@@ -875,7 +901,9 @@ function SessionPage() {
                   {/* Participant Info Overlay */}
                   <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center">
                     <div className="bg-black bg-opacity-60 px-2 py-1 rounded text-white text-sm font-medium">
-                      <div>{user.name} {isSelf(user.id) && '(You)'}</div>
+                      <div>
+                        {user.name} {isSelf(user.id) && '(You)'}
+                      </div>
                       {!isSelf(user.id) && telemetryData[user.id] && (
                         <div className="text-xs text-gray-300 mt-1">
                           {telemetryData[user.id].latency}ms | {telemetryData[user.id].throughput}KB/s
@@ -883,14 +911,14 @@ function SessionPage() {
                       )}
                     </div>
                     <div className="flex space-x-1">
-                      <div className={user.hasAudio ? "bg-gray-700 p-1 rounded" : "bg-red-600 p-1 rounded"}>
+                      <div className={user.hasAudio ? 'bg-gray-700 p-1 rounded' : 'bg-red-600 p-1 rounded'}>
                         {user.hasAudio ? (
                           <Mic className="w-3 h-3 text-white" />
                         ) : (
                           <MicOff className="w-3 h-3 text-white" />
                         )}
                       </div>
-                      <div className={user.hasVideo ? "bg-gray-700 p-1 rounded" : "bg-red-600 p-1 rounded"}>
+                      <div className={user.hasVideo ? 'bg-gray-700 p-1 rounded' : 'bg-red-600 p-1 rounded'}>
                         {user.hasVideo ? (
                           <Video className="w-3 h-3 text-white" />
                         ) : (
@@ -930,16 +958,10 @@ function SessionPage() {
               {chatMessages.map((message) => (
                 <div key={message.id} className="space-y-1">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-gray-900">
-                      {message.sender}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {message.timestamp}
-                    </span>
+                    <span className="text-sm font-medium text-gray-900">{message.sender}</span>
+                    <span className="text-xs text-gray-500">{message.timestamp}</span>
                   </div>
-                  <p className="text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2">
-                    {message.message}
-                  </p>
+                  <p className="text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2">{message.message}</p>
                 </div>
               ))}
             </div>
@@ -970,20 +992,18 @@ function SessionPage() {
         {/* Mic Button */}
         <button
           onClick={handleToggleMic}
-          className={`p-3 rounded-full transition-all duration-200 ${isMicOn
-            ? 'bg-gray-700 hover:bg-gray-600 text-white'
-            : 'bg-red-600 hover:bg-red-700 text-white'
-            }`}
+          className={`p-3 rounded-full transition-all duration-200 ${
+            isMicOn ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-red-600 hover:bg-red-700 text-white'
+          }`}
         >
           {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
         </button>
         {/* Video Button */}
         <button
           onClick={handleToggleCam}
-          className={`p-3 rounded-full transition-all duration-200 ${isCamOn
-            ? 'bg-gray-700 hover:bg-gray-600 text-white'
-            : 'bg-red-600 hover:bg-red-700 text-white'
-            }`}
+          className={`p-3 rounded-full transition-all duration-200 ${
+            isCamOn ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-red-600 hover:bg-red-700 text-white'
+          }`}
           disabled={!mediaReady}
         >
           {isCamOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
@@ -991,17 +1011,17 @@ function SessionPage() {
         {/* Screen Share Button */}
         <button
           onClick={handleToggleScreenShare}
-          className={`p-3 rounded-full transition-all duration-200 ${isScreenSharing
-            ? 'bg-blue-600 hover:bg-blue-700 text-white'
-            : 'bg-gray-700 hover:bg-gray-600 text-white'
-            }`}
+          className={`p-3 rounded-full transition-all duration-200 ${
+            isScreenSharing ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'
+          }`}
         >
           <MonitorUp className="w-5 h-5" />
         </button>
         {/* End Call Button */}
         <button
           onClick={leaveRoom}
-          className="p-3 rounded-full bg-red-600 hover:bg-red-700 text-white transition-all duration-200 ml-8">
+          className="p-3 rounded-full bg-red-600 hover:bg-red-700 text-white transition-all duration-200 ml-8"
+        >
           <Phone className="w-5 h-5 transform rotate-135" />
         </button>
         {/* Chat Toggle Button (when chat is closed) */}
@@ -1015,9 +1035,7 @@ function SessionPage() {
         )}
       </div>
     </div>
-  );
+  )
 }
 
-export default SessionPage;
-
-
+export default SessionPage

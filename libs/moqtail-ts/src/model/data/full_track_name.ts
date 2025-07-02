@@ -14,7 +14,9 @@ export class FullTrackName {
   toString(): string {
     // Namespace as slash-separated UTF-8 path, name as hex
     const nsStr = this.namespace.toUtf8Path ? this.namespace.toUtf8Path() : Array.from(this.namespace.fields).join('/')
-    const nameStr = Array.from(this.name).map(b => b.toString(16).padStart(2, '0')).join('')
+    const nameStr = Array.from(this.name)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')
     return `${nsStr}:${nameStr}`
   }
 

@@ -1,71 +1,71 @@
 export interface RoomState {
-  id: number,
-  name: string,
-  users: Map<string, RoomUser>,
+  id: number
+  name: string
+  users: Map<string, RoomUser>
   created: number // timestamp
 }
 
 export interface RoomStateView {
-  id: number,
-  name: string,
-  users: { [k: string] : RoomUserView },
+  id: number
+  name: string
+  users: { [k: string]: RoomUserView }
   created: number // timestamp
 }
 
 export interface RoomUserView {
-  id: string, // this is socket id
-  name: string,
-  joined: number,
-  publishedTracks: { [K in TrackType]: Track },
-  subscribedTracks: number[],
-  hasVideo: boolean,
+  id: string // this is socket id
+  name: string
+  joined: number
+  publishedTracks: { [K in TrackType]: Track }
+  subscribedTracks: number[]
+  hasVideo: boolean
   hasAudio: boolean
-  hasScreenshare: boolean,
+  hasScreenshare: boolean
 }
 
 export interface JoinResponse {
-  userId: string,
+  userId: string
   roomState: RoomStateView
 }
 
 export interface RoomUser {
-  id: string, // this is socket id
-  name: string,
-  joined: number,
-  publishedTracks: Map<TrackType, Track>,
-  subscribedTracks: number[],
-  hasVideo: boolean,
+  id: string // this is socket id
+  name: string
+  joined: number
+  publishedTracks: Map<TrackType, Track>
+  subscribedTracks: number[]
+  hasVideo: boolean
   hasAudio: boolean
-  hasScreenshare: boolean,
+  hasScreenshare: boolean
 }
 
-export type TrackType = 'video' | 'audio' | 'chat';
+export type TrackType = 'video' | 'audio' | 'chat'
 
 export interface Track {
-  kind: TrackType,
-  alias: number, // TODO: why not bigint
-  announced: number, // timestamp
+  kind: TrackType
+  alias: number // TODO: why not bigint
+  announced: number // timestamp
   published: number // timestamp
 }
 
 export interface JoinRequest {
-  roomName: string,
+  roomName: string
   username: string
 }
 
 export interface UpdateTrackRequest {
-  trackType: TrackType,
+  trackType: TrackType
   event: 'publish' | 'announce'
 }
 
 export interface ErrorResponse {
-  category: string,
-  code: number,
-  text: string,
+  category: string
+  code: number
+  text: string
 }
 
 export interface TrackUpdateResponse {
-  userId: string,
+  userId: string
   track: Track
 }
 
@@ -78,13 +78,13 @@ export interface RoomTimeoutMessage {
 }
 
 export interface ToggleRequest {
-  kind: 'cam' | 'mic' | 'screenshare',
+  kind: 'cam' | 'mic' | 'screenshare'
   value: boolean
 }
 
 export interface ToggleResponse {
-  userId: string,
-  kind: 'cam' | 'mic' | 'screenshare',
+  userId: string
+  kind: 'cam' | 'mic' | 'screenshare'
   value: boolean
 }
 
@@ -96,5 +96,5 @@ export enum ErrorCode {
   InvalidUsername = 104,
   InvalidRoomName = 105,
   RoomTimeout = 106,
-  InvalidRequest= 107,
+  InvalidRequest = 107,
 }

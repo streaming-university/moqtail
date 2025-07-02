@@ -1,8 +1,8 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
-import JoinPage from "./pages/JoinPage"
-import SessionPage from "./pages/SessionPage"
-import { SessionProvider } from "./contexts/SessionContext"
-import { SocketProvider } from "./sockets/SocketContext"
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import JoinPage from './pages/JoinPage'
+import SessionPage from './pages/SessionPage'
+import { SessionProvider } from './contexts/SessionContext'
+import { SocketProvider } from './sockets/SocketContext'
 
 export default function App() {
   return (
