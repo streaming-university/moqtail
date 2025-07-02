@@ -6,9 +6,9 @@ import {
 let ctx: OffscreenCanvasRenderingContext2D | null = null
 let videoDecoder: VideoDecoder | null = null
 let audioDecoder: AudioDecoder | null = null
-let waitingForKeyframe = true;
-let akamaiOffset: number | null = null;
-let theDecoderConfig: VideoDecoderConfig | null = null;
+let waitingForKeyframe = true
+let akamaiOffset: number | null = null
+let theDecoderConfig: VideoDecoderConfig | null = null
 
 self.onmessage = (e) => {
   const { type, canvas, offset, payload, extentions, decoderConfig } = e.data
@@ -16,22 +16,22 @@ self.onmessage = (e) => {
   if (type === 'init') {
     ctx = canvas?.getContext?.('2d') ?? null
     akamaiOffset = offset
-    theDecoderConfig = decoderConfig || null;
+    theDecoderConfig = decoderConfig || null
     return
   }
 
   if (type === 'reset') {
-    waitingForKeyframe = true;
+    waitingForKeyframe = true
     if (videoDecoder) {
       try {
-        videoDecoder.reset();
+        videoDecoder.reset()
       } catch (e) {
         // ignore reset errors
       }
     }
     if (audioDecoder) {
       try {
-        audioDecoder.reset();
+        audioDecoder.reset()
       } catch (e) {
         // ignore reset errors
       }
@@ -40,7 +40,6 @@ self.onmessage = (e) => {
   }
 
   if (type === 'moq') {
-
     const moqtObj = payload
     const extensionHeaders = extentions
 
@@ -68,12 +67,12 @@ self.onmessage = (e) => {
     if (!videoDecoder || videoDecoder.state !== 'configured') return
 
     if (waitingForKeyframe && !isKey) {
-      console.warn('Waiting for key frame, skipping delta frame');
-      return;
+      console.warn('Waiting for key frame, skipping delta frame')
+      return
     }
 
     if (isKey) {
-      waitingForKeyframe = false;
+      waitingForKeyframe = false
     }
     const chunk = new EncodedVideoChunk({
       timestamp,
@@ -88,41 +87,41 @@ self.onmessage = (e) => {
     }
 
     if (akamaiOffset !== null && timestamp !== 0) {
-      const arrivalTime = Math.round(performance.timeOrigin + performance.now() + akamaiOffset);
-      self.postMessage({ type: 'latency', value: arrivalTime - timestamp });
+      const arrivalTime = Math.round(performance.timeOrigin + performance.now() + akamaiOffset)
+      self.postMessage({ type: 'latency', value: arrivalTime - timestamp })
     }
 
-    self.postMessage({ type: 'throughput', value: moqtObj.payload.length });
+    self.postMessage({ type: 'throughput', value: moqtObj.payload.length })
   }
 
   if (type === 'moq-audio') {
-    const moqtObj = payload;
-    const extensionHeaders = extentions;
+    const moqtObj = payload
+    const extensionHeaders = extentions
     if (!audioDecoder) {
       audioDecoder = new AudioDecoder({
         output: (frame) => {
-          const pcm = new Float32Array(frame.numberOfFrames * frame.numberOfChannels);
-          frame.copyTo(pcm, { planeIndex: 0 });
+          const pcm = new Float32Array(frame.numberOfFrames * frame.numberOfChannels)
+          frame.copyTo(pcm, { planeIndex: 0 })
           self.postMessage({
             type: 'audio',
             samples: Array.from(pcm),
             sampleRate: frame.sampleRate,
-          });
-          frame.close();
+          })
+          frame.close()
         },
         error: console.error,
-      });
-      audioDecoder.configure({ codec: 'opus', sampleRate: 48000, numberOfChannels: 1 });
+      })
+      audioDecoder.configure({ codec: 'opus', sampleRate: 48000, numberOfChannels: 1 })
     }
     const chunk = new EncodedAudioChunk({
-      timestamp: 0/* extract from headers or set to 0 */,
+      timestamp: 0 /* extract from headers or set to 0 */,
       type: 'key', // or 'delta' if you can distinguish
       data: new Uint8Array(moqtObj.payload),
-    });
-    audioDecoder.decode(chunk);
+    })
+    audioDecoder.decode(chunk)
 
     // Send throughput data for audio (payload size)
-    self.postMessage({ type: 'throughput', value: moqtObj.payload.length });
+    self.postMessage({ type: 'throughput', value: moqtObj.payload.length })
   }
 
   function handleFrame(frame: VideoFrame) {
@@ -143,7 +142,10 @@ self.onmessage = (e) => {
       const videoH = frame.displayHeight || frame.codedHeight
       const canvasAR = targetWidth / targetHeight
       const videoAR = videoW / videoH
-      let dw = targetWidth, dh = targetHeight, dx = 0, dy = 0
+      let dw = targetWidth,
+        dh = targetHeight,
+        dx = 0,
+        dy = 0
       if (videoAR > canvasAR) {
         dw = targetWidth
         dh = targetWidth / videoAR

@@ -28,20 +28,12 @@ export class SubscribeOk {
     this.subscribeParameters = subscribeParameters
   }
 
-  static newAscendingNoContent(
-    requestId: bigint,
-    expires: bigint,
-    subscribeParameters: KeyValuePair[],
-  ): SubscribeOk {
+  static newAscendingNoContent(requestId: bigint, expires: bigint, subscribeParameters: KeyValuePair[]): SubscribeOk {
     return new SubscribeOk(requestId, expires, GroupOrder.Ascending, false, undefined, subscribeParameters)
   }
 
-  static newDescendingNoContent(
-    requestId: bigint,
-    expires: bigint,
-    subscribeParameters: KeyValuePair[],
-  ): SubscribeOk {
-    return new SubscribeOk(requestId,  expires, GroupOrder.Descending, false, undefined, subscribeParameters)
+  static newDescendingNoContent(requestId: bigint, expires: bigint, subscribeParameters: KeyValuePair[]): SubscribeOk {
+    return new SubscribeOk(requestId, expires, GroupOrder.Descending, false, undefined, subscribeParameters)
   }
 
   static newAscendingWithContent(
@@ -50,14 +42,7 @@ export class SubscribeOk {
     largestLocation: Location,
     subscribeParameters: KeyValuePair[],
   ): SubscribeOk {
-    return new SubscribeOk(
-      requestId,
-      expires,
-      GroupOrder.Ascending,
-      true,
-      largestLocation,
-      subscribeParameters,
-    )
+    return new SubscribeOk(requestId, expires, GroupOrder.Ascending, true, largestLocation, subscribeParameters)
   }
 
   static newDescendingWithContent(
@@ -66,14 +51,7 @@ export class SubscribeOk {
     largestLocation: Location,
     subscribeParameters: KeyValuePair[],
   ): SubscribeOk {
-    return new SubscribeOk(
-      requestId,
-      expires,
-      GroupOrder.Descending,
-      true,
-      largestLocation,
-      subscribeParameters,
-    )
+    return new SubscribeOk(requestId, expires, GroupOrder.Descending, true, largestLocation, subscribeParameters)
   }
 
   serialize(): FrozenByteBuffer {
@@ -134,14 +112,7 @@ export class SubscribeOk {
     for (let i = 0; i < paramCount; i++) {
       subscribeParameters[i] = buf.getKeyValuePair()
     }
-    return new SubscribeOk(
-      requestId,
-      expires,
-      groupOrder,
-      contentExists,
-      largestLocation,
-      subscribeParameters,
-    )
+    return new SubscribeOk(requestId, expires, groupOrder, contentExists, largestLocation, subscribeParameters)
   }
 }
 
@@ -156,12 +127,7 @@ if (import.meta.vitest) {
         KeyValuePair.tryNewVarInt(0, 10),
         KeyValuePair.tryNewBytes(1, new TextEncoder().encode('9 gifted subs from Dr.Doofishtein')),
       ]
-      const subscribeOk = SubscribeOk.newAscendingWithContent(
-        requestId,
-        expires,
-        largestLocation,
-        subscribeParameters,
-      )
+      const subscribeOk = SubscribeOk.newAscendingWithContent(requestId, expires, largestLocation, subscribeParameters)
       const frozen = subscribeOk.serialize()
       const msgType = frozen.getVI()
       expect(msgType).toBe(BigInt(ControlMessageType.SubscribeOk))
@@ -185,12 +151,7 @@ if (import.meta.vitest) {
         KeyValuePair.tryNewVarInt(0, 10),
         KeyValuePair.tryNewBytes(1, new TextEncoder().encode('9 gifted subs from Dr.Doofishtein')),
       ]
-      const subscribeOk = SubscribeOk.newAscendingWithContent(
-        requestId,
-        expires,
-        largestLocation,
-        subscribeParameters,
-      )
+      const subscribeOk = SubscribeOk.newAscendingWithContent(requestId, expires, largestLocation, subscribeParameters)
       const serialized = subscribeOk.serialize().toUint8Array()
       const excess = new Uint8Array([9, 1, 1])
       const buf = new ByteBuffer()
@@ -220,12 +181,7 @@ if (import.meta.vitest) {
         KeyValuePair.tryNewVarInt(0, 10),
         KeyValuePair.tryNewBytes(1, new TextEncoder().encode('9 gifted subs from Dr.Doofishtein')),
       ]
-      const subscribeOk = SubscribeOk.newAscendingWithContent(
-        requestId,
-        expires,
-        largestLocation,
-        subscribeParameters,
-      )
+      const subscribeOk = SubscribeOk.newAscendingWithContent(requestId, expires, largestLocation, subscribeParameters)
       const serialized = subscribeOk.serialize().toUint8Array()
       const upper = Math.floor(serialized.length / 2)
       const partial = serialized.slice(0, upper)

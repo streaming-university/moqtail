@@ -1,60 +1,60 @@
 export interface ChatMessage {
-  id: string;
-  sender: string;
-  message: string;
-  timestamp: string;
+  id: string
+  sender: string
+  message: string
+  timestamp: string
 }
 
 export interface RoomState {
-  id: number,
-  name: string,
-  users: { [k: string]: RoomUser },
+  id: number
+  name: string
+  users: { [k: string]: RoomUser }
   created: number // timestamp
 }
 
 export interface JoinResponse {
-  userId: string,
+  userId: string
   roomState: RoomState
 }
 
 export interface RoomUser {
-  id: string, // this is socket id
-  name: string,
-  joined: number,
-  publishedTracks: { [K in TrackType]: Track },
-  subscribedTracks: number[],
-  hasVideo: boolean,
-  hasAudio: boolean,
-  hasScreenshare: boolean,
+  id: string // this is socket id
+  name: string
+  joined: number
+  publishedTracks: { [K in TrackType]: Track }
+  subscribedTracks: number[]
+  hasVideo: boolean
+  hasAudio: boolean
+  hasScreenshare: boolean
 }
 
-export type TrackType = 'video' | 'audio' | 'chat';
+export type TrackType = 'video' | 'audio' | 'chat'
 
 export interface Track {
-  kind: TrackType,
-  alias: number, // TODO: why not bigint
-  announced: number, // timestamp
+  kind: TrackType
+  alias: number // TODO: why not bigint
+  announced: number // timestamp
   published: number // timestamp
 }
 
 export interface JoinRequest {
-  roomName: string,
+  roomName: string
   username: string
 }
 
 export interface UpdateTrackRequest {
-  trackType: TrackType,
+  trackType: TrackType
   event: 'publish' | 'announce'
 }
 
 export interface ErrorResponse {
-  category: string,
-  code: number,
-  text: string,
+  category: string
+  code: number
+  text: string
 }
 
 export interface TrackUpdateResponse {
-  userId: string,
+  userId: string
   track: Track
 }
 
@@ -63,13 +63,13 @@ export interface UserDisconnectedMessage {
 }
 
 export interface ToggleRequest {
-  kind: 'cam' | 'mic' | 'screenshare',
+  kind: 'cam' | 'mic' | 'screenshare'
   value: boolean
 }
 
 export interface ToggleResponse {
-  userId: string,
-  kind: 'cam' | 'mic' | 'screenshare',
+  userId: string
+  kind: 'cam' | 'mic' | 'screenshare'
   value: boolean
 }
 

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "format": "prettier --write .",
+    "test": "echo \"No tests defined\" && exit 0"
   },
   "dependencies": {
     "lucide-react": "^0.344.0",

@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, ReactNode } from "react"
-import { RoomState } from "../types/types"
+import React, { createContext, useContext, useState, ReactNode } from 'react'
+import { RoomState } from '../types/types'
 
 type SessionContextType = {
   userId: string
@@ -12,8 +12,8 @@ type SessionContextType = {
 const SessionContext = createContext<SessionContextType | undefined>(undefined)
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [userId, setUserId] = useState("")
-  const [username, setUsername] = useState("")
+  const [userId, setUserId] = useState('')
+  const [username, setUsername] = useState('')
   const [roomState, setRoomState] = useState<RoomState | undefined>(undefined)
 
   function setSession(userId: string, username: string, roomState: RoomState) {
@@ -23,8 +23,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }
 
   function clearSession() {
-    setUserId("")
-    setUsername("")
+    setUserId('')
+    setUsername('')
     setRoomState(undefined)
   }
 
@@ -37,6 +37,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
 export function useSession() {
   const ctx = useContext(SessionContext)
-  if (!ctx) throw new Error("useSession must be used within a SessionProvider")
+  if (!ctx) throw new Error('useSession must be used within a SessionProvider')
   return ctx
 }

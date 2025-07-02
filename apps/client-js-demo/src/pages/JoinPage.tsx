@@ -124,8 +124,8 @@ export default function JoinPage() {
         </form>
         <div className="privacy-notice">
           * We collect anonymous usage statistics and logs to improve the platform.
-          <br />
-          * Session duration in each room is limited to 10 minutes and session size is limited to six participants.
+          <br />* Session duration in each room is limited to 10 minutes and session size is limited to six
+          participants.
         </div>
         {error && <div className="error-message">{error}</div>}
       </div>
