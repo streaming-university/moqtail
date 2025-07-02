@@ -35,8 +35,10 @@ export function setupTracks(
   moqClient: MoqtailClient,
   audioFullTrackName: FullTrackName,
   videoFullTrackName: FullTrackName,
+  chatFullTrackName: FullTrackName,
   audioTrackAlias: bigint,
   videoTrackAlias: bigint,
+  chatTrackAlias: bigint
 ) {
   let audioStreamController: ReadableStreamDefaultController<MoqtObject> | null = null
   const audioStream = new ReadableStream<MoqtObject>({
@@ -56,6 +58,11 @@ export function setupTracks(
       videoStreamController = null
     },
   })
+  let chatStreamController: ReadableStreamDefaultController<MoqtObject> | null = null;
+  const chatStream = new ReadableStream<MoqtObject>({
+    start(controller) { chatStreamController = controller; },
+    cancel() { chatStreamController = null; },
+  });
   const audioContentSource = new LiveContentSource(audioStream)
   moqClient.addOrUpdateTrack({
     fullTrackName: audioFullTrackName,
@@ -70,12 +77,58 @@ export function setupTracks(
     forwardingPreference: ObjectForwardingPreference.Subgroup,
     contentSource: videoContentSource,
   })
+  const chatContentSource = new LiveContentSource(chatStream);
+  moqClient.addOrUpdateTrack({
+    fullTrackName: chatFullTrackName,
+    trackAlias: chatTrackAlias,
+    forwardingPreference: ObjectForwardingPreference.Subgroup,
+    contentSource: chatContentSource,
+  });
   return {
     audioStream,
     videoStream,
+    chatStream,
     getAudioStreamController: () => audioStreamController,
     getVideoStreamController: () => videoStreamController,
+    getChatStreamController: () => chatStreamController,
   }
+}
+
+export function initializeChatMessageSender({
+  chatFullTrackName,
+  chatStreamController,
+  publisherPriority = 1,
+  objectForwardingPreference,
+  offset = 0,
+  initialChatGroupId = 10001,
+  initialChatObjectId = 0,
+}: {
+  chatFullTrackName: any,
+  chatStreamController: ReadableStreamDefaultController<any> | null,
+  publisherPriority?: number,
+  objectForwardingPreference: any,
+  offset?: number,
+  initialChatGroupId?: number,
+  initialChatObjectId?: number,
+}) {
+
+  function send(message: string) {
+    if (!chatStreamController) return;
+    const payload = new TextEncoder().encode(message);
+    const moqt = MoqtObject.newWithPayload(
+      chatFullTrackName,
+      new Location(BigInt(initialChatGroupId++), BigInt(initialChatObjectId)),
+      publisherPriority,
+      objectForwardingPreference,
+      BigInt(Math.round(performance.timeOrigin + performance.now() + offset)),
+      null,
+      payload
+    );
+    chatStreamController.enqueue(moqt);
+    console.log("Chat message sent with location:", initialChatGroupId, initialChatObjectId);
+  }
+
+  return { send };
 }
 
 export async function startAudioEncoder({
@@ -732,4 +785,55 @@ export function useVideoSubscriber(
     return true
   }
   return setup
+}
+
+export async function subscribeToChatTrack({
+  moqClient,
+  chatTrackAlias,
+  chatFullTrackName,
+  onMessage,
+}: {
+  moqClient: MoqtailClient,
+  chatTrackAlias: number,
+  chatFullTrackName: FullTrackName,
+  onMessage: (msg: any) => void,
+}) {
+  const subscribeMsg = Subscribe.newLatestObject(
+    moqClient.nextClientRequestId,
+    BigInt(chatTrackAlias),
+    chatFullTrackName,
+    0,
+    GroupOrder.Original,
+    true,
+    [],
+  );
+
+  moqClient.subscribe(subscribeMsg).then((stream) => {
+    if (stream instanceof ReadableStream) {
+      const reader = stream.getReader();
+      (async () => {
+        while (true) {
+          const { done, value: obj } = await reader.read();
+          console.log("Received chat object:", obj?.location?.group?.toString(), obj?.location?.object?.toString());
+          if (!(obj instanceof MoqtObject)) throw new Error('Expected MoqtObject, got: ' + obj);
+          if (done) break;
+          if (!obj.payload) {
+            console.warn('Received MoqtObject without payload, skipping:', obj);
+            continue;
+          }
+          try {
+            const decoded = new TextDecoder().decode(obj.payload);
+            const msgObj = JSON.parse(decoded);
+            console.log("Decoded chat message:", msgObj);
+            onMessage(msgObj);
+          }
+          catch (e) {
+            console.error("Failed to decode chat message", e);
+          }
+        }
+      })();
+    } else {
+      console.error('Subscribe failed:', stream);
+    }
+  });
 }

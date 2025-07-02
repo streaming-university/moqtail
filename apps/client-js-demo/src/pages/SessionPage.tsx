@@ -14,7 +14,7 @@ import { useSession } from "../contexts/SessionContext"
 import { RoomUser, ChatMessage, TrackUpdateResponse, ToggleResponse, UserDisconnectedMessage, TrackType, UpdateTrackRequest, RoomTimeoutMessage } from '../types/types';
 import { useSocket } from '../sockets/SocketContext';
 import { FullTrackName, ObjectForwardingPreference, Tuple } from '../../../../libs/moqtail-ts/src/model';
-import { announceNamespaces, initializeVideoEncoder, sendClientSetup, setupTracks, startAudioEncoder, startVideoEncoder, useVideoPublisher, useVideoSubscriber } from '../composables/useVideoPipeline';
+import { announceNamespaces, initializeChatMessageSender, initializeVideoEncoder, sendClientSetup, setupTracks, startAudioEncoder, startVideoEncoder, subscribeToChatTrack, useVideoPublisher, useVideoSubscriber } from '../composables/useVideoPipeline';
 import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client';
 import { AkamaiOffset } from '../../../../libs/moqtail-ts/src/util/get_akamai_offset';
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry';
@@ -29,32 +29,57 @@ function SessionPage() {
   const [isMicOn, setIsMicOn] = useState(false);
   const [isCamOn, setisCamOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(false); // TODO: implement MoQ chat
+  const [isChatOpen, setIsChatOpen] = useState(true); // TODO: implement MoQ chat
   const [chatMessage, setChatMessage] = useState('');
   const { socket: contextSocket, reconnect } = useSocket();
   const [users, setUsers] = useState<{ [K: string]: RoomUser }>({});
   const [remoteCanvasRefs, setRemoteCanvasRefs] = useState<{ [id: string]: React.RefObject<HTMLCanvasElement> }>({});
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [telemetryData, setTelemetryData] = useState<{ [userId: string]: { latency: number; throughput: number } }>({});
   const telemetryInstances = useRef<{ [userId: string]: NetworkTelemetry }>({});
   const [timeRemaining, setTimeRemaining] = useState<string>('--:--');
   const [timeRemainingColor, setTimeRemainingColor] = useState<string>('text-green-400');
-  const [chatMessages] = useState<ChatMessage[]>([
-    { id: '1', sender: 'Kerem Bekmez', message: 'MoQ message', timestamp: '9:32 AM' }, // TODO: mock data
-  ]);
   const selfVideoRef = useRef<HTMLVideoElement>(null);
   const selfMediaStream = useRef<MediaStream | null>(null);
   const publisherInitialized = useRef<boolean>(false)
   const moqtailClientInitStarted = useRef<boolean>(false)
   const videoEncoderObjRef = useRef<any>(null);
+  const chatSenderRef = useRef<{ send: (msg: string) => void } | null>(null);
   const akamaiOffsetRef = useRef<number>(0);
   const [mediaReady, setMediaReady] = useState(false);
 
-  const handleSendMessage = () => {
-    if (chatMessage.trim()) {
-      // TODO
-      setChatMessage('');
+  const handleSendMessage = async () => {
+  if (chatMessage.trim()) {
+    // Format timestamp as h.mmAM/PM
+    const now = new Date();
+    let hours = now.getHours();
+    const minutes = now.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const formattedMinutes = minutes < 10 ? '0' + minutes : minutes;
+    const formattedTime = `${hours}:${formattedMinutes}${ampm}`;
+    if (chatSenderRef.current) {
+      chatSenderRef.current.send(
+        JSON.stringify({
+          sender: username,
+          message: chatMessage,
+          timestamp: formattedTime,
+        })
+      );
     }
-  };
+    setChatMessages(prev => [
+      ...prev,
+      {
+        id: Math.random().toString(10).slice(2),
+        sender: username,
+        message: chatMessage,
+        timestamp: formattedTime,
+      }
+    ]);
+    setChatMessage(''); // Clear the input field after sending
+  }
+};
 
   const addUser = (user: RoomUser): void => {
     setUsers(prev => {
@@ -274,6 +299,7 @@ function SessionPage() {
 
         const videoFullTrackName = getTrackname(roomName, userId, 'video')
         const audioFullTrackName = getTrackname(roomName, userId, 'audio')
+        const chatFullTrackName = getTrackname(roomName, userId, 'chat')
         //console.log('Constructed track names:', videoFullTrackName, audioFullTrackName);
 
         const selfUser = roomState.users[userId];
@@ -287,6 +313,9 @@ function SessionPage() {
 
         const audioTrack = selfUser?.publishedTracks['audio'];
         const audioTrackAlias = audioTrack?.alias;
+
+        const chatTrack = selfUser?.publishedTracks['chat'];
+        const chatTrackAlias = chatTrack?.alias;
 
         if (isNaN(videoTrackAlias ?? undefined)) {
           console.error("Video track alias not found for user:", userId);
@@ -304,8 +333,10 @@ function SessionPage() {
           moqClient!,
           audioFullTrackName,
           videoFullTrackName,
+          chatFullTrackName,
           BigInt(audioTrackAlias),
-          BigInt(videoTrackAlias)
+          BigInt(videoTrackAlias),
+          BigInt(chatTrackAlias)
         )
 
         videoEncoderObjRef.current = initializeVideoEncoder({
@@ -325,6 +356,13 @@ function SessionPage() {
           offset,
           objectForwardingPreference: ObjectForwardingPreference.Subgroup
         });
+        chatSenderRef.current = initializeChatMessageSender({
+          chatFullTrackName,
+          chatStreamController: tracks.getChatStreamController(),
+          publisherPriority: 1,
+          objectForwardingPreference: ObjectForwardingPreference.Subgroup,
+          offset,
+        });
 
         await Promise.all([videoPromise, audioPromise])
 
@@ -338,6 +376,9 @@ function SessionPage() {
         contextSocket?.emit('update-track', updateTrackRequest)
 
         updateTrackRequest.trackType = 'audio'
+        contextSocket?.emit('update-track', updateTrackRequest)
+
+        updateTrackRequest.trackType = 'chat'
         contextSocket?.emit('update-track', updateTrackRequest)
 
       } catch (err) {
@@ -407,7 +448,7 @@ function SessionPage() {
         const updatedUser = prevUsers[response.userId];
         if (updatedUser) {
           const track = response.track;
-          if (track.kind === 'video' || track.kind === 'audio') {
+          if (track.kind === 'video' || track.kind === 'audio' || track.kind === 'chat') {
             updatedUser.publishedTracks[track.kind] = track;
           }
         }
@@ -566,7 +607,7 @@ function SessionPage() {
     return Object.entries(users).length
   }
 
-  function getTrackname(roomName: string, userId: string, kind: 'video' | 'audio') {
+  function getTrackname(roomName: string, userId: string, kind: 'video' | 'audio' | 'chat'): FullTrackName {
     // Returns a FullTrackName for the given room, user, and track kind
     return FullTrackName.tryNew(
       Tuple.fromUtf8Path(`/moqtail/${roomName}/${userId}`),
@@ -584,15 +625,16 @@ function SessionPage() {
     const roomName = roomState?.name!
     const videoTrackAlias = parseInt(canvasRef.current.dataset.videotrackalias || '-1')
     const audioTrackAlias = parseInt(canvasRef.current.dataset.audiotrackalias || '-1')
+    const chatTrackAlias = parseInt(canvasRef.current.dataset.chattrackalias || '-1')
     const announced = parseInt(canvasRef.current.dataset.announced || '0')
     //console.log('handleRemoteVideo', canvasRef.current.id, moqClient, roomName, videoTrackAlias, audioTrackAlias, announced)
-    if (announced > 0 && videoTrackAlias > 0 && audioTrackAlias > 0)
+    if (announced > 0 && videoTrackAlias > 0 && audioTrackAlias > 0 && chatTrackAlias > 0)
       setTimeout(async () => {
-        await subscribeToTrack(roomName, userId, videoTrackAlias, audioTrackAlias, canvasRef)
+        await subscribeToTrack(roomName, userId, videoTrackAlias, audioTrackAlias, chatTrackAlias, canvasRef)
       }, 500)
   }
 
-  async function subscribeToTrack(roomName: string, userId: string, videoTrackAlias: number, audioTrackAlias: number, canvasRef: React.RefObject<HTMLCanvasElement>, client: MoqtailClient | undefined = undefined) {
+  async function subscribeToTrack(roomName: string, userId: string, videoTrackAlias: number, audioTrackAlias: number, chatTrackAlias: number, canvasRef: React.RefObject<HTMLCanvasElement>, client: MoqtailClient | undefined = undefined) {
     try {
       const the_client = client ? client : moqClient!
       //console.log('subscribeToTrack', roomName, userId, videoTrackAlias, audioTrackAlias, canvasRef)
@@ -602,16 +644,42 @@ function SessionPage() {
         //console.log("subscribeToTrack - Now will try to subscribe")
         const videoFullTrackName = getTrackname(roomName, userId, 'video')
         const audioFullTrackName = getTrackname(roomName, userId, 'audio')
+        const chatFullTrackName = getTrackname(roomName, userId, 'chat');
         canvasRef.current!.dataset.status = 'pending'
         // Initialize telemetry for this user if not already done
         initializeTelemetryForUser(userId);
         const userTelemetry = telemetryInstances.current[userId];
 
         //console.log("subscribeToTrack - Use video subscriber called", videoTrackAlias, audioTrackAlias, videoFullTrackName, audioFullTrackName)
-        const result = await useVideoSubscriber(the_client, canvasRef, videoTrackAlias, audioTrackAlias, audioFullTrackName, videoFullTrackName, userTelemetry)()
+        const [videoResult, chatResult] = await Promise.all([
+          useVideoSubscriber(
+            the_client,
+            canvasRef,
+            videoTrackAlias,
+            audioTrackAlias,
+            audioFullTrackName,
+            videoFullTrackName
+          )(),
+          subscribeToChatTrack({
+            moqClient: the_client,
+            chatTrackAlias: chatTrackAlias,
+            chatFullTrackName,
+            onMessage: (msgObj) => {
+              setChatMessages((prev) => [
+                ...prev,
+                {
+                  id: Math.random().toString(10).slice(2),
+                  sender: msgObj.sender,
+                  message: msgObj.message,
+                  timestamp: msgObj.timestamp,
+                },
+              ]);
+            },
+          }),
+        ]);
         //console.log('subscribeToTrack result', result)
         // TODO: result comes true all the time, refactor...
-        canvasRef.current!.dataset.status = result ? 'playing' : ''
+        canvasRef.current!.dataset.status = videoResult ? 'playing' : ''
       }
     } catch (err) {
       console.error('Error in subscribing', roomName, userId, err)
@@ -739,7 +807,7 @@ function SessionPage() {
                       {/* <canvas ref={selfCanvasRef} className="w-full h-full object-cover" /> */}
                     </>
                   ) : (
-                    <canvas ref={remoteCanvasRefs[user.id]} id={user.id} data-videotrackalias={user?.publishedTracks?.video?.alias} data-audiotrackalias={user?.publishedTracks?.audio?.alias} data-announced={user?.publishedTracks?.video?.announced} className="w-full h-full object-cover" />
+                    <canvas ref={remoteCanvasRefs[user.id]} id={user.id} data-videotrackalias={user?.publishedTracks?.video?.alias} data-audiotrackalias={user?.publishedTracks?.audio?.alias} data-chattrackalias={user?.publishedTracks?.chat?.alias} data-announced={user?.publishedTracks?.video?.announced} className="w-full h-full object-cover" />
                   )}
                   {/* Participant Info Overlay */}
                   <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center">
