@@ -651,7 +651,7 @@ function SessionPage() {
         const userTelemetry = telemetryInstances.current[userId];
 
         //console.log("subscribeToTrack - Use video subscriber called", videoTrackAlias, audioTrackAlias, videoFullTrackName, audioFullTrackName)
-         const [videoResult, chatResult] = await Promise.all([
+        const [videoResult, chatResult] = await Promise.all([
           useVideoSubscriber(
             the_client,
             canvasRef,
