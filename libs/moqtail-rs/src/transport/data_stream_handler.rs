@@ -266,23 +266,37 @@ impl RecvDataStream {
         };
         recv_bytes.advance(consumed);
         *the_header_info.lock().await = Some(header_info.clone().unwrap().1.clone());
-      } else if !recv_bytes.is_empty() {
-        let header_info = header_info.clone().unwrap().1;
-        let consumed = Self::read_object(
-          bytes_cursor,
-          &header_info,
-          is_closed.clone(),
-          objects.clone(),
-        )
-        .await
-        .map_err(|e| {
-          error!("Failed to parse object: {:?}", e);
-          e
-        })?;
-        notify.notify_waiters();
-        recv_bytes.advance(consumed);
       }
 
+      loop {
+        let bytes_cursor = recv_bytes.clone().freeze();
+        let mut consumed = 0;
+        if !recv_bytes.is_empty() {
+          let header_info = header_info.clone().unwrap().1;
+          consumed = Self::read_object(
+            bytes_cursor,
+            &header_info,
+            is_closed.clone(),
+            objects.clone(),
+          )
+          .await
+          .map_err(|e| {
+            error!("Failed to parse object: {:?}", e);
+            e
+          })?;
+          notify.notify_waiters();
+          recv_bytes.advance(consumed);
+        }
+        if consumed > 0 {
+          // We may have more data to parse, so continue reading objects
+          continue;
+        } else {
+          break;
+        }
+      }
+
+      // Check if the stream is closed
+      // If it is closed, notify waiters and return
       if *is_closed.read().await {
         notify.notify_waiters();
         return Ok(());
