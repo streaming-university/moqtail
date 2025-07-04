@@ -63,6 +63,9 @@ function SessionPage() {
     sampleRate: number;
     resolution: string;
     syncDrift: number;
+    videoBitrate?: number;
+    audioBitrate?: number;
+    numberOfChannels?: number;
   } }>({});
 
   const handleSendMessage = async () => {
@@ -118,10 +121,6 @@ function SessionPage() {
   };
 
   const toggleInfoCard = (userId: string, panelType: 'network' | 'codec' = 'network') => {
-    if(isSelf(userId)) {
-      return;
-    }
-
     setShowInfoCards(prev => ({
       ...prev,
       [userId]: !prev[userId] || infoPanelType[userId] !== panelType ? true : false
@@ -447,7 +446,7 @@ function SessionPage() {
           const otherUsers = Object.keys(roomState.users).filter(uId => uId != userId)
           setUsers(roomState.users);
 
-          otherUsers.forEach(uId => initializeTelemetryForUser(uId));
+          Object.keys(roomState.users).forEach(uId => initializeTelemetryForUser(uId));
           const canvasRefs = Object.fromEntries(
             otherUsers.map(uId => [uId, React.createRef<HTMLCanvasElement>()])
           )
@@ -599,28 +598,43 @@ function SessionPage() {
 
       setCodecData(prev => ({
         ...prev,
-        [userId]: generateInitialFakeCodecData(userId)
+        [userId]: isSelf(userId) ? getSelfCodecData() : getOtherParticipantCodecData()
       }));
     }
   };
 
-  const generateInitialFakeCodecData = (userId: string) => {
-    const videoCodecs = ['H.264/AVC', 'H.265/HEVC', 'VP9', 'AV1'];
-    const audioCodecs = ['AAC-LC', 'Opus', 'AAC-HE', 'G.722'];
-    const resolutions = ['1920x1080', '1280x720', '854x480', '640x360'];
-    const frameRates = [30, 60, 25, 24];
-    const sampleRates = [48000, 44100, 32000, 16000];
-
-    const userHash = userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const getSelfCodecData = () => {
+    const videoConfig = window.appSettings.videoEncoderConfig;
+    const audioConfig = window.appSettings.audioEncoderConfig;
 
     return {
-      videoCodec: videoCodecs[userHash % videoCodecs.length],
-      audioCodec: audioCodecs[userHash % audioCodecs.length],
-      frameRate: frameRates[userHash % frameRates.length],
-      sampleRate: sampleRates[userHash % sampleRates.length],
-      resolution: resolutions[userHash % resolutions.length],
-      syncDrift: 0
+      videoCodec: videoConfig.codec,
+      audioCodec: audioConfig.codec,
+      frameRate: videoConfig.framerate,
+      sampleRate: audioConfig.sampleRate,
+      resolution: `${videoConfig.width}x${videoConfig.height}`,
+      syncDrift: 0, // TODO
+      videoBitrate: videoConfig.bitrate,
+      audioBitrate: audioConfig.bitrate,
+      numberOfChannels: audioConfig.numberOfChannels
     };
+  };
+
+  const getOtherParticipantCodecData = () => {
+    const videoConfig = window.appSettings.videoDecoderConfig;
+    const audioConfig = window.appSettings.audioDecoderConfig;
+
+    return {
+      videoCodec: videoConfig.codec,
+      audioCodec: audioConfig.codec,
+      frameRate: "N/A", // TODO
+      sampleRate: audioConfig.sampleRate,
+      resolution: "640x360", // TODO
+      syncDrift: 0,
+      videoBitrate: "N/A", // TODO
+      audioBitrate: "N/A", // TODO
+      numberOfChannels: audioConfig.numberOfChannels
+      };
   };
 
   const previousValues = useRef<{ [userId: string]: { latency: number; videoBitrate: number; audioBitrate: number } }>({});
@@ -740,7 +754,7 @@ function SessionPage() {
             const currentCounter = (prev[userId] || 0) + 1;
             const newCounters = { ...prev, [userId]: currentCounter };
 
-            const fakeLatency = generateFakeLatency(userId, currentCounter);
+            const fakeLatency = isSelf(userId) ? 0 : generateFakeLatency(userId, currentCounter); // Skip latency for self
             const fakeVideoBitrate = generateFakeVideoThroughput(userId, currentCounter);
             const fakeAudioBitrate = generateFakeAudioThroughput(userId, currentCounter);
 
@@ -771,14 +785,16 @@ function SessionPage() {
             });
 
             // Latency history (last 30 points)
-            setLatencyHistory(prevLatency => {
-              const userHistory = prevLatency[userId] || [];
-              const newHistory = [...userHistory, fakeLatency].slice(-30);
-              return {
-                ...prevLatency,
-                [userId]: newHistory
-              };
-            });
+            if (!isSelf(userId)) {
+              setLatencyHistory(prevLatency => {
+                const userHistory = prevLatency[userId] || [];
+                const newHistory = [...userHistory, fakeLatency].slice(-30);
+                return {
+                  ...prevLatency,
+                  [userId]: newHistory
+                };
+              });
+            }
 
             // Video bitrate history (last 30 points)
             setVideoBitrateHistory(prevVideoBitrate => {
@@ -1068,9 +1084,9 @@ function SessionPage() {
                   <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center">
                     <div className="bg-black bg-opacity-60 px-2 py-1 rounded text-white text-sm font-medium">
                       <div>{user.name} {isSelf(user.id) && '(You)'}</div>
-                      {!isSelf(user.id) && telemetryData[user.id] && (
+                      {telemetryData[user.id] && (
                         <div className="text-xs text-gray-300 mt-1">
-                          {telemetryData[user.id].latency}ms | {telemetryData[user.id].videoBitrate}Mbit/s | {telemetryData[user.id].audioBitrate}Kbit/s
+                          {isSelf(user.id) ? 'N/A' : `${telemetryData[user.id].latency}ms`} | {telemetryData[user.id].videoBitrate}Mbit/s | {telemetryData[user.id].audioBitrate}Kbit/s
                         </div>
                       )}
                     </div>
@@ -1098,7 +1114,7 @@ function SessionPage() {
                     </div>
                   )}
                   {/* Info card toggle buttons */}
-                  {!isSelf(user.id) && (
+                  {(
                     <div className="absolute top-3 right-3 flex space-x-1">
                       {/* Network Stats Button */}
                       <button
@@ -1168,13 +1184,13 @@ function SessionPage() {
                             {/* Values with smooth transitions */}
                             <div className="grid grid-cols-3 gap-1 mb-3 flex-shrink-0">
                               <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
-                                {!isSelf(user.id) && telemetryData[user.id]
+                                {telemetryData[user.id]
                                   ? `${telemetryData[user.id].videoBitrate.toFixed(1)} Mbit/s`
                                   : 'N/A'
                                 }
                               </span>
                               <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
-                                {!isSelf(user.id) && telemetryData[user.id]
+                                {telemetryData[user.id]
                                   ? `${telemetryData[user.id].audioBitrate.toFixed(0)} Kbit/s`
                                   : 'N/A'
                                 }
@@ -1218,7 +1234,7 @@ function SessionPage() {
                                       strokeLinecap="round"
                                       strokeLinejoin="round"
                                       points={
-                                        !isSelf(user.id) && videoBitrateHistory[user.id] && videoBitrateHistory[user.id].length > 0
+                                        videoBitrateHistory[user.id] && videoBitrateHistory[user.id].length > 0
                                           ? videoBitrateHistory[user.id]
                                               .map((videoBitrate, index) => {
                                                 const x = (index / Math.max(videoBitrateHistory[user.id].length - 1, 1)) * 300;
@@ -1242,7 +1258,7 @@ function SessionPage() {
                                       strokeLinecap="round"
                                       strokeLinejoin="round"
                                       points={
-                                        !isSelf(user.id) && audioBitrateHistory[user.id] && audioBitrateHistory[user.id].length > 0
+                                        audioBitrateHistory[user.id] && audioBitrateHistory[user.id].length > 0
                                           ? audioBitrateHistory[user.id]
                                               .map((audioBitrate, index) => {
                                                 const x = (index / Math.max(audioBitrateHistory[user.id].length - 1, 1)) * 300;
@@ -1274,7 +1290,9 @@ function SessionPage() {
                                                 return `${x},${y}`;
                                               })
                                               .join(' ')
-                                          : "0,85 20,83 40,87 60,84 80,86 100,85 120,88 140,82 160,85 180,87 200,84 220,89 240,83 260,86 280,84 300,85"
+                                          : isSelf(user.id)
+                                            ? "" // No line for self user
+                                            : "0,85 20,83 40,87 60,84 80,86 100,85 120,88 140,82 160,85 180,87 200,84 220,89 240,83 260,86 280,84 300,85"
                                       }
                                     />
                                   </svg>
@@ -1305,19 +1323,28 @@ function SessionPage() {
                                       <div className="flex justify-between">
                                         <span className="text-gray-600">Codec:</span>
                                         <span className="font-medium text-black">
-                                          {codecData[user.id]?.videoCodec || 'H.264'}
+                                          {codecData[user.id]?.videoCodec || 'N/A'}
                                         </span>
                                       </div>
                                       <div className="flex justify-between">
-                                        <span className="text-gray-600">Res:</span>
+                                        <span className="text-gray-600">Resolution:</span>
                                         <span className="font-medium text-black">
-                                          {codecData[user.id]?.resolution || '1080p'}
+                                          {codecData[user.id]?.resolution || 'N/A'}
                                         </span>
                                       </div>
+
+                                      {codecData[user.id]?.videoBitrate && (
+                                        <div className="flex justify-between">
+                                          <span className="text-gray-600">Bitrate:</span>
+                                          <span className="font-medium text-black">
+                                            {(codecData[user.id].videoBitrate! / 1000).toFixed(0)}kbps
+                                          </span>
+                                        </div>
+                                      )}
                                       <div className="flex justify-between">
                                         <span className="text-gray-600">FPS:</span>
                                         <span className="font-medium text-black">
-                                          {codecData[user.id]?.frameRate || 30}
+                                          {codecData[user.id]?.frameRate || "N/A"}
                                         </span>
                                       </div>
                                     </div>
@@ -1333,7 +1360,7 @@ function SessionPage() {
                                       <div className="flex justify-between">
                                         <span className="text-gray-600">Codec:</span>
                                         <span className="font-medium text-black">
-                                          {codecData[user.id]?.audioCodec || 'AAC'}
+                                          {codecData[user.id]?.audioCodec || 'N/A'}
                                         </span>
                                       </div>
                                       <div className="flex justify-between">
@@ -1342,6 +1369,22 @@ function SessionPage() {
                                           {codecData[user.id]?.sampleRate ? (codecData[user.id].sampleRate / 1000).toFixed(0) + 'k' : '48k'}
                                         </span>
                                       </div>
+                                      {codecData[user.id]?.audioBitrate && (
+                                        <div className="flex justify-between">
+                                          <span className="text-gray-600">Bitrate:</span>
+                                          <span className="font-medium text-black">
+                                            {(codecData[user.id].audioBitrate! / 1000).toFixed(0)}kbps
+                                          </span>
+                                        </div>
+                                      )}
+                                      {codecData[user.id]?.numberOfChannels && (
+                                        <div className="flex justify-between">
+                                          <span className="text-gray-600">Channels:</span>
+                                          <span className="font-medium text-black">
+                                            {codecData[user.id].numberOfChannels}
+                                          </span>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -1355,7 +1398,7 @@ function SessionPage() {
                                 </div>
                                 <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
                                   <div className="flex justify-between">
-                                    <span className="text-gray-600">A/V Drift:</span>
+                                    <span className="text-gray-600">A/V Drift: //TODO</span>
                                     <span className={`font-semibold ${Math.abs(codecData[user.id]?.syncDrift || 0) > 10 ? 'text-red-600' : 'text-green-600'}`}>
                                       {codecData[user.id]?.syncDrift !== undefined
                                         ? `${codecData[user.id].syncDrift > 0 ? '+' : ''}${codecData[user.id].syncDrift}ms`
@@ -1365,7 +1408,7 @@ function SessionPage() {
                                   </div>
                                   <div className="flex justify-between">
                                     <span className="text-gray-600">Buffer duration:</span>
-                                    <span className="font-semibold text-green-600">0.3s</span>
+                                    <span className="font-semibold text-green-600">N/A</span>
                                   </div>
                                 </div>
                               </div>
