@@ -10,5 +10,6 @@ export default {
   '(apps|libs)/**/*.ts': ['prettier --write'],
   './*.{ts,js,json,md}': ['prettier --write'],
   './.prettierrc': ['prettier --write'],
-  '.github/**/*': ['prettier --write']
+  '.github/**/*': ['prettier --write'],
+  '.changeset/*': ['prettier --write'],
 }
