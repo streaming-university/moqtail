@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "format": "prettier --write .",
+    "format": "prettier --check .",
     "test": "vitest"
   },
   "dependencies": {
