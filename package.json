@@ -7,8 +7,7 @@
   "scripts": {
     "prepare": "node .husky/install.mjs",
     "changeset": "changeset",
-    "version": "changeset version",
-    "postversion": "node scripts/postversion.mjs",
+    "version": "changeset version && node scripts/postversion.mjs",
     "build:client": "npm --prefix apps/client-js run build",
     "build:moqtail": "npm --prefix libs/moqtail-ts run build",
     "test:client": "npm --prefix apps/client-js run test -- run",
@@ -21,6 +20,7 @@
     "format": "npm-run-all --continue-on-error format:client format:moqtail format:room-server"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.5.1",
     "@changesets/cli": "^2.29.5",
     "@commitlint/cli": "^19.8.1",
     "@commitlint/config-conventional": "^19.8.1",
