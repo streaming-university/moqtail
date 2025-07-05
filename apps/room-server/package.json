@@ -1,5 +1,6 @@
 {
-  "name": "moqtail-room-server",
+  "name": "room-server",
+  "private": true,
   "version": "0.1.0",
   "description": "MOQtail Room Server",
   "type": "module",
