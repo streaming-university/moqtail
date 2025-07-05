@@ -11,8 +11,8 @@ import {
   MessageSquare,
   Info,
   X,
-  Activity
-} from 'lucide-react';
+  Activity, Expand, Minimize,
+} from 'lucide-react'
 import { useSession } from "../contexts/SessionContext"
 import { RoomUser, ChatMessage, TrackUpdateResponse, ToggleResponse, UserDisconnectedMessage, UpdateTrackRequest } from '../types/types';
 import { useSocket } from '../sockets/SocketContext';
@@ -28,6 +28,7 @@ function SessionPage() {
   const [moqClient, setMoqClient] = useState<MoqtailClient | undefined>(undefined)
 
   // initialize the variables
+  const [maximizedUserId, setMaximizedUserId] = useState<string | null>(null);
   const { userId, username, roomState, setSession, clearSession } = useSession()
   const [isMicOn, setIsMicOn] = useState(false);
   const [isCamOn, setisCamOn] = useState(false);
@@ -1016,6 +1017,35 @@ function SessionPage() {
 
   const userCount = getUserCount()
 
+  const usersPerPage = 3;
+  const [pageIndex, setPageIndex] = React.useState(0);
+
+  const userList = Object.entries(users)
+    .sort((a, b) => (isSelf(b[0]) ? 1 : 0) - (isSelf(a[0]) ? 1 : 0))
+    .map(item => item[1])
+    .slice(0, 6);
+
+  React.useEffect(() => {
+    if (pageIndex > 0 && userCount <= 3) {
+      setPageIndex(0);
+    }
+  }, [userCount, pageIndex]);
+
+  const [isSmallScreen, setIsSmallScreen] = React.useState(false);
+
+  React.useEffect(() => {
+    function handleResize() {
+      setIsSmallScreen(window.innerWidth < 768);
+    }
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const usersToRender = isSmallScreen
+    ? (pageIndex === 0 ? userList.slice(0, 3) : userList.slice(3, 6))
+    : userList;
+
   return (
     <div className="h-screen bg-gray-900 flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
       {/* Header */}
@@ -1024,7 +1054,9 @@ function SessionPage() {
           <h1 className="text-white text-xl font-semibold">MOQtail Demo - Room: {roomState?.name}</h1>
           <div className="flex items-center space-x-2 text-gray-300">
             <Users className="w-4 h-4" />
-            <span className="text-sm">{getUserCount()} participant{userCount > 1 ? 's' : ''}</span>
+            <span className="text-sm">
+              {getUserCount()} participant{userCount > 1 ? 's' : ''}
+            </span>
           </div>
         </div>
         <div className={`flex items-center space-x-2 ${timeRemainingColor}`}>
@@ -1036,70 +1068,86 @@ function SessionPage() {
       <div className="flex-1 flex min-h-0">
         {/* Video Grid Area */}
         <div className={`flex-1 p-4 ${isChatOpen ? 'pr-2' : 'pr-4'} min-h-0`}>
-          <div className={`grid gap-3 h-full grid-cols-3 grid-rows-2`}>
-            {Object.entries(users)
-              .sort((a, b) => (isSelf(b[0]) ? 1 : 0) - (isSelf(a[0]) ? 1 : 0)) // self card first
-              .map(item => item[1])
-              .map((user) => (
-                <div
-                  key={user.id}
-                  className="relative bg-gray-800 rounded-lg overflow-hidden group aspect-video"
-                >
-                  {isSelf(user.id) ? (
-                    <>
-                      {/* Self participant video and canvas refs */}
-                      <video
-                        ref={selfVideoRef}
-                        autoPlay
-                        muted
-                        style={{
-                          transform: isScreenSharing ? "none" : "scaleX(-1)",
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover"
-                        }}
-                      />
-                      {/* <canvas ref={selfCanvasRef} className="w-full h-full object-cover" /> */}
-                    </>
-                  ) : (
-                    <canvas ref={remoteCanvasRefs[user.id]} id={user.id} data-videotrackalias={user?.publishedTracks?.video?.alias} data-audiotrackalias={user?.publishedTracks?.audio?.alias} data-chattrackalias={user?.publishedTracks?.chat?.alias} data-announced={user?.publishedTracks?.video?.announced} className="w-full h-full object-cover" />
-                  )}
-                  {/* Participant Info Overlay */}
-                  <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center">
-                    <div className="bg-black bg-opacity-60 px-2 py-1 rounded text-white text-sm font-medium">
-                      <div>{user.name} {isSelf(user.id) && '(You)'}</div>
-                      {!isSelf(user.id) && telemetryData[user.id] && (
-                        <div className="text-xs text-gray-300 mt-1">
-                          {telemetryData[user.id].latency}ms | {telemetryData[user.id].videoBitrate}Mbit/s | {telemetryData[user.id].audioBitrate}Kbit/s
-                        </div>
+          <div className="grid gap-3 h-full grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
+            {usersToRender.map((user) => (
+              <div
+                key={user.id}
+                className={`bg-gray-800 rounded-lg overflow-hidden group aspect-video transition-all duration-300 ${
+                  maximizedUserId === user.id
+                    ? 'absolute inset-0 w-full h-full z-20'
+                    : maximizedUserId
+                      ? 'hidden'
+                      : 'relative'
+                }`}
+              >
+                {isSelf(user.id) ? (
+                  <>
+                    {/* Self participant video and canvas refs */}
+                    <video
+                      ref={selfVideoRef}
+                      autoPlay
+                      muted
+                      style={{
+                        transform: isScreenSharing ? 'none' : 'scaleX(-1)',
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                      }}
+                    />
+                    {/* <canvas ref={selfCanvasRef} className="w-full h-full object-cover" /> */}
+                  </>
+                ) : (
+                  <canvas
+                    ref={remoteCanvasRefs[user.id]}
+                    id={user.id}
+                    data-videotrackalias={user?.publishedTracks?.video?.alias}
+                    data-audiotrackalias={user?.publishedTracks?.audio?.alias}
+                    data-chattrackalias={user?.publishedTracks?.chat?.alias}
+                    data-announced={user?.publishedTracks?.video?.announced}
+                    className="w-full h-full object-cover"
+                  />
+                )}
+                {/* Participant Info Overlay */}
+                <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center">
+                  <div className="bg-black bg-opacity-60 px-2 py-1 rounded text-white text-sm font-medium">
+                    <div>
+                      {user.name} {isSelf(user.id) && '(You)'}
+                    </div>
+                    {!isSelf(user.id) && telemetryData[user.id] && (
+                      <div className="hidden md:block text-xs text-gray-300 mt-1">
+                        {telemetryData[user.id].latency}ms | {telemetryData[user.id].videoBitrate}Mbit/s |{' '}
+                        {telemetryData[user.id].audioBitrate}Kbit/s
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex space-x-1">
+                    <div className={user.hasAudio ? 'bg-gray-700 p-1 rounded' : 'bg-red-600 p-1 rounded'}>
+                      {user.hasAudio ? (
+                        <Mic className="w-3 h-3 text-white" />
+                      ) : (
+                        <MicOff className="w-3 h-3 text-white" />
                       )}
                     </div>
-                    <div className="flex space-x-1">
-                      <div className={user.hasAudio ? "bg-gray-700 p-1 rounded" : "bg-red-600 p-1 rounded"}>
-                        {user.hasAudio ? (
-                          <Mic className="w-3 h-3 text-white" />
-                        ) : (
-                          <MicOff className="w-3 h-3 text-white" />
-                        )}
-                      </div>
-                      <div className={user.hasVideo ? "bg-gray-700 p-1 rounded" : "bg-red-600 p-1 rounded"}>
-                        {user.hasVideo ? (
-                          <Video className="w-3 h-3 text-white" />
-                        ) : (
-                          <VideoOff className="w-3 h-3 text-white" />
-                        )}
-                      </div>
+                    <div className={user.hasVideo ? 'bg-gray-700 p-1 rounded' : 'bg-red-600 p-1 rounded'}>
+                      {user.hasVideo ? (
+                        <Video className="w-3 h-3 text-white" />
+                      ) : (
+                        <VideoOff className="w-3 h-3 text-white" />
+                      )}
                     </div>
                   </div>
-                  {/* Screen sharing indicator (local only for now) */}
-                  {user.hasScreenshare && (
-                    <div className="absolute top-3 left-3 bg-green-600 px-2 py-1 rounded text-white text-xs font-medium">
-                      Sharing Screen
-                    </div>
-                  )}
-                  {/* Info card toggle buttons */}
+                </div>
+                {/* Screen sharing indicator (local only for now) */}
+                {user.hasScreenshare && (
+                  <div className="absolute top-3 left-3 bg-green-600 px-2 py-1 rounded text-white text-xs font-medium">
+                    Sharing Screen
+                  </div>
+                )}
+                {/* Info card toggle buttons */}
+                <div className="absolute top-3 right-3 flex space-x-1">
+                  {/* Network and Codec Info buttons for remote users only */}
                   {!isSelf(user.id) && (
-                    <div className="absolute top-3 right-3 flex space-x-1">
+                    <>
                       {/* Network Stats Button */}
                       <button
                         onClick={() => toggleInfoCard(user.id, 'network')}
@@ -1124,259 +1172,274 @@ function SessionPage() {
                       >
                         <Info className="w-4 h-4" />
                       </button>
-                    </div>
+                    </>
                   )}
-                  {/* Info card overlay */}
-                  {showInfoCards[user.id] && (
-                    <div className="absolute inset-0 bg-white flex flex-col p-3 rounded-lg overflow-hidden">
-                      {/* Close button */}
-                      <div className="absolute top-3 right-3 z-10">
-                        <button
-                          onClick={() => toggleInfoCard(user.id, infoPanelType[user.id] || 'network')}
-                          className="p-1 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-600 transition-all duration-200"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-
-                      <div className="w-full h-full flex flex-col min-h-0">
-                        {/* Conditional rendering based on panel type */}
-                        {(!infoPanelType[user.id] || infoPanelType[user.id] === 'network') ? (
-                          <>
-                            {/* Network Stats Panel */}
-                            {/* Header */}
-                            <div className="mb-2 flex-shrink-0">
-                              <h3 className="text-lg font-bold text-black leading-tight">Network Stats</h3>
-                            </div>
-
-                            {/* Legend */}
-                            <div className="grid grid-cols-3 gap-1 mb-2 flex-shrink-0">
-                              <div className="flex items-center space-x-1">
-                                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                                <span className="text-xs font-medium text-gray-700">VIDEO</span>
-                              </div>
-                              <div className="flex items-center space-x-1">
-                                <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
-                                <span className="text-xs font-medium text-gray-700">AUDIO</span>
-                              </div>
-                              <div className="flex items-center space-x-1">
-                                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                                <span className="text-xs font-medium text-gray-700">LATENCY</span>
-                              </div>
-                            </div>
-
-                            {/* Values with smooth transitions */}
-                            <div className="grid grid-cols-3 gap-1 mb-3 flex-shrink-0">
-                              <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
-                                {!isSelf(user.id) && telemetryData[user.id]
-                                  ? `${telemetryData[user.id].videoBitrate.toFixed(1)} Mbit/s`
-                                  : 'N/A'
-                                }
-                              </span>
-                              <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
-                                {!isSelf(user.id) && telemetryData[user.id]
-                                  ? `${telemetryData[user.id].audioBitrate.toFixed(0)} Kbit/s`
-                                  : 'N/A'
-                                }
-                              </span>
-                              <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
-                                {!isSelf(user.id) && telemetryData[user.id]
-                                  ? `${telemetryData[user.id].latency}ms`
-                                  : 'N/A'
-                                }
-                              </span>
-                            </div>
-
-                            {/* Network Stats Graph */}
-                            <div className="flex-1 relative min-h-0">
-                              {/* Graph container */}
-                              <div className="h-full bg-gray-50 rounded relative overflow-hidden border border-gray-200 min-h-16">
-                                {/* Left Y-axis labels (Bitrate) */}
-                                <div className="absolute left-1 top-1 text-xs text-gray-500 leading-none">10M</div>
-                                <div className="absolute left-1 top-1/2 text-xs text-gray-500 leading-none">5M</div>
-                                <div className="absolute left-1 bottom-1 text-xs text-gray-500 leading-none">0</div>
-
-                                {/* Right Y-axis labels (Latency) */}
-                                <div className="absolute right-1 top-1 text-xs text-red-500 leading-none">200ms</div>
-                                <div className="absolute right-1 top-1/2 text-xs text-red-500 leading-none">100ms</div>
-                                <div className="absolute right-1 bottom-1 text-xs text-red-500 leading-none">0ms</div>
-
-                                {/* Grid lines */}
-                                <div className="absolute inset-0 flex flex-col justify-between p-1">
-                                  {[...Array(3)].map((_, i) => (
-                                    <div key={i} className="border-t border-gray-300 opacity-30"></div>
-                                  ))}
-                                </div>
-
-                                {/* Video bitrate line */}
-                                <div className="absolute inset-0 p-2">
-                                  <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
-                                    <polyline
-                                      fill="none"
-                                      stroke="#3b82f6"
-                                      strokeWidth="1.5"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      points={
-                                        !isSelf(user.id) && videoBitrateHistory[user.id] && videoBitrateHistory[user.id].length > 0
-                                          ? videoBitrateHistory[user.id]
-                                              .map((videoBitrate, index) => {
-                                                const x = (index / Math.max(videoBitrateHistory[user.id].length - 1, 1)) * 300;
-                                                const y = 100 - Math.min((videoBitrate / 10) * 100, 100);
-                                                return `${x},${y}`;
-                                              })
-                                              .join(' ')
-                                          : "0,25 20,23 40,24 60,22 80,25 100,23 120,26 140,24 160,22 180,25 200,23 220,27 240,25 260,24 280,26 300,24"
-                                      }
-                                    />
-                                  </svg>
-                                </div>
-
-                                {/* Audio bitrate line */}
-                                <div className="absolute inset-0 p-2">
-                                  <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
-                                    <polyline
-                                      fill="none"
-                                      stroke="#6b7280"
-                                      strokeWidth="1.5"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      points={
-                                        !isSelf(user.id) && audioBitrateHistory[user.id] && audioBitrateHistory[user.id].length > 0
-                                          ? audioBitrateHistory[user.id]
-                                              .map((audioBitrate, index) => {
-                                                const x = (index / Math.max(audioBitrateHistory[user.id].length - 1, 1)) * 300;
-                                                const y = 100 - Math.min((audioBitrate / 500) * 100, 100);
-                                                return `${x},${y}`;
-                                              })
-                                              .join(' ')
-                                          : "0,95 20,94 40,95 60,93 80,95 100,94 120,96 140,95 160,93 180,95 200,94 220,96 240,95 260,94 280,95 300,94"
-                                      }
-                                    />
-                                  </svg>
-                                </div>
-
-                                {/* Latency line */}
-                                <div className="absolute inset-0 p-2">
-                                  <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
-                                    <polyline
-                                      fill="none"
-                                      stroke="#ef4444"
-                                      strokeWidth="1.5"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      points={
-                                        !isSelf(user.id) && latencyHistory[user.id] && latencyHistory[user.id].length > 0
-                                          ? latencyHistory[user.id]
-                                              .map((latency, index) => {
-                                                const x = (index / Math.max(latencyHistory[user.id].length - 1, 1)) * 300;
-                                                const y = 100 - Math.min((latency / 200) * 100, 100);
-                                                return `${x},${y}`;
-                                              })
-                                              .join(' ')
-                                          : "0,85 20,83 40,87 60,84 80,86 100,85 120,88 140,82 160,85 180,87 200,84 220,89 240,83 260,86 280,84 300,85"
-                                      }
-                                    />
-                                  </svg>
-                                </div>
-                              </div>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            {/* Media Info Panel */}
-                            {/* Header */}
-                            <div className="mb-2 flex-shrink-0">
-                              <h3 className="text-lg font-bold text-black leading-tight">Media Info</h3>
-                            </div>
-
-                            {/* Media Information Grid*/}
-                            <div className="space-y-1 flex-1 text-xs overflow-y-auto">
-                              {/* Video & Audio*/}
-                              <div className="bg-gray-50 rounded p-1">
-                                <div className="grid grid-cols-2 gap-2">
-                                  {/* Video */}
-                                  <div>
-                                    <div className="font-semibold text-blue-600 mb-1 flex items-center text-xs">
-                                      <Video className="w-3 h-3 mr-1" />
-                                      Video
-                                    </div>
-                                    <div className="space-y-0.5">
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-600">Codec:</span>
-                                        <span className="font-medium text-black">
-                                          {codecData[user.id]?.videoCodec || 'H.264'}
-                                        </span>
-                                      </div>
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-600">Res:</span>
-                                        <span className="font-medium text-black">
-                                          {codecData[user.id]?.resolution || '1080p'}
-                                        </span>
-                                      </div>
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-600">FPS:</span>
-                                        <span className="font-medium text-black">
-                                          {codecData[user.id]?.frameRate || 30}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  {/* Audio */}
-                                  <div>
-                                    <div className="font-semibold text-green-600 mb-1 flex items-center text-xs">
-                                      <Mic className="w-3 h-3 mr-1" />
-                                      Audio
-                                    </div>
-                                    <div className="space-y-0.5">
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-600">Codec:</span>
-                                        <span className="font-medium text-black">
-                                          {codecData[user.id]?.audioCodec || 'AAC'}
-                                        </span>
-                                      </div>
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-600">Sample Rate:</span>
-                                        <span className="font-medium text-black">
-                                          {codecData[user.id]?.sampleRate ? (codecData[user.id].sampleRate / 1000).toFixed(0) + 'k' : '48k'}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Sync Information */}
-                              <div className="bg-gray-50 rounded p-1">
-                                <div className="font-semibold text-purple-600 mb-1 flex items-center text-xs">
-                                  <Activity className="w-3 h-3 mr-1" />
-                                  Sync & Buffer
-                                </div>
-                                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-                                  <div className="flex justify-between">
-                                    <span className="text-gray-600">A/V Drift:</span>
-                                    <span className={`font-semibold ${Math.abs(codecData[user.id]?.syncDrift || 0) > 10 ? 'text-red-600' : 'text-green-600'}`}>
-                                      {codecData[user.id]?.syncDrift !== undefined
-                                        ? `${codecData[user.id].syncDrift > 0 ? '+' : ''}${codecData[user.id].syncDrift}ms`
-                                        : '0ms'
-                                      }
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-gray-600">Buffer duration:</span>
-                                    <span className="font-semibold text-green-600">0.3s</span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                  {/* Maximize / Minimize Button — shown for all users */}
+                  <button
+                    onClick={() => setMaximizedUserId(maximizedUserId === user.id ? null : user.id)}
+                    className="p-1 rounded-full bg-gray-700 hover:bg-gray-600 text-white"
+                    title={maximizedUserId === user.id ? 'Minimize View' : 'Maximize View'}
+                  >
+                    {maximizedUserId === user.id ? <Minimize className="w-4 h-4" /> : <Expand className="w-4 h-4" />}
+                  </button>
                 </div>
-              ))}
+                {/* Info card overlay */}
+                {showInfoCards[user.id] && (
+                  <div className="absolute inset-0 bg-white flex flex-col p-3 rounded-lg overflow-hidden">
+                    {/* Close button */}
+                    <div className="absolute top-3 right-3 z-10">
+                      <button
+                        onClick={() => toggleInfoCard(user.id, infoPanelType[user.id] || 'network')}
+                        className="p-1 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-600 transition-all duration-200"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    <div className="w-full h-full flex flex-col min-h-0">
+                      {/* Conditional rendering based on panel type */}
+                      {!infoPanelType[user.id] || infoPanelType[user.id] === 'network' ? (
+                        <>
+                          {/* Network Stats Panel */}
+                          {/* Header */}
+                          <div className="mb-2 flex-shrink-0">
+                            <h3 className="text-lg font-bold text-black leading-tight">Network Stats</h3>
+                          </div>
+
+                          {/* Legend */}
+                          <div className="grid grid-cols-3 gap-1 mb-2 flex-shrink-0">
+                            <div className="flex items-center space-x-1">
+                              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                              <span className="text-xs font-medium text-gray-700">VIDEO</span>
+                            </div>
+                            <div className="flex items-center space-x-1">
+                              <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
+                              <span className="text-xs font-medium text-gray-700">AUDIO</span>
+                            </div>
+                            <div className="flex items-center space-x-1">
+                              <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                              <span className="text-xs font-medium text-gray-700">LATENCY</span>
+                            </div>
+                          </div>
+
+                          {/* Values with smooth transitions */}
+                          <div className="grid grid-cols-3 gap-1 mb-3 flex-shrink-0">
+                            <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
+                              {!isSelf(user.id) && telemetryData[user.id]
+                                ? `${telemetryData[user.id].videoBitrate.toFixed(1)} Mbit/s`
+                                : 'N/A'}
+                            </span>
+                            <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
+                              {!isSelf(user.id) && telemetryData[user.id]
+                                ? `${telemetryData[user.id].audioBitrate.toFixed(0)} Kbit/s`
+                                : 'N/A'}
+                            </span>
+                            <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
+                              {!isSelf(user.id) && telemetryData[user.id]
+                                ? `${telemetryData[user.id].latency}ms`
+                                : 'N/A'}
+                            </span>
+                          </div>
+
+                          {/* Network Stats Graph */}
+                          <div className="flex-1 relative min-h-0">
+                            {/* Graph container */}
+                            <div className="h-full bg-gray-50 rounded relative overflow-hidden border border-gray-200 min-h-16">
+                              {/* Left Y-axis labels (Bitrate) */}
+                              <div className="absolute left-1 top-1 text-xs text-gray-500 leading-none">10M</div>
+                              <div className="absolute left-1 top-1/2 text-xs text-gray-500 leading-none">5M</div>
+                              <div className="absolute left-1 bottom-1 text-xs text-gray-500 leading-none">0</div>
+
+                              {/* Right Y-axis labels (Latency) */}
+                              <div className="absolute right-1 top-1 text-xs text-red-500 leading-none">200ms</div>
+                              <div className="absolute right-1 top-1/2 text-xs text-red-500 leading-none">100ms</div>
+                              <div className="absolute right-1 bottom-1 text-xs text-red-500 leading-none">0ms</div>
+
+                              {/* Grid lines */}
+                              <div className="absolute inset-0 flex flex-col justify-between p-1">
+                                {[...Array(3)].map((_, i) => (
+                                  <div key={i} className="border-t border-gray-300 opacity-30"></div>
+                                ))}
+                              </div>
+
+                              {/* Video bitrate line */}
+                              <div className="absolute inset-0 p-2">
+                                <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
+                                  <polyline
+                                    fill="none"
+                                    stroke="#3b82f6"
+                                    strokeWidth="1.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    points={
+                                      !isSelf(user.id) &&
+                                      videoBitrateHistory[user.id] &&
+                                      videoBitrateHistory[user.id].length > 0
+                                        ? videoBitrateHistory[user.id]
+                                            .map((videoBitrate, index) => {
+                                              const x =
+                                                (index / Math.max(videoBitrateHistory[user.id].length - 1, 1)) * 300
+                                              const y = 100 - Math.min((videoBitrate / 10) * 100, 100)
+                                              return `${x},${y}`
+                                            })
+                                            .join(' ')
+                                        : '0,25 20,23 40,24 60,22 80,25 100,23 120,26 140,24 160,22 180,25 200,23 220,27 240,25 260,24 280,26 300,24'
+                                    }
+                                  />
+                                </svg>
+                              </div>
+
+                              {/* Audio bitrate line */}
+                              <div className="absolute inset-0 p-2">
+                                <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
+                                  <polyline
+                                    fill="none"
+                                    stroke="#6b7280"
+                                    strokeWidth="1.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    points={
+                                      !isSelf(user.id) &&
+                                      audioBitrateHistory[user.id] &&
+                                      audioBitrateHistory[user.id].length > 0
+                                        ? audioBitrateHistory[user.id]
+                                            .map((audioBitrate, index) => {
+                                              const x =
+                                                (index / Math.max(audioBitrateHistory[user.id].length - 1, 1)) * 300
+                                              const y = 100 - Math.min((audioBitrate / 500) * 100, 100)
+                                              return `${x},${y}`
+                                            })
+                                            .join(' ')
+                                        : '0,95 20,94 40,95 60,93 80,95 100,94 120,96 140,95 160,93 180,95 200,94 220,96 240,95 260,94 280,95 300,94'
+                                    }
+                                  />
+                                </svg>
+                              </div>
+
+                              {/* Latency line */}
+                              <div className="absolute inset-0 p-2">
+                                <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
+                                  <polyline
+                                    fill="none"
+                                    stroke="#ef4444"
+                                    strokeWidth="1.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    points={
+                                      !isSelf(user.id) && latencyHistory[user.id] && latencyHistory[user.id].length > 0
+                                        ? latencyHistory[user.id]
+                                            .map((latency, index) => {
+                                              const x = (index / Math.max(latencyHistory[user.id].length - 1, 1)) * 300
+                                              const y = 100 - Math.min((latency / 200) * 100, 100)
+                                              return `${x},${y}`
+                                            })
+                                            .join(' ')
+                                        : '0,85 20,83 40,87 60,84 80,86 100,85 120,88 140,82 160,85 180,87 200,84 220,89 240,83 260,86 280,84 300,85'
+                                    }
+                                  />
+                                </svg>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {/* Media Info Panel */}
+                          {/* Header */}
+                          <div className="mb-2 flex-shrink-0">
+                            <h3 className="text-lg font-bold text-black leading-tight">Media Info</h3>
+                          </div>
+
+                          {/* Media Information Grid*/}
+                          <div className="space-y-1 flex-1 text-xs overflow-y-auto">
+                            {/* Video & Audio*/}
+                            <div className="bg-gray-50 rounded p-1">
+                              <div className="grid grid-cols-2 gap-2">
+                                {/* Video */}
+                                <div>
+                                  <div className="font-semibold text-blue-600 mb-1 flex items-center text-xs">
+                                    <Video className="w-3 h-3 mr-1" />
+                                    Video
+                                  </div>
+                                  <div className="space-y-0.5">
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600">Codec:</span>
+                                      <span className="font-medium text-black">
+                                        {codecData[user.id]?.videoCodec || 'H.264'}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600">Res:</span>
+                                      <span className="font-medium text-black">
+                                        {codecData[user.id]?.resolution || '1080p'}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600">FPS:</span>
+                                      <span className="font-medium text-black">
+                                        {codecData[user.id]?.frameRate || 30}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Audio */}
+                                <div>
+                                  <div className="font-semibold text-green-600 mb-1 flex items-center text-xs">
+                                    <Mic className="w-3 h-3 mr-1" />
+                                    Audio
+                                  </div>
+                                  <div className="space-y-0.5">
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600">Codec:</span>
+                                      <span className="font-medium text-black">
+                                        {codecData[user.id]?.audioCodec || 'AAC'}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600">Sample Rate:</span>
+                                      <span className="font-medium text-black">
+                                        {codecData[user.id]?.sampleRate
+                                          ? (codecData[user.id].sampleRate / 1000).toFixed(0) + 'k'
+                                          : '48k'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Sync Information */}
+                            <div className="bg-gray-50 rounded p-1">
+                              <div className="font-semibold text-purple-600 mb-1 flex items-center text-xs">
+                                <Activity className="w-3 h-3 mr-1" />
+                                Sync & Buffer
+                              </div>
+                              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                                <div className="flex justify-between">
+                                  <span className="text-gray-600">A/V Drift:</span>
+                                  <span
+                                    className={`font-semibold ${Math.abs(codecData[user.id]?.syncDrift || 0) > 10 ? 'text-red-600' : 'text-green-600'}`}
+                                  >
+                                    {codecData[user.id]?.syncDrift !== undefined
+                                      ? `${codecData[user.id].syncDrift > 0 ? '+' : ''}${codecData[user.id].syncDrift}ms`
+                                      : '0ms'}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-600">Buffer duration:</span>
+                                  <span className="font-semibold text-green-600">0.3s</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
         {/* Chat Panel */}
@@ -1400,16 +1463,10 @@ function SessionPage() {
               {chatMessages.map((message) => (
                 <div key={message.id} className="space-y-1">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-gray-900">
-                      {message.sender}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {message.timestamp}
-                    </span>
+                    <span className="text-sm font-medium text-gray-900">{message.sender}</span>
+                    <span className="text-xs text-gray-500">{message.timestamp}</span>
                   </div>
-                  <p className="text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2">
-                    {message.message}
-                  </p>
+                  <p className="text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2">{message.message}</p>
                 </div>
               ))}
             </div>
@@ -1440,20 +1497,18 @@ function SessionPage() {
         {/* Mic Button */}
         <button
           onClick={handleToggleMic}
-          className={`p-3 rounded-full transition-all duration-200 ${isMicOn
-            ? 'bg-gray-700 hover:bg-gray-600 text-white'
-            : 'bg-red-600 hover:bg-red-700 text-white'
-            }`}
+          className={`p-3 rounded-full transition-all duration-200 ${
+            isMicOn ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-red-600 hover:bg-red-700 text-white'
+          }`}
         >
           {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
         </button>
         {/* Video Button */}
         <button
           onClick={handleToggleCam}
-          className={`p-3 rounded-full transition-all duration-200 ${isCamOn
-            ? 'bg-gray-700 hover:bg-gray-600 text-white'
-            : 'bg-red-600 hover:bg-red-700 text-white'
-            }`}
+          className={`p-3 rounded-full transition-all duration-200 ${
+            isCamOn ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-red-600 hover:bg-red-700 text-white'
+          }`}
           disabled={!mediaReady}
         >
           {isCamOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
@@ -1461,17 +1516,36 @@ function SessionPage() {
         {/* Screen Share Button */}
         <button
           onClick={handleToggleScreenShare}
-          className={`p-3 rounded-full transition-all duration-200 ${isScreenSharing
-            ? 'bg-blue-600 hover:bg-blue-700 text-white'
-            : 'bg-gray-700 hover:bg-gray-600 text-white'
-            }`}
+          className={`p-3 rounded-full transition-all duration-200 ${
+            isScreenSharing ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'
+          }`}
         >
           <MonitorUp className="w-5 h-5" />
         </button>
+        {/* Pagination Buttons */}
+        {userCount > usersPerPage && isSmallScreen && (
+          <>
+            <button
+              onClick={() => setPageIndex(0)}
+              disabled={pageIndex === 0}
+              className="px-3 py-1 bg-gray-700 rounded text-white disabled:opacity-50"
+            >
+              1
+            </button>
+            <button
+              onClick={() => setPageIndex(1)}
+              disabled={pageIndex === 1}
+              className="px-3 py-1 bg-gray-700 rounded text-white disabled:opacity-50"
+            >
+              2
+            </button>
+          </>
+        )}
         {/* End Call Button */}
         <button
           onClick={leaveRoom}
-          className="p-3 rounded-full bg-red-600 hover:bg-red-700 text-white transition-all duration-200 ml-8">
+          className="p-3 rounded-full bg-red-600 hover:bg-red-700 text-white transition-all duration-200 ml-8"
+        >
           <Phone className="w-5 h-5 transform rotate-135" />
         </button>
         {/* Chat Toggle Button (when chat is closed) */}
@@ -1485,7 +1559,7 @@ function SessionPage() {
         )}
       </div>
     </div>
-  );
+  )
 }
 
 export default SessionPage;
