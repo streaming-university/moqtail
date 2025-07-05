@@ -1159,35 +1159,30 @@ function SessionPage() {
                 )}
                 {/* Info card toggle buttons */}
                 <div className="absolute top-3 right-3 flex space-x-1">
-                  {/* Network and Codec Info buttons for remote users only */}
-                  {!isSelf(user.id) && (
-                    <>
-                      {/* Network Stats Button */}
-                      <button
-                        onClick={() => toggleInfoCard(user.id, 'network')}
-                        className={`p-1 rounded-full transition-all duration-200 ${
-                          showInfoCards[user.id] && infoPanelType[user.id] === 'network'
-                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                            : 'bg-gray-700 hover:bg-blue-600 text-white'
-                        }`}
-                        title="Network Statistics"
-                      >
-                        <Activity className="w-4 h-4" />
-                      </button>
-                      {/* Media Info Button */}
-                      <button
-                        onClick={() => toggleInfoCard(user.id, 'codec')}
-                        className={`p-1 rounded-full transition-all duration-200 ${
-                          showInfoCards[user.id] && infoPanelType[user.id] === 'codec'
-                            ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                            : 'bg-gray-700 hover:bg-purple-600 text-white'
-                        }`}
-                        title="Media Information"
-                      >
-                        <Info className="w-4 h-4" />
-                      </button>
-                    </>
-                  )}
+                  {/* Network Stats Button */}
+                  <button
+                    onClick={() => toggleInfoCard(user.id, 'network')}
+                    className={`p-1 rounded-full transition-all duration-200 ${
+                      showInfoCards[user.id] && infoPanelType[user.id] === 'network'
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                        : 'bg-gray-700 hover:bg-blue-600 text-white'
+                    }`}
+                    title="Network Statistics"
+                  >
+                    <Activity className="w-4 h-4" />
+                  </button>
+                  {/* Media Info Button */}
+                  <button
+                    onClick={() => toggleInfoCard(user.id, 'codec')}
+                    className={`p-1 rounded-full transition-all duration-200 ${
+                      showInfoCards[user.id] && infoPanelType[user.id] === 'codec'
+                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                        : 'bg-gray-700 hover:bg-purple-600 text-white'
+                    }`}
+                    title="Media Information"
+                  >
+                    <Info className="w-4 h-4" />
+                  </button>
                   {/* Maximize / Minimize Button — shown for all users */}
                   <button
                     onClick={() => setMaximizedUserId(maximizedUserId === user.id ? null : user.id)}
@@ -1197,6 +1192,7 @@ function SessionPage() {
                     {maximizedUserId === user.id ? <Minimize className="w-4 h-4" /> : <Expand className="w-4 h-4" />}
                   </button>
                 </div>
+
                 {/* Info card overlay */}
                 {showInfoCards[user.id] && (
                   <div className="absolute inset-0 bg-white flex flex-col p-3 rounded-lg overflow-hidden">
