@@ -9,4 +9,12 @@ export interface AppSettings {
   videoDecoderConfig: VideoDecoderConfig
   audioDecoderConfig: AudioDecoderConfig
   keyFrameInterval: 'auto' | number
+  clockNormalizationConfig: {
+    timeServerUrl: string
+    numberOfSamples: number
+  }
+  playoutBufferConfig: {
+    targetLatencyMs: number
+    maxLatencyMs: number
+  }
 }

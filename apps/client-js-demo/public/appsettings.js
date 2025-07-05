@@ -31,4 +31,12 @@ window.appSettings = {
     bitrate: 48_000,
   },
   keyFrameInterval: 200,
+  clockNormalizationConfig: {
+    timeServerUrl: 'https://time.akamai.com/?ms',
+    numberOfSamples: 5,
+  },
+  playoutBufferConfig: {
+    targetLatencyMs: 100,
+    maxLatencyMs: 1000,
+  },
 }
