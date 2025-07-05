@@ -621,21 +621,21 @@ function SessionPage() {
     };
   };
 
-  const getOtherParticipantCodecData = () => {
-    const videoConfig = window.appSettings.videoDecoderConfig;
-    const audioConfig = window.appSettings.audioDecoderConfig;
+  const getOtherParticipantCodecData = () => { // TODO: this should be dynamic based on actual participant data
+    const videoConfig = window.appSettings.videoEncoderConfig;
+    const audioConfig = window.appSettings.audioEncoderConfig;
 
     return {
       videoCodec: videoConfig.codec,
       audioCodec: audioConfig.codec,
-      frameRate: "N/A", // TODO
+      frameRate: videoConfig.framerate,
       sampleRate: audioConfig.sampleRate,
-      resolution: "640x360", // TODO
-      syncDrift: 0,
-      videoBitrate: "N/A", // TODO
-      audioBitrate: "N/A", // TODO
+      resolution: `${videoConfig.width}x${videoConfig.height}`,
+      syncDrift: 0, // TODO
+      videoBitrate: videoConfig.bitrate,
+      audioBitrate: audioConfig.bitrate,
       numberOfChannels: audioConfig.numberOfChannels
-      };
+    };
   };
 
   const previousValues = useRef<{ [userId: string]: { latency: number; videoBitrate: number; audioBitrate: number } }>({});
@@ -1127,7 +1127,7 @@ function SessionPage() {
                     <div>
                       {user.name} {isSelf(user.id) && '(You)'}
                     </div>
-                    {!isSelf(user.id) && telemetryData[user.id] && (
+                    {telemetryData[user.id] && (
                       <div className="hidden md:block text-xs text-gray-300 mt-1">
                         {telemetryData[user.id].latency}ms | {telemetryData[user.id].videoBitrate}Mbit/s |{' '}
                         {telemetryData[user.id].audioBitrate}Kbit/s
@@ -1449,13 +1449,16 @@ function SessionPage() {
                                 </div>
                                 <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
                                   <div className="flex justify-between">
-                                    <span className="text-gray-600">A/V Drift: //TODO</span>
-                                    <span className={`font-semibold ${Math.abs(codecData[user.id]?.syncDrift || 0) > 10 ? 'text-red-600' : 'text-green-600'}`}>
-                                      {codecData[user.id]?.syncDrift !== undefined
-                                        ? `${codecData[user.id].syncDrift > 0 ? '+' : ''}${codecData[user.id].syncDrift}ms`
-                                        : '0ms'
-                                      }
+                                    <span className="text-gray-600">A/V Drift: </span>
+                                    <span className="font-semibold text-green-600">
+                                      N/A
                                     </span>
+                                    {/* <span className={`font-semibold ${Math.abs(codecData[user.id]?.syncDrift || 0) > 10 ? 'text-red-600' : 'text-green-600'}`}> */}
+                                      {/* {codecData[user.id]?.syncDrift !== undefined */}
+                                        {/* ? `${codecData[user.id].syncDrift > 0 ? '+' : ''}${codecData[user.id].syncDrift}ms` */}
+                                        {/* : '0ms' */}
+                                      {/* } */}
+                                    {/* </span> */}
                                   </div>
                                   <div className="flex justify-between">
                                     <span className="text-gray-600">Buffer duration:</span>
