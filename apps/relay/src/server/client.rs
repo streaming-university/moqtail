@@ -1,6 +1,6 @@
 #[allow(dead_code)]
 use bytes::Bytes;
-use moqtail::{
+use moqtail_rs::{
   model::{
     common::tuple::Tuple,
     control::{client_setup::ClientSetup, control_message::ControlMessage},

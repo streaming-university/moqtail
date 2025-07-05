@@ -1,5 +1,5 @@
-use moqtail::model::data::object::Object;
-use moqtail::transport::data_stream_handler::HeaderInfo;
+use moqtail_rs::model::data::object::Object;
+use moqtail_rs::transport::data_stream_handler::HeaderInfo;
 use std::{
   collections::{BTreeMap, VecDeque},
   sync::Arc,

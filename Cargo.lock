@@ -277,7 +277,7 @@ dependencies = [
  "bb8",
  "bb8-redis",
  "dotenvy",
- "moqtail",
+ "moqtail-rs",
  "redis",
  "serde",
  "serde_json",
@@ -352,7 +352,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "dashmap",
- "moqtail",
+ "moqtail-rs",
  "serde_json",
  "tokio",
  "tracing",
@@ -961,7 +961,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "moqtail"
+name = "moqtail-rs"
 version = "0.1.0"
 dependencies = [
  "bytes",
@@ -1348,7 +1348,7 @@ dependencies = [
  "bytes",
  "clap",
  "dashmap",
- "moqtail",
+ "moqtail-rs",
  "serde_json",
  "tokio",
  "tracing",

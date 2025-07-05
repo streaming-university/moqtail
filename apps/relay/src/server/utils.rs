@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use moqtail::{
+use moqtail_rs::{
   model::control::control_message::ControlMessageTrait, transport::data_stream_handler::HeaderInfo,
 };
 

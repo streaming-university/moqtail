@@ -1,5 +1,5 @@
 use super::client::MOQTClient;
-use moqtail::model::common::tuple::Tuple;
+use moqtail_rs::model::common::tuple::Tuple;
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::{debug, info};
