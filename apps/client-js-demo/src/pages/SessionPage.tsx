@@ -57,6 +57,9 @@ function SessionPage() {
   const chatSenderRef = useRef<{ send: (msg: string) => void } | null>(null)
   const akamaiOffsetRef = useRef<number>(0)
   const [mediaReady, setMediaReady] = useState(false)
+  const chatMessagesRef = useRef<HTMLDivElement>(null)
+  const [isUserScrolling, setIsUserScrolling] = useState(false)
+  const [userColors, setUserColors] = useState<{ [userId: string]: { bgClass: string; hexColor: string } }>({})
 
   const handleSendMessage = async () => {
     if (chatMessage.trim()) {
@@ -123,23 +126,28 @@ function SessionPage() {
     }
   }
 
-  const getUserColor = (name: string): string => {
-    const colors = [
-      'bg-blue-500',
-      'bg-green-500',
-      'bg-purple-500',
-      'bg-pink-500',
-      'bg-indigo-500',
-      'bg-yellow-500',
-      'bg-red-500',
-      'bg-teal-500',
-    ]
-    let hash = 0
-    for (let i = 0; i < name.length; i++) {
-      hash = name.charCodeAt(i) + ((hash << 5) - hash)
-    }
-    return colors[Math.abs(hash) % colors.length]
+  const availableColors = [
+  { bgClass: 'bg-blue-500', hexColor: '#3b82f6' },
+  { bgClass: 'bg-green-500', hexColor: '#22c55e' },
+  { bgClass: 'bg-purple-500', hexColor: '#a855f7' },
+  { bgClass: 'bg-red-500', hexColor: '#ff0000' },
+  { bgClass: 'bg-orange-500', hexColor: '#f97316' },
+  { bgClass: 'bg-teal-500', hexColor: '#14b8a6' },
+]
+
+  const getUserColor = (userId: string): string => {
+    return userColors[userId]?.bgClass || 'bg-gray-500'
   }
+
+  const getUserColorHex = (userId: string): string => {
+    return userColors[userId]?.hexColor || '#6b7280'
+  }
+
+  const getSenderUserId = (senderName: string): string => {
+    const user = Object.values(users).find(u => u.name === senderName)
+    return user?.id || ''
+  }
+
   // Toggle mic handler
   const handleToggle = (kind: 'mic' | 'cam') => {
     // If trying to toggle camera while screen sharing, stop screen sharing first
@@ -600,6 +608,12 @@ function SessionPage() {
         delete newData[msg.userId]
         return newData
       })
+      // Clean up user color
+      setUserColors((prev) => {
+        const newColors = { ...prev }
+        delete newColors[msg.userId]
+        return newColors
+      })
       // TODO: unsubscribe
     })
 
@@ -619,6 +633,29 @@ function SessionPage() {
       socket.off('screen-share-toggled')
     }
   }, [contextSocket])
+
+  useEffect(() => {
+  const assignColors = () => {
+    const assigned = { ...userColors }
+    const used = new Set(Object.values(assigned).map(c => c.bgClass))
+
+    Object.keys(users).forEach(uid => {
+      if (!assigned[uid]) {
+        const available = availableColors.find(c => !used.has(c.bgClass))
+        if (available) {
+          assigned[uid] = available
+          used.add(available.bgClass)
+        } else {
+          // fallback: assign gray if colors are exhausted
+          assigned[uid] = { bgClass: 'bg-gray-500', hexColor: '#6b7280' }
+        }
+      }
+    })
+    setUserColors(assigned)
+  }
+
+  assignColors()
+}, [users])
 
   // Initialize telemetry instances for new users
   const initializeTelemetryForUser = (userId: string) => {
@@ -822,6 +859,20 @@ function SessionPage() {
 
   const userCount = getUserCount()
 
+  useEffect(() => {
+    if (chatMessagesRef.current && !isUserScrolling) {
+      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight
+    }
+  }, [chatMessages, isUserScrolling])
+
+  const handleChatScroll = () => {
+    if (chatMessagesRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = chatMessagesRef.current
+      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 5 // 5px tolerance
+      setIsUserScrolling(!isAtBottom)
+    }
+  }
+
   return (
     <div className="h-screen bg-gray-900 flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
       {/* Header */}
@@ -868,7 +919,7 @@ function SessionPage() {
                       {!user.hasVideo && !isScreenSharing && (
                         <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
                           <div
-                            className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.name)}`}
+                            className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.id)}`}
                           >
                             <div className="text-white text-2xl font-bold">{getUserInitials(user.name)}</div>
                           </div>
@@ -890,7 +941,7 @@ function SessionPage() {
                       {!user.hasVideo && (
                         <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
                           <div
-                            className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.name)}`}
+                            className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.id)}`}
                           >
                             <div className="text-white text-2xl font-bold">{getUserInitials(user.name)}</div>
                           </div>
@@ -954,16 +1005,39 @@ function SessionPage() {
               </button>
             </div>
             {/* Chat Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-              {chatMessages.map((message) => (
-                <div key={message.id} className="space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-gray-900">{message.sender}</span>
-                    <span className="text-xs text-gray-500">{message.timestamp}</span>
+            <div
+              ref={chatMessagesRef}
+              className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0"
+              onScroll={handleChatScroll}
+            >
+              {chatMessages.map((message) => {
+                const isOwnMessage = message.sender === username
+                const senderUserId = getSenderUserId(message.sender)
+                return (
+                  <div key={message.id} className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-xs lg:max-w-md ${isOwnMessage ? 'order-2' : 'order-1'}`}>
+                      <div className={`flex items-center space-x-2 mb-1 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+                        <span
+                          className={`text-sm font-medium`}
+                          style={{ color: isOwnMessage ? '#3b82f6' : getUserColorHex(senderUserId) }}
+                        >
+                          {isOwnMessage ? 'You' : message.sender}
+                        </span>
+                        <span className="text-xs text-gray-500">{message.timestamp}</span>
+                      </div>
+                      <div
+                        className={`text-sm px-3 py-2 rounded-lg ${
+                          isOwnMessage
+                            ? 'bg-blue-500 text-white rounded-br-none'
+                            : 'bg-gray-100 text-gray-800 rounded-bl-none'
+                        }`}
+                      >
+                        {message.message}
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2">{message.message}</p>
-                </div>
-              ))}
+                )
+              })}
             </div>
             {/* Chat Input */}
             <div className="p-4 border-t border-gray-200 flex-shrink-0">
