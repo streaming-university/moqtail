@@ -17,15 +17,17 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          sparse-checkout: .github
+          cache: 'npm'
 
       - name: Install commitlint
         run: npm install -g @commitlint/config-conventional @commitlint/cli
 
       - name: Run commitlint
         shell: bash
-        working-directory: .github
         run: |
           cat <<EOF > pr_details.txt
           ${{ github.event.pull_request.title }}
