@@ -165,7 +165,7 @@ impl ControlMessageTrait for SubscribeOk {
       _ => {
         return Err(ParseError::ProcotolViolation {
           context: "SubscribeOk::parse_payload(content_exists)",
-          details: format!("Invalid Content Exists value: {}", content_exists_raw),
+          details: format!("Invalid Content Exists value: {content_exists_raw}"),
         });
       }
     };

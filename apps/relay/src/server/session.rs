@@ -253,7 +253,7 @@ impl Session {
                 let subgroup_id = header.subgroup_id.unwrap_or(0);
                 group_id = header.group_id;
                 track_alias = header.track_alias;
-                stream_id = format!("{}_subgroup_{}_{}", track_alias, group_id, subgroup_id);
+                stream_id = format!("{track_alias}_subgroup_{group_id}_{subgroup_id}");
                 header_payload = header.serialize().unwrap();
               }
               HeaderInfo::Fetch {
@@ -269,7 +269,7 @@ impl Session {
                   .get(&fetch_request_id)
                   .map_or(0, |r| r.track_alias);
                 header_payload = header.serialize().unwrap();
-                stream_id = format!("{}_fetch_{}", track_alias, fetch_request_id);
+                stream_id = format!("{track_alias}_fetch_{fetch_request_id}");
               }
             }
 

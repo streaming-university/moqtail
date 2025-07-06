@@ -187,7 +187,7 @@ mod tests {
     async fn new() -> Result<Self, Box<dyn Error>> {
       // Create server identity (self-signed certificate)
       let server_identity = Identity::self_signed(std::iter::once("localhost"))
-        .map_err(|e| format!("Failed to create server identity: {}", e))?;
+        .map_err(|e| format!("Failed to create server identity: {e}"))?;
 
       // Get the certificate hash from the server identity
       let server_cert_hash = server_identity.certificate_chain().as_slice()[0].hash();
@@ -197,17 +197,17 @@ mod tests {
         .with_bind_address(
           "127.0.0.1:0"
             .parse()
-            .map_err(|e| format!("Failed to parse bind address: {}", e))?,
+            .map_err(|e| format!("Failed to parse bind address: {e}"))?,
         )
         .with_identity(server_identity)
         .build();
 
       // Create and start the server endpoint
       let server_endpoint = Endpoint::server(server_config)
-        .map_err(|e| format!("Failed to create server endpoint: {}", e))?;
+        .map_err(|e| format!("Failed to create server endpoint: {e}"))?;
       let server_addr = server_endpoint
         .local_addr()
-        .map_err(|e| format!("Failed to get server local address: {}", e))?;
+        .map_err(|e| format!("Failed to get server local address: {e}"))?;
 
       // Create a channel to get the server connection from the spawned task
       let (tx, rx) = tokio::sync::oneshot::channel();
@@ -221,7 +221,7 @@ mod tests {
           // Await the session request
           let session_request = incoming
             .await
-            .map_err(|e| format!("Failed to await session request: {}", e))
+            .map_err(|e| format!("Failed to await session request: {e}"))
             .unwrap();
 
           let server = session_request.accept().await.unwrap();
@@ -242,7 +242,7 @@ mod tests {
         .build();
 
       let client_endpoint = Endpoint::client(client_config)
-        .map_err(|e| format!("Failed to create client endpoint: {}", e))?;
+        .map_err(|e| format!("Failed to create client endpoint: {e}"))?;
 
       // Start client connection concurrently while server is accepting
       let client = client_endpoint
@@ -252,13 +252,13 @@ mod tests {
             .into_options(),
         )
         .await
-        .map_err(|e| format!("Client connection failed: {}", e))?;
+        .map_err(|e| format!("Client connection failed: {e}"))?;
 
       // Wait for the server connection from the spawned task
       let server = rx
         .await
         .map_err(|_| "Server task failed to send connection back")?
-        .map_err(|e| format!("Server connection error: {}", e))?;
+        .map_err(|e| format!("Server connection error: {e}"))?;
 
       Ok(Self { client, server })
     }
@@ -269,16 +269,16 @@ mod tests {
       let (client_send, client_recv) = match self.client.open_bi().await {
         Ok(stream_fut) => match stream_fut.await {
           Ok((send, recv)) => (send, recv),
-          Err(e) => return Err(format!("Failed to await client stream: {}", e).into()),
+          Err(e) => return Err(format!("Failed to await client stream: {e}").into()),
         },
-        Err(e) => return Err(format!("Failed to open client stream: {}", e).into()),
+        Err(e) => return Err(format!("Failed to open client stream: {e}").into()),
       };
 
       let (server_send, _) = self
         .server
         .accept_bi()
         .await
-        .map_err(|e| format!("Failed to accept server stream: {}", e))?;
+        .map_err(|e| format!("Failed to accept server stream: {e}"))?;
 
       let plane = ControlStreamHandler::new(client_send, client_recv);
       Ok((plane, server_send))
@@ -406,14 +406,14 @@ mod tests {
       .open_bi()
       .await?
       .await
-      .map_err(|e| format!("Failed to open bidirectional stream: {}", e))?;
+      .map_err(|e| format!("Failed to open bidirectional stream: {e}"))?;
 
     let mut client_send = client_send;
     let (_, mut server_recv) = setup
       .server
       .accept_bi()
       .await
-      .map_err(|e| format!("Failed to accept bidirectional stream: {}", e))?;
+      .map_err(|e| format!("Failed to accept bidirectional stream: {e}"))?;
 
     // Test basic data transfer
     client_send.write_all(&[1, 2, 3, 4]).await?;
@@ -438,7 +438,7 @@ mod tests {
     // Should timeout after receiving partial message
     match plane.next_message().await {
       Err(TerminationCode::ControlMessageTimeout) => Ok(()),
-      other => panic!("Expected timeout, got {:?}", other),
+      other => panic!("Expected timeout, got {other:?}"),
     }
   }
 
@@ -547,8 +547,7 @@ mod tests {
       let received_msg = plane.next_message().await.unwrap();
       assert_eq!(
         received_msg, expected_msg,
-        "Mismatch between sent and received message.\nExpected: {:?}\nReceived: {:?}",
-        expected_msg, received_msg
+        "Mismatch between sent and received message.\nExpected: {expected_msg:?}\nReceived: {received_msg:?}"
       );
     }
 

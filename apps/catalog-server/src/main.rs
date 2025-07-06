@@ -30,7 +30,7 @@ async fn main() {
     .with_state(pool);
 
   let addr = SocketAddr::from(([127, 0, 0, 1], port));
-  println!("listening on http://{}", addr);
+  println!("listening on http://{addr}");
 
   axum::serve(tokio::net::TcpListener::bind(addr).await.unwrap(), app)
     .await
@@ -41,7 +41,7 @@ async fn get_catalog(
   Path(id): Path<String>,
   State(pool): State<Pool<RedisConnectionManager>>,
 ) -> impl IntoResponse {
-  let key = format!("catalog:{}", id);
+  let key = format!("catalog:{id}");
 
   let mut conn = match pool.get().await {
     Ok(conn) => conn,
@@ -69,7 +69,7 @@ pub async fn save_catalog(
   State(pool): State<Pool<RedisConnectionManager>>,
   Json(payload): Json<warp_catalog::Catalog>,
 ) -> impl IntoResponse {
-  let key = format!("catalog:{}", id);
+  let key = format!("catalog:{id}");
 
   let mut conn = match pool.get().await {
     Ok(c) => c,
