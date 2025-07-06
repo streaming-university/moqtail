@@ -1,4 +1,4 @@
-use moqtail::model::catalog::warp_catalog;
+use moqtail_rs::model::catalog::warp_catalog;
 
 use axum::{
   Json, Router,

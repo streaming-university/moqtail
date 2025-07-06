@@ -1,6 +1,6 @@
 use super::track_cache::TrackCache;
-use moqtail::model::data::object::Object;
-use moqtail::{model::common::tuple::Tuple, transport::data_stream_handler::HeaderInfo};
+use moqtail_rs::model::data::object::Object;
+use moqtail_rs::{model::common::tuple::Tuple, transport::data_stream_handler::HeaderInfo};
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
 

@@ -4,7 +4,7 @@ use super::{client::MOQTClient, client_manager::ClientManager, track::Track, uti
 use anyhow::Result;
 use bytes::Bytes;
 use dashmap::DashMap;
-use moqtail::model::{
+use moqtail_rs::model::{
   common::reason_phrase::ReasonPhrase,
   control::{
     announce_ok::AnnounceOk, constant, control_message::ControlMessage, server_setup::ServerSetup,
@@ -12,7 +12,7 @@ use moqtail::model::{
   data::subgroup_object::SubgroupObject,
   error::TerminationCode,
 };
-use moqtail::transport::{
+use moqtail_rs::transport::{
   control_stream_handler::ControlStreamHandler,
   data_stream_handler::{HeaderInfo, RecvDataStream, SubscribeRequest},
 };
@@ -597,9 +597,9 @@ impl Session {
               track_namespace
             );
             // send SubscribeError
-            let subscribe_error = moqtail::model::control::subscribe_error::SubscribeError::new(
+            let subscribe_error = moqtail_rs::model::control::subscribe_error::SubscribeError::new(
               sub.request_id,
-              moqtail::model::control::constant::SubscribeErrorCode::TrackDoesNotExist,
+              moqtail_rs::model::control::constant::SubscribeErrorCode::TrackDoesNotExist,
               ReasonPhrase::try_new("Unknown track namespace".to_string()).unwrap(),
               sub.track_alias,
             );
@@ -675,7 +675,7 @@ impl Session {
             // TODO: Send the first sub_ok message to the subscriber
             // for now, just sending some default values
             let subscribe_ok =
-              moqtail::model::control::subscribe_ok::SubscribeOk::new_ascending_with_content(
+              moqtail_rs::model::control::subscribe_ok::SubscribeOk::new_ascending_with_content(
                 sub.request_id,
                 0,
                 None,
@@ -724,7 +724,7 @@ impl Session {
 
           // now we're ready to send the subscribe_ok message to the subscriber
           let subscribe_ok =
-            moqtail::model::control::subscribe_ok::SubscribeOk::new_ascending_with_content(
+            moqtail_rs::model::control::subscribe_ok::SubscribeOk::new_ascending_with_content(
               sub_request.original_request_id,
               msg.expires,
               msg.largest_location,

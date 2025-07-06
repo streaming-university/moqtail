@@ -277,7 +277,7 @@ dependencies = [
  "bb8",
  "bb8-redis",
  "dotenvy",
- "moqtail",
+ "moqtail-rs",
  "redis",
  "serde",
  "serde_json",
@@ -352,7 +352,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "dashmap",
- "moqtail",
+ "moqtail-rs",
  "serde_json",
  "tokio",
  "tracing",
@@ -961,7 +961,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "moqtail"
+name = "moqtail-rs"
 version = "0.1.0"
 dependencies = [
  "bytes",
@@ -970,23 +970,6 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tracing",
- "tracing-subscriber",
- "wtransport",
-]
-
-[[package]]
-name = "moqtail-relay"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytes",
- "clap",
- "dashmap",
- "moqtail",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-appender",
  "tracing-subscriber",
  "wtransport",
 ]
@@ -1356,6 +1339,23 @@ name = "regex-syntax"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
+
+[[package]]
+name = "relay"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "clap",
+ "dashmap",
+ "moqtail-rs",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "wtransport",
+]
 
 [[package]]
 name = "ring"
