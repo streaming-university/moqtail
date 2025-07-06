@@ -10,7 +10,7 @@ pub fn print_msg_bytes(msg: &impl ControlMessageTrait) {
 
 pub fn print_bytes(buffer: &Bytes) {
   for byte in buffer.iter() {
-    print!("{:02X} ", byte);
+    print!("{byte:02X} ");
   }
   println!();
 }

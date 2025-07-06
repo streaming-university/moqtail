@@ -2,9 +2,30 @@
   "name": "moqtail-ts",
   "version": "0.1.0",
   "description": "Media Over QUIC Transport client implementation",
-  "license": "MIT",
-  "author": "StreamingUniversity",
   "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "moqtail",
+    "moq",
+    "media",
+    "quic",
+    "transport",
+    "streaming"
+  ],
+  "homepage": "https://moqtail.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/streaming-university/moqtail.git",
+    "directory": "libs/moqtail-ts"
+  },
+  "bugs": {
+    "url": "https://github.com/streaming-university/moqtail/issues"
+  },
+  "author": {
+    "name": "Streaming University",
+    "email": "info@moqtail.dev",
+    "url": "https://moqtail.dev"
+  },
   "files": [
     "dist"
   ],

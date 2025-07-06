@@ -127,13 +127,13 @@ function SessionPage() {
   }
 
   const availableColors = [
-  { bgClass: 'bg-blue-500', hexColor: '#3b82f6' },
-  { bgClass: 'bg-green-500', hexColor: '#22c55e' },
-  { bgClass: 'bg-purple-500', hexColor: '#a855f7' },
-  { bgClass: 'bg-red-500', hexColor: '#ff0000' },
-  { bgClass: 'bg-orange-500', hexColor: '#f97316' },
-  { bgClass: 'bg-teal-500', hexColor: '#14b8a6' },
-]
+    { bgClass: 'bg-blue-500', hexColor: '#3b82f6' },
+    { bgClass: 'bg-green-500', hexColor: '#22c55e' },
+    { bgClass: 'bg-purple-500', hexColor: '#a855f7' },
+    { bgClass: 'bg-red-500', hexColor: '#ff0000' },
+    { bgClass: 'bg-orange-500', hexColor: '#f97316' },
+    { bgClass: 'bg-teal-500', hexColor: '#14b8a6' },
+  ]
 
   const getUserColor = (userId: string): string => {
     return userColors[userId]?.bgClass || 'bg-gray-500'
@@ -144,7 +144,7 @@ function SessionPage() {
   }
 
   const getSenderUserId = (senderName: string): string => {
-    const user = Object.values(users).find(u => u.name === senderName)
+    const user = Object.values(users).find((u) => u.name === senderName)
     return user?.id || ''
   }
 
@@ -635,27 +635,27 @@ function SessionPage() {
   }, [contextSocket])
 
   useEffect(() => {
-  const assignColors = () => {
-    const assigned = { ...userColors }
-    const used = new Set(Object.values(assigned).map(c => c.bgClass))
+    const assignColors = () => {
+      const assigned = { ...userColors }
+      const used = new Set(Object.values(assigned).map((c) => c.bgClass))
 
-    Object.keys(users).forEach(uid => {
-      if (!assigned[uid]) {
-        const available = availableColors.find(c => !used.has(c.bgClass))
-        if (available) {
-          assigned[uid] = available
-          used.add(available.bgClass)
-        } else {
-          // fallback: assign gray if colors are exhausted
-          assigned[uid] = { bgClass: 'bg-gray-500', hexColor: '#6b7280' }
+      Object.keys(users).forEach((uid) => {
+        if (!assigned[uid]) {
+          const available = availableColors.find((c) => !used.has(c.bgClass))
+          if (available) {
+            assigned[uid] = available
+            used.add(available.bgClass)
+          } else {
+            // fallback: assign gray if colors are exhausted
+            assigned[uid] = { bgClass: 'bg-gray-500', hexColor: '#6b7280' }
+          }
         }
-      }
-    })
-    setUserColors(assigned)
-  }
+      })
+      setUserColors(assigned)
+    }
 
-  assignColors()
-}, [users])
+    assignColors()
+  }, [users])
 
   // Initialize telemetry instances for new users
   const initializeTelemetryForUser = (userId: string) => {
@@ -1016,7 +1016,9 @@ function SessionPage() {
                 return (
                   <div key={message.id} className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
                     <div className={`max-w-xs lg:max-w-md ${isOwnMessage ? 'order-2' : 'order-1'}`}>
-                      <div className={`flex items-center space-x-2 mb-1 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+                      <div
+                        className={`flex items-center space-x-2 mb-1 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
+                      >
                         <span
                           className={`text-sm font-medium`}
                           style={{ color: isOwnMessage ? '#3b82f6' : getUserColorHex(senderUserId) }}

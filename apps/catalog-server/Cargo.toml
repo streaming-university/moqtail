@@ -12,4 +12,4 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 dotenvy = "0.15"
-moqtail = { version = "0.1.0", path = "../../libs/moqtail-rs" }
+moqtail = { version = "*", path = "../../libs/moqtail-rs" }

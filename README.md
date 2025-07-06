@@ -51,7 +51,7 @@ npm run dev
 ```bash
 cd ./apps/relay
 
-cargo run --bin moqtail-relay -- --port 4433 --cert-file cert/cert.pem --key-file cert/key.pem
+cargo run --bin relay -- --port 4433 --cert-file cert/cert.pem --key-file cert/key.pem
 ```
 
 The app will be available at [http://localhost:5173](http://localhost:5173) by default.
