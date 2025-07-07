@@ -756,8 +756,17 @@ function SessionPage() {
     const audioTrackAlias = parseInt(canvasRef.current.dataset.audiotrackalias || '-1')
     const chatTrackAlias = parseInt(canvasRef.current.dataset.chattrackalias || '-1')
     const announced = parseInt(canvasRef.current.dataset.announced || '0')
-    //console.log('handleRemoteVideo', canvasRef.current.id, moqClient, roomName, videoTrackAlias, audioTrackAlias, announced)
-    if (announced > 0 && videoTrackAlias > 0 && audioTrackAlias > 0 && chatTrackAlias > 0)
+    console.log(
+      'handleRemoteVideo',
+      canvasRef.current.id,
+      moqClient,
+      roomName,
+      videoTrackAlias,
+      audioTrackAlias,
+      chatTrackAlias,
+      announced,
+    )
+    if (announced > 0 && videoTrackAlias > 0 && audioTrackAlias > 0)
       setTimeout(async () => {
         await subscribeToTrack(roomName, userId, videoTrackAlias, audioTrackAlias, chatTrackAlias, canvasRef)
       }, 500)
@@ -787,32 +796,74 @@ function SessionPage() {
         initializeTelemetryForUser(userId)
 
         //console.log("subscribeToTrack - Use video subscriber called", videoTrackAlias, audioTrackAlias, videoFullTrackName, audioFullTrackName)
-        const [videoResult] = await Promise.all([
-          useVideoSubscriber(
-            the_client,
-            canvasRef,
-            videoTrackAlias,
-            audioTrackAlias,
-            audioFullTrackName,
-            videoFullTrackName,
-          )(),
-          subscribeToChatTrack({
-            moqClient: the_client,
-            chatTrackAlias: chatTrackAlias,
-            chatFullTrackName,
-            onMessage: (msgObj) => {
-              setChatMessages((prev) => [
-                ...prev,
-                {
-                  id: Math.random().toString(10).slice(2),
-                  sender: msgObj.sender,
-                  message: msgObj.message,
-                  timestamp: msgObj.timestamp,
-                },
-              ])
-            },
-          }),
-        ])
+
+        // Subscribe to video and audio
+        const videoResult = await useVideoSubscriber(
+          the_client,
+          canvasRef,
+          videoTrackAlias,
+          audioTrackAlias,
+          audioFullTrackName,
+          videoFullTrackName,
+        )()
+
+        // Subscribe to chat if we have a valid chat track alias
+        if (chatTrackAlias > 0) {
+          console.log('Subscribing to chat track with alias:', chatTrackAlias)
+          try {
+            await subscribeToChatTrack({
+              moqClient: the_client,
+              chatTrackAlias: chatTrackAlias,
+              chatFullTrackName,
+              onMessage: (msgObj) => {
+                setChatMessages((prev) => [
+                  ...prev,
+                  {
+                    id: Math.random().toString(10).slice(2),
+                    sender: msgObj.sender,
+                    message: msgObj.message,
+                    timestamp: msgObj.timestamp,
+                  },
+                ])
+              },
+            })
+            console.log('Successfully subscribed to chat for user:', userId)
+          } catch (error) {
+            console.error('Failed to subscribe to chat for user:', userId, error)
+          }
+        } else {
+          console.warn('Chat track alias is invalid or not set:', chatTrackAlias, 'for user:', userId)
+          // Try to subscribe to chat later with a retry mechanism
+          setTimeout(async () => {
+            console.log('Retrying chat subscription for user:', userId)
+            const retrychatTrackAlias = parseInt(canvasRef.current?.dataset.chattrackalias || '-1')
+            if (retrychatTrackAlias > 0) {
+              try {
+                await subscribeToChatTrack({
+                  moqClient: the_client,
+                  chatTrackAlias: retrychatTrackAlias,
+                  chatFullTrackName,
+                  onMessage: (msgObj) => {
+                    setChatMessages((prev) => [
+                      ...prev,
+                      {
+                        id: Math.random().toString(10).slice(2),
+                        sender: msgObj.sender,
+                        message: msgObj.message,
+                        timestamp: msgObj.timestamp,
+                      },
+                    ])
+                  },
+                })
+                console.log('Successfully subscribed to chat on retry for user:', userId)
+              } catch (error) {
+                console.error('Failed to subscribe to chat on retry for user:', userId, error)
+              }
+            } else {
+              console.warn('Chat track alias still invalid on retry for user:', userId)
+            }
+          }, 2000) // Wait 2 seconds before retrying chat subscription
+        }
         //console.log('subscribeToTrack result', result)
         // TODO: result comes true all the time, refactor...
         canvasRef.current!.dataset.status = videoResult ? 'playing' : ''
