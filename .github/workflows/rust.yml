@@ -30,7 +30,6 @@ jobs:
             **Cargo.lock
 
   lint-and-test:
-    name: Lint and Test
     runs-on: ubuntu-latest
     needs: changed-files
     if: needs.changed-files.outputs.any_changed == 'true'
@@ -45,6 +44,7 @@ jobs:
             command: cargo clippy --all-targets --all-features -- -D warnings
           - job: test
             command: cargo test --all-targets --all-features
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -57,3 +57,21 @@ jobs:
 
       - name: Run ${{ matrix.job }}
         run: ${{ matrix.command }}
+
+  aggregate:
+    name: Lint and Test Rust
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    if: ${{ !cancelled() }}
+    steps:
+      - name: All checks have passed
+        if: ${{ !contains(needs.*.result, 'failure') }}
+        run: |
+          echo "All Rust checks have passed successfully."
+          exit 0
+
+      - name: Some checks failed
+        if: ${{ contains(needs.*.result, 'failure') }}
+        run: |
+          echo "Some Rust checks failed. Please review the logs above."
+          exit 1
