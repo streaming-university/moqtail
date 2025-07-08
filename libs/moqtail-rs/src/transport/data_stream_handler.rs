@@ -701,21 +701,21 @@ mod tests {
   impl TestSetup {
     async fn new() -> Result<Self, Box<dyn Error>> {
       let server_identity = Identity::self_signed(std::iter::once("localhost"))
-        .map_err(|e| format!("Failed to create server identity: {}", e))?;
+        .map_err(|e| format!("Failed to create server identity: {e}"))?;
       let server_cert_hash = server_identity.certificate_chain().as_slice()[0].hash();
       let server_config = wtransport::ServerConfig::builder()
         .with_bind_address(
           "127.0.0.1:0"
             .parse()
-            .map_err(|e| format!("Failed to parse bind address: {}", e))?,
+            .map_err(|e| format!("Failed to parse bind address: {e}"))?,
         )
         .with_identity(server_identity)
         .build();
       let server_endpoint = Endpoint::server(server_config)
-        .map_err(|e| format!("Failed to create server endpoint: {}", e))?;
+        .map_err(|e| format!("Failed to create server endpoint: {e}"))?;
       let server_addr = server_endpoint
         .local_addr()
-        .map_err(|e| format!("Failed to get server local address: {}", e))?;
+        .map_err(|e| format!("Failed to get server local address: {e}"))?;
 
       // Create a channel to get the server connection from the spawned task
       let (tx, rx) = tokio::sync::oneshot::channel();
@@ -726,7 +726,7 @@ mod tests {
           let incoming = server_endpoint.accept().await;
           let session_request = incoming
             .await
-            .map_err(|e| format!("Failed to await session request: {}", e))
+            .map_err(|e| format!("Failed to await session request: {e}"))
             .unwrap();
           let server = session_request.accept().await.unwrap();
           Ok::<_, Box<dyn Error + Send>>(server)
@@ -745,7 +745,7 @@ mod tests {
         .build();
 
       let client_endpoint = Endpoint::client(client_config)
-        .map_err(|e| format!("Failed to create client endpoint: {}", e))?;
+        .map_err(|e| format!("Failed to create client endpoint: {e}"))?;
 
       // Start client connection concurrently while server is accepting
       let client = client_endpoint
@@ -755,13 +755,13 @@ mod tests {
             .into_options(),
         )
         .await
-        .map_err(|e| format!("Client connection failed: {}", e))?;
+        .map_err(|e| format!("Client connection failed: {e}"))?;
 
       // Wait for the server connection from the spawned task
       let server = rx
         .await
         .map_err(|_| "Server task failed to send connection back")?
-        .map_err(|e| format!("Server connection error: {}", e))?;
+        .map_err(|e| format!("Server connection error: {e}"))?;
 
       Ok(Self { client, server })
     }
@@ -782,14 +782,14 @@ mod tests {
         server
           .accept_uni()
           .await
-          .map_err(|e| format!("Failed to accept server uni stream: {}", e))
+          .map_err(|e| format!("Failed to accept server uni stream: {e}"))
       });
 
       // Await both concurrently
       let (send_res, recv_res) = tokio::try_join!(send_fut, recv_fut)?;
 
-      let send = send_res.map_err(|e| format!("Failed to open client uni stream: {}", e))?;
-      let recv = recv_res.map_err(|e| format!("Failed to accept server uni stream: {}", e))?;
+      let send = send_res.map_err(|e| format!("Failed to open client uni stream: {e}"))?;
+      let recv = recv_res.map_err(|e| format!("Failed to accept server uni stream: {e}"))?;
 
       Ok((send, recv))
     }

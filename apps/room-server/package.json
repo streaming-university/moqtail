@@ -1,0 +1,23 @@
+{
+  "name": "room-server",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MOQtail Room Server",
+  "type": "module",
+  "scripts": {
+    "start": "tsc && node dist/server.js",
+    "dev": "tsc && nodemon dist/server.js",
+    "format": "prettier --check ."
+  },
+  "dependencies": {
+    "http": "^0.0.1-security",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "^18.12.1",
+    "nodemon": "^3.1.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

@@ -77,7 +77,7 @@ impl MOQTClient {
     object: Bytes,
   ) {
     let mut subgroup_object_queue = self.subgroup_object_queue.write().await;
-    let key = format!("{}_{}", track_alias, subgroup_id);
+    let key = format!("{track_alias}_{subgroup_id}");
     let queue = subgroup_object_queue
       .entry(key)
       .or_insert_with(|| RwLock::new(VecDeque::new()));
@@ -92,7 +92,7 @@ impl MOQTClient {
     subgroup_id: u64,
   ) -> Option<Bytes> {
     let subgroup_object_queue = self.subgroup_object_queue.read().await;
-    let key = format!("{}_{}", track_alias, subgroup_id);
+    let key = format!("{track_alias}_{subgroup_id}");
     if let Some(queue) = subgroup_object_queue.get(&key) {
       let mut queue = queue.write().await;
       queue.pop_front()

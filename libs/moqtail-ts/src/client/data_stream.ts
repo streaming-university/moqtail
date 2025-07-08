@@ -1,5 +1,12 @@
 import { ByteBuffer } from '../model/common/byte_buffer'
-import { FetchHeader, FetchHeaderType, FetchObject, SubgroupHeader, SubgroupHeaderType, SubgroupObject } from '../model/data'
+import {
+  FetchHeader,
+  FetchHeaderType,
+  FetchObject,
+  SubgroupHeader,
+  SubgroupHeaderType,
+  SubgroupObject,
+} from '../model/data'
 import { Header } from '../model/data/header'
 import { NotEnoughBytesError, ProtocolViolationError, TimeoutError } from '../model/error/error'
 
