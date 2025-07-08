@@ -240,6 +240,5 @@ Cargo.lock
 
 # End of https://www.toptal.com/developers/gitignore/api/rust,macos,linux,visualstudiocode,git
 
-.vscode/
-
-.github/instructions/berlin-demo.instructions.md
+### Relay Logs ###
+relay.log.*
