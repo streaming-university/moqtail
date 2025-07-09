@@ -71,10 +71,10 @@ export class FetchPublication {
 
   async publish(): Promise<void> {
     if (this.#isCanceled) return
-    if (!this.#track.contentSource.getObjectRange)
+    if (!this.#track.contentSource.past)
       throw new MoqtailError('FetchPublication.publish, Track does not support fetch')
     try {
-      this.#objects = await this.#track.contentSource.getObjectRange(this.#startLocation, this.#endLocation)
+      this.#objects = await this.#track.contentSource.past.getRange(this.#startLocation, this.#endLocation)
       // TODO: Calculate and use stream priority from subscriber priority from the msg + publisher priority from the track
       this.#stream = await this.#client.webTransport.createUnidirectionalStream()
       this.#writer = this.#stream.getWriter()

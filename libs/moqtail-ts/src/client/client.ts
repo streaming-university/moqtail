@@ -1,11 +1,8 @@
 import { ControlStream } from './control_stream'
-export interface Logger {
-  info(msg: string): void
-  warn(msg: string): void
-  error(msg: string): void
-}
 import {
   Announce,
+  AnnounceError,
+  AnnounceOk,
   ClientSetup,
   ControlMessage,
   Fetch,
@@ -41,6 +38,7 @@ import {
   Location,
   MoqtailError,
   ProtocolViolationError,
+  SetupParameters,
   Tuple,
   VersionSpecificParameters,
 } from '../model'
@@ -72,25 +70,27 @@ export class MoqtailClient {
   readonly publications: Map<bigint, SubscribePublication | FetchPublication> = new Map()
   readonly subscriptions: Map<bigint, SubscribeRequest> = new Map() // Track Alias to Subscribe Request
   readonly trackAliasMap: TrackAliasMap = new TrackAliasMap()
+  webTransport!: WebTransport
   _serverSetup!: ServerSetup
   controlStream!: ControlStream
   dataStreamTimeoutMs?: number
   controlStreamTimeoutMs?: number
   maxRequestId?: bigint
-  logger?: Logger
+
+  #isDestroyed = false
+  #dontUseRequestId: bigint = 0n
 
   onTrackAnnounced?: (msg: Announce) => void
   onTrackUnannounced?: (msg: Unannounce) => void
   onGoaway?: (msg: GoAway) => void
   onWebTransportFail?: () => void
-  onSessionTerminated?: () => void
+  onSessionTerminated?: (reason?: unknown) => void
   onMessageSent?: (msg: ControlMessage) => void
   onMessageReceived?: (msg: ControlMessage) => void
   onDataReceived?: (data: SubgroupObject | SubgroupHeader | FetchObject | FetchHeader) => void
   onDataSent?: (data: SubgroupObject | SubgroupHeader | FetchObject | FetchHeader) => void
+  onError?: (er: unknown) => void
 
-  #isDestroyed = false
-  #dontUseRequestId: bigint = 0n
   get #nextClientRequestId(): bigint {
     const id = this.#dontUseRequestId
     this.#dontUseRequestId += 2n
@@ -101,53 +101,70 @@ export class MoqtailClient {
     if (this.#isDestroyed) throw new MoqtailError('MoqtailClient is destroyed and cannot be used.')
   }
 
-  // TODO: Support URL construction
-  private constructor(public readonly webTransport: WebTransport) {}
+  private constructor() {}
 
   static async new(
-    clientSetup: ClientSetup,
-    webTransport: WebTransport,
-    options?: {
-      dataStreamTimeoutMs?: number
-      controlStreamTimeoutMs?: number
-      logger?: Logger
-      onMsgRecv?: (msg: ControlMessage) => void
-      onMsgSent?: (msg: ControlMessage) => void
+    url: string | URL,
+    supportedVersions: number[],
+    setupParameters?: SetupParameters,
+    transportOptions?: WebTransportOptions,
+    dataStreamTimeoutMs?: number,
+    controlStreamTimeoutMs?: number,
+    callbacks?: {
+      onMessageSent?: (msg: ControlMessage) => void
+      onMessageReceived?: (msg: ControlMessage) => void
+      onSessionTerminated?: (reason?: unknown) => void
     },
   ): Promise<MoqtailClient> {
-    const client = new MoqtailClient(webTransport)
-    if (options?.onMsgRecv) client.onMessageReceived = options?.onMsgRecv
-    if (options?.onMsgSent) client.onMessageSent = options?.onMsgSent
-    if (options?.dataStreamTimeoutMs) client.dataStreamTimeoutMs = options.dataStreamTimeoutMs
-    if (options?.controlStreamTimeoutMs) client.controlStreamTimeoutMs = options.controlStreamTimeoutMs
-    if (options?.logger) client.logger = options.logger
-    const biStream = await webTransport.createBidirectionalStream()
-    client.controlStream = ControlStream.new(
-      biStream,
-      client.controlStreamTimeoutMs,
-      client.onMessageSent,
-      client.onMessageReceived,
-    )
-    client.controlStream.send(clientSetup)
-    const reader = client.controlStream.stream.getReader()
-    const { value: response, done } = await reader.read()
-    if (done) throw new ProtocolViolationError('MoqtailClient.new', 'Stream closed after client setup')
-    if (response instanceof ServerSetup) {
+    const client = new MoqtailClient()
+
+    client.webTransport = new WebTransport(url, transportOptions)
+    await client.webTransport.ready
+    try {
+      if (callbacks?.onMessageSent) client.onMessageSent = callbacks.onMessageSent
+      if (callbacks?.onMessageReceived) client.onMessageReceived = callbacks.onMessageReceived
+      if (callbacks?.onSessionTerminated) client.onSessionTerminated = callbacks.onSessionTerminated
+      if (dataStreamTimeoutMs) client.dataStreamTimeoutMs = dataStreamTimeoutMs
+      if (controlStreamTimeoutMs) client.controlStreamTimeoutMs = controlStreamTimeoutMs
+
+      // Control stream should have the highest priority
+      const biStream = await client.webTransport.createBidirectionalStream({ sendOrder: Number.MAX_SAFE_INTEGER })
+      client.controlStream = ControlStream.new(
+        biStream,
+        client.controlStreamTimeoutMs,
+        client.onMessageSent,
+        client.onMessageReceived,
+      )
+      if (!setupParameters) setupParameters = new SetupParameters()
+      const clientSetup = new ClientSetup(supportedVersions, setupParameters.build())
+      client.controlStream.send(clientSetup)
+      const reader = client.controlStream.stream.getReader()
+      const { value: response, done } = await reader.read()
+      if (done) throw new ProtocolViolationError('MoqtailClient.new', 'Stream closed after client setup')
+      if (!(response instanceof ServerSetup))
+        throw new ProtocolViolationError('MoqtailClient.new', 'Expected server setup after client setup')
       client._serverSetup = response
       reader.releaseLock()
       client.#handleIncomingControlMessages()
       client.#acceptIncomingUniStreams()
       return client
+    } catch (error) {
+      await client.disconnect(
+        new InternalError('MoqtailClient.new', error instanceof Error ? error.message : String(error)),
+      )
+      throw error
     }
-    throw new ProtocolViolationError('MoqtailClient.new', 'Expected server setup after client setup')
   }
 
-  async disconnect() {
+  async disconnect(reason?: unknown) {
     if (this.#isDestroyed) return
     this.#isDestroyed = true
     // TODO: Session cleanup?
     if (!this.webTransport.closed) this.webTransport.close()
-    if (this.onSessionTerminated) this.onSessionTerminated()
+    if (this.onSessionTerminated)
+      this.onSessionTerminated(
+        new InternalError('MoqtailClient.disconnect', reason instanceof Error ? reason.message : String(reason)),
+      )
   }
 
   addOrUpdateTrack(track: Track) {
@@ -162,11 +179,11 @@ export class MoqtailClient {
 
   async subscribe(
     fullTrackName: FullTrackName,
-    priority: number,
+    priority: number, // 0 is highest, 255 is lowest. Values are rounded to nearest integer then clamped between 0 and 255
     groupOrder: GroupOrder,
     forward: boolean,
     filterType: FilterType,
-    parameters: VersionSpecificParameters,
+    parameters?: VersionSpecificParameters,
     trackAlias?: bigint,
     startLocation?: Location,
     endGroup?: bigint,
@@ -175,6 +192,7 @@ export class MoqtailClient {
     try {
       let msg: Subscribe
       if (!trackAlias) trackAlias = random60bitId()
+      if (!parameters) parameters = new VersionSpecificParameters()
       switch (filterType) {
         case FilterType.LatestObject:
           msg = Subscribe.newLatestObject(
@@ -251,10 +269,11 @@ export class MoqtailClient {
       } else {
         return { requestId: msg.requestId, stream: request.stream }
       }
-    } catch (err) {
-      // TODO: Match against error cases
-      await this.disconnect()
-      throw err
+    } catch (error) {
+      await this.disconnect(
+        new InternalError('MoqtailClient.subscribe', error instanceof Error ? error.message : String(error)),
+      )
+      throw error
     }
   }
 
@@ -272,10 +291,11 @@ export class MoqtailClient {
         }
       }
       // Q: Throw? Idempotent?
-    } catch (err) {
-      // TODO: Match against error cases
-      await this.disconnect()
-      throw err
+    } catch (error) {
+      await this.disconnect(
+        new InternalError('MoqtailClient.unsubscribe', error instanceof Error ? error.message : String(error)),
+      )
+      throw error
     }
   }
 
@@ -283,9 +303,9 @@ export class MoqtailClient {
     requestId: bigint,
     startLocation: Location,
     endGroup: bigint,
-    priority: number,
+    priority: number, // 0 is highest, 255 is lowest. Values are rounded to nearest integer then clamped between 0 and 255
     forward: boolean,
-    parameters: VersionSpecificParameters,
+    parameters?: VersionSpecificParameters,
   ): Promise<void> {
     this.#ensureActive()
     if (startLocation.group >= endGroup)
@@ -309,16 +329,18 @@ export class MoqtailClient {
             throw new InternalError('MoqtailClient.subscribeUpdate', 'Request exists but subscription does not')
           // TODO: If a parameter included in SUBSCRIBE is not present in SUBSCRIBE_UPDATE, its value remains unchanged.
           // There is no mechanism to remove a parameter from a subscription. We can add parameters but check for duplicate params
+          if (!parameters) parameters = new VersionSpecificParameters()
           const msg = new SubscribeUpdate(requestId, startLocation, endGroup, priority, forward, parameters.build())
           subscription.update(msg) // This also updates the request since both maps store the same object
           await this.controlStream.send(msg)
         }
       }
       // Q: Throw? Idempotent?
-    } catch (err) {
-      // TODO: Match against error cases
-      await this.disconnect()
-      throw err
+    } catch (error) {
+      await this.disconnect(
+        new InternalError('MoqtailClient.subscribeUpdate', error instanceof Error ? error.message : String(error)),
+      )
+      throw error
     }
   }
 
@@ -326,7 +348,7 @@ export class MoqtailClient {
   // Do we need an existing subscription? What happens if that subscription forwards objects?
   // Will the subscribe objects be pushed through this FetchRequest.controller?
   async fetch(args: {
-    subscriberPriority: number
+    priority: number // 0 is highest, 255 is lowest. Values are rounded to nearest integer then clamped between 0 and 255
     groupOrder: GroupOrder
     typeAndProps:
       | {
@@ -345,11 +367,11 @@ export class MoqtailClient {
   }): Promise<FetchError | { requestId: bigint; stream: ReadableStream<MoqtObject> }> {
     this.#ensureActive()
     try {
-      const { subscriberPriority, groupOrder, typeAndProps, parameters } = args
-      if (subscriberPriority < 0 || subscriberPriority > 255)
+      const { priority, groupOrder, typeAndProps, parameters } = args
+      if (priority < 0 || priority > 255)
         throw new ProtocolViolationError(
           'MoqtailClient.fetch',
-          `subscriberPriority: ${subscriberPriority} must be in range of [0-255]`,
+          `subscriberPriority: ${priority} must be in range of [0-255]`,
         )
       const params = parameters ? parameters.build() : new VersionSpecificParameters().build()
       let msg: Fetch
@@ -358,7 +380,7 @@ export class MoqtailClient {
         case FetchType.StandAlone:
           msg = new Fetch(
             this.#nextClientRequestId,
-            subscriberPriority,
+            priority,
             groupOrder,
             { type: typeAndProps.type, props: typeAndProps.props },
             params,
@@ -374,7 +396,7 @@ export class MoqtailClient {
             )
           msg = new Fetch(
             this.#nextClientRequestId,
-            subscriberPriority,
+            priority,
             groupOrder,
             { type: typeAndProps.type, props: typeAndProps.props },
             params,
@@ -389,7 +411,7 @@ export class MoqtailClient {
             )
           msg = new Fetch(
             this.#nextClientRequestId,
-            subscriberPriority,
+            priority,
             groupOrder,
             { type: typeAndProps.type, props: typeAndProps.props },
             params,
@@ -407,9 +429,11 @@ export class MoqtailClient {
         const stream = request.stream
         return { requestId: msg.requestId, stream }
       }
-    } catch (err) {
-      await this.disconnect()
-      throw err
+    } catch (error) {
+      await this.disconnect(
+        new InternalError('MoqtailClient.fetch', error instanceof Error ? error.message : String(error)),
+      )
+      throw error
     }
   }
 
@@ -424,10 +448,11 @@ export class MoqtailClient {
         }
       }
       // No matching fetch request, idempotent
-    } catch (err) {
-      // TODO: Match against error cases
-      await this.disconnect()
-      throw err
+    } catch (error) {
+      await this.disconnect(
+        new InternalError('MoqtailClient.fetchCancel', error instanceof Error ? error.message : String(error)),
+      )
+      throw error
     }
   }
 
@@ -437,33 +462,41 @@ export class MoqtailClient {
       const request = new TrackStatusRequest(msg.requestId, msg)
       this.controlStream.send(msg)
       return await request
-    } catch (err) {
-      // TODO: Match against error cases
-      await this.disconnect()
-      throw err
+    } catch (error) {
+      await this.disconnect(
+        new InternalError('MoqtailClient.trackStatusRequest', error instanceof Error ? error.message : String(error)),
+      )
+      throw error
     }
   }
 
   // TODO: Each announced track should checked against ongoing subscribe_announces
   // If matches it should send an announce to that peer automatically
-  async announce(msg: Announce) {
+  async announce(trackNamespace: Tuple, parameters?: VersionSpecificParameters) {
     this.#ensureActive()
     try {
+      // TODO: Check for duplicate announces
+      if (!parameters) parameters = new VersionSpecificParameters()
+      const msg = new Announce(this.#nextClientRequestId, trackNamespace, parameters.build())
       const request = new AnnounceRequest(msg.requestId, msg)
-      this.requests.set(request.requestId, request)
-      this.announcedNamespaces.add(msg.trackNamespace)
+      this.requests.set(msg.requestId, request)
       this.controlStream.send(msg)
-      return await request
-    } catch (err) {
-      // TODO: Match against error cases
-      await this.disconnect()
-      throw err
+      const response = await request
+      if (response instanceof AnnounceOk) this.announcedNamespaces.add(msg.trackNamespace)
+      this.requests.delete(msg.requestId)
+      return response
+    } catch (error) {
+      await this.disconnect(
+        new InternalError('MoqtailClient.announce', error instanceof Error ? error.message : String(error)),
+      )
+      throw error
     }
   }
 
-  async unannounce(msg: Unannounce) {
+  async unannounce(trackNamespace: Tuple) {
     this.#ensureActive()
     try {
+      const msg = new Unannounce(trackNamespace)
       this.announcedNamespaces.delete(msg.trackNamespace)
       await this.controlStream.send(msg)
     } catch (err) {
@@ -477,10 +510,11 @@ export class MoqtailClient {
     this.#ensureActive()
     try {
       await this.controlStream.send(msg)
-    } catch (err) {
-      // TODO: Match against error cases
-      await this.disconnect()
-      throw err
+    } catch (error) {
+      await this.disconnect(
+        new InternalError('MoqtailClient.announceCancel', error instanceof Error ? error.message : String(error)),
+      )
+      throw error
     }
   }
 
@@ -489,10 +523,11 @@ export class MoqtailClient {
     this.#ensureActive()
     try {
       await this.controlStream.send(msg)
-    } catch (err) {
-      // TODO: Match against error cases
-      await this.disconnect()
-      throw err
+    } catch (error) {
+      await this.disconnect(
+        new InternalError('MoqtailClient.subscribeAnnounces', error instanceof Error ? error.message : String(error)),
+      )
+      throw error
     }
   }
 
@@ -500,10 +535,11 @@ export class MoqtailClient {
     this.#ensureActive()
     try {
       await this.controlStream.send(msg)
-    } catch (err) {
-      // TODO: Match against error cases
-      await this.disconnect()
-      throw err
+    } catch (error) {
+      await this.disconnect(
+        new InternalError('MoqtailClient.unsubscribeAnnounces', error instanceof Error ? error.message : String(error)),
+      )
+      throw error
     }
   }
 
@@ -545,7 +581,7 @@ export class MoqtailClient {
   async #handleRecvStreams(incomingUniStream: ReadableStream): Promise<void> {
     this.#ensureActive()
     try {
-      const recvStream = await RecvStream.new(incomingUniStream, this.dataStreamTimeoutMs)
+      const recvStream = await RecvStream.new(incomingUniStream, this.dataStreamTimeoutMs, this.onDataReceived)
       const header = recvStream.header
       const reader = recvStream.stream.getReader()
 
@@ -616,7 +652,7 @@ export class MoqtailClient {
                   firstObjectId = nextObject.objectId
                 }
                 let subgroupId = header.subgroupId
-                switch (header.headerType) {
+                switch (header.type) {
                   case SubgroupHeaderType.Type0x08:
                   case SubgroupHeaderType.Type0x09:
                     subgroupId = 0n

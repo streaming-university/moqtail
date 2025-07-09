@@ -1,6 +1,6 @@
 import { CastingError } from '../error'
 
-export const DRAFT_10 = 0xff0000a0
+export const DRAFT_11 = 0xff00000b
 
 export enum ControlMessageType {
   ReservedSetupV00 = 0x01,

@@ -63,7 +63,7 @@ export class ControlStream {
       await this.#writer.ready
       await this.#writer.write(serializedMessage.toUint8Array())
       if (this.onMessageSent) this.onMessageSent(message)
-    } catch (error: unknown) {
+    } catch (error: any) {
       await this.close()
       const errorMessage = error instanceof Error ? error.message : String(error)
       throw new TerminationError(
@@ -113,7 +113,7 @@ export class ControlStream {
           }
           this.#handleReadResult(readResult as ReadableStreamReadResult<Uint8Array>)
           if ((readResult as ReadableStreamReadResult<Uint8Array>).done) break
-        } catch (error: unknown) {
+        } catch (error: any) {
           if (error instanceof NotEnoughBytesError) {
             let readResult
             if (this.#partialMessageTimeoutMs !== undefined) {
@@ -128,10 +128,9 @@ export class ControlStream {
             this.#handleReadResult(readResult as ReadableStreamReadResult<Uint8Array>)
             if ((readResult as ReadableStreamReadResult<Uint8Array>).done) break
           } else {
-            const errorMessage = error instanceof Error ? error.message : String(error)
             controller.error(
               new TerminationError(
-                `ControlStream: Deserialization error: ${errorMessage}`,
+                `ControlStream: Deserialization error: ${error.message}`,
                 TerminationCode.PROTOCOL_VIOLATION,
               ),
             )
@@ -296,32 +295,30 @@ if (import.meta.vitest) {
         const reader = controlStream.stream.getReader()
         const { value: receivedMessage } = await reader.read()
         expect(receivedMessage).toBeInstanceOf(ClientSetup)
-        expect(receivedMessage as ClientSetup).toEqual(originalMessage)
+        expect(receivedMessage).toEqual(originalMessage)
         reader.releaseLock()
       })
       it('should handle excess bytes successful roundtrip then timeout', async () => {
         const setupParams = new SetupParameters().addPath('/excess/test').build()
+
         const originalMessage = new ClientSetup([0xff000001, 0xff000002], setupParams)
         const messageBytes = originalMessage.serialize().toUint8Array()
-        const excessBytes = new Uint8Array([0xff, 0x13, 0x8f])
+        const excessBytes = new Uint8Array([0xff, 0x13, 0x25])
 
         const combinedBytes = new Uint8Array(messageBytes.length + excessBytes.length)
         combinedBytes.set(messageBytes, 0)
         combinedBytes.set(excessBytes, messageBytes.length)
 
         mockBidirectionalStream = createMockBidirectionalStream([combinedBytes])
-        controlStream = ControlStream.new(mockBidirectionalStream, 500)
+        controlStream = ControlStream.new(mockBidirectionalStream, 250)
         const reader = controlStream.stream.getReader()
         const { value: receivedMessage } = await reader.read()
-        expect(receivedMessage).toBeInstanceOf(ClientSetup)
-        expect(receivedMessage as ClientSetup).toEqual(originalMessage)
-
+        expect(receivedMessage).toEqual(originalMessage)
         await expect(reader.read()).rejects.toThrow(TimeoutError)
         reader.releaseLock()
-      }, 1000)
+      })
       it('should timeout on partial message', async () => {
         const setupParams = new SetupParameters().addPath('/partial/test').addMaxRequestId(42n).build()
-
         const originalMessage = new ClientSetup([0xff000001], setupParams)
         const completeMessageBytes = originalMessage.serialize().toUint8Array()
 
@@ -329,11 +326,11 @@ if (import.meta.vitest) {
         const partialBytes = completeMessageBytes.slice(0, Math.min(10, completeMessageBytes.length))
 
         mockBidirectionalStream = createMockBidirectionalStream([partialBytes])
-        controlStream = ControlStream.new(mockBidirectionalStream, 500)
+        controlStream = ControlStream.new(mockBidirectionalStream, 250)
         const reader = controlStream.stream.getReader()
         await expect(reader.read()).rejects.toThrow(TerminationError)
         reader.releaseLock()
-      }, 1000)
+      })
     })
   })
 }
