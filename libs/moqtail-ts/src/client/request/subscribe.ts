@@ -1,4 +1,4 @@
-import { MoqtObject, Subscribe, SubscribeError, SubscribeOk } from '@/model'
+import { Location, MoqtObject, Subscribe, SubscribeError, SubscribeOk } from '@/model'
 
 export class SubscribeRequest implements PromiseLike<SubscribeOk | SubscribeError> {
   public readonly requestId: bigint
@@ -9,7 +9,8 @@ export class SubscribeRequest implements PromiseLike<SubscribeOk | SubscribeErro
   public controller?: ReadableStreamDefaultController<MoqtObject>
   public stream: ReadableStream<MoqtObject>
   public streamsAccepted: bigint = 0n
-  public expectedStreams?: bigint
+  public largestLocation: Location | undefined
+  public expectedStreams: bigint | undefined
 
   constructor(requestId: bigint, message: Subscribe) {
     this.requestId = requestId

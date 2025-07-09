@@ -17,7 +17,7 @@ export class SubscribePublication {
   private cancelPublishing?: () => void
   #isStarted = false
   private isCompleted = false
-  private latestLocation?: Location
+  latestLocation?: Location
   private lock: SimpleLock = new SimpleLock()
   // Use a map to manage SendStreams per group
   #streams: Map<bigint, SendStream> = new Map()
@@ -25,7 +25,7 @@ export class SubscribePublication {
 
   constructor(
     private readonly client: MoqtailClient,
-    private readonly track: Track,
+    readonly track: Track,
     private readonly subscribeMsg: Subscribe,
     largestLocation?: Location,
   ) {

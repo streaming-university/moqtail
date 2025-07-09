@@ -5,108 +5,26 @@ import { ControlMessageType, FetchType, fetchTypeFromBigInt, GroupOrder, groupOr
 import { LengthExceedsMaxError, NotEnoughBytesError } from '../error/error'
 import { FullTrackName } from '../data'
 
-export class StandAloneFetchProps {
-  constructor(
-    public readonly fullTrackName: FullTrackName,
-    public readonly startLocation: Location,
-    public readonly endLocation: Location,
-  ) {}
-}
-
-export class JoiningFetchProps {
-  constructor(
-    public readonly joiningRequestId: bigint,
-    public readonly joiningStart: bigint,
-  ) {}
-}
-
 export class Fetch {
-  public readonly requestId: bigint
-  public readonly subscriberPriority: number
-  public readonly groupOrder: GroupOrder
-  public readonly fetchType: FetchType
-  public readonly standaloneFetchProps?: StandAloneFetchProps | undefined
-  public readonly joiningFetchProps?: JoiningFetchProps | undefined
-  public readonly parameters: KeyValuePair[]
-
-  private constructor(
-    requestId: bigint,
-    subscriberPriority: number,
-    groupOrder: GroupOrder,
-    fetchType: FetchType,
-    parameters: KeyValuePair[],
-    standaloneFetchProps: StandAloneFetchProps | undefined,
-    joiningFetchProps: JoiningFetchProps | undefined,
-  ) {
-    this.requestId = requestId
-    this.subscriberPriority = subscriberPriority
-    this.groupOrder = groupOrder
-    this.fetchType = fetchType
-    this.parameters = parameters
-    this.standaloneFetchProps = standaloneFetchProps
-    this.joiningFetchProps = joiningFetchProps
-  }
-
-  static newStandAlone(
-    requestId: bigint,
-    subscriberPriority: number,
-    groupOrder: GroupOrder,
-    fullTrackName: FullTrackName,
-    startLocation: Location,
-    endLocation: Location,
-    parameters: KeyValuePair[] = [],
-  ): Fetch {
-    const standaloneFetchProps = new StandAloneFetchProps(fullTrackName, startLocation, endLocation)
-    return new Fetch(
-      requestId,
-      subscriberPriority,
-      groupOrder,
-      FetchType.StandAlone,
-      parameters,
-      standaloneFetchProps,
-      undefined,
-    )
-  }
-
-  static newAbsolute(
-    requestId: bigint,
-    subscriberPriority: number,
-    groupOrder: GroupOrder,
-    joiningRequestId: bigint,
-    joiningStart: bigint,
-    parameters: KeyValuePair[] = [],
-  ): Fetch {
-    const joiningFetchProps = new JoiningFetchProps(joiningRequestId, joiningStart)
-    return new Fetch(
-      requestId,
-      subscriberPriority,
-      groupOrder,
-      FetchType.Absolute,
-      parameters,
-      undefined,
-      joiningFetchProps,
-    )
-  }
-
-  static newRelative(
-    requestId: bigint,
-    subscriberPriority: number,
-    groupOrder: GroupOrder,
-    joiningRequestId: bigint,
-    joiningStart: bigint,
-    parameters: KeyValuePair[] = [],
-  ): Fetch {
-    const joiningFetchProps = new JoiningFetchProps(joiningRequestId, joiningStart)
-    return new Fetch(
-      requestId,
-      subscriberPriority,
-      groupOrder,
-      FetchType.Relative,
-      parameters,
-      undefined,
-      joiningFetchProps,
-    )
-  }
+  constructor(
+    public readonly requestId: bigint,
+    public readonly subscriberPriority: number,
+    public readonly groupOrder: GroupOrder,
+    public readonly typeAndProps:
+      | {
+          readonly type: FetchType.StandAlone
+          readonly props: { fullTrackName: FullTrackName; startLocation: Location; endLocation: Location }
+        }
+      | {
+          readonly type: FetchType.Relative
+          readonly props: { joiningRequestId: bigint; joiningStart: bigint }
+        }
+      | {
+          readonly type: FetchType.Absolute
+          readonly props: { joiningRequestId: bigint; joiningStart: bigint }
+        },
+    public readonly parameters: KeyValuePair[],
+  ) {}
 
   getType(): ControlMessageType {
     return ControlMessageType.Fetch
@@ -119,18 +37,18 @@ export class Fetch {
     payload.putVI(this.requestId)
     payload.putU8(this.subscriberPriority)
     payload.putU8(this.groupOrder)
-    payload.putVI(this.fetchType)
-    switch (this.fetchType) {
+    payload.putVI(this.typeAndProps.type)
+    switch (this.typeAndProps.type) {
       case FetchType.Absolute:
       case FetchType.Relative: {
-        payload.putVI(this.joiningFetchProps!.joiningRequestId)
-        payload.putVI(this.joiningFetchProps!.joiningStart)
+        payload.putVI(this.typeAndProps.props.joiningRequestId)
+        payload.putVI(this.typeAndProps.props.joiningStart)
         break
       }
       case FetchType.StandAlone: {
-        payload.putFullTrackName(this.standaloneFetchProps!.fullTrackName)
-        payload.putLocation(this.standaloneFetchProps!.startLocation)
-        payload.putLocation(this.standaloneFetchProps!.endLocation)
+        payload.putFullTrackName(this.typeAndProps.props.fullTrackName)
+        payload.putLocation(this.typeAndProps.props.startLocation)
+        payload.putLocation(this.typeAndProps.props.endLocation)
         break
       }
     }
@@ -156,37 +74,41 @@ export class Fetch {
     const groupOrder = groupOrderFromNumber(groupOrderRaw)
     const fetchTypeRaw = buf.getVI()
     const fetchType = fetchTypeFromBigInt(fetchTypeRaw)
-    let standaloneFetchProps: StandAloneFetchProps | undefined = undefined
-    let joiningFetchProps: JoiningFetchProps | undefined = undefined
+
+    let props: Fetch['typeAndProps']
+
     switch (fetchType) {
-      case FetchType.Absolute | FetchType.Relative: {
+      case FetchType.Absolute:
+      case FetchType.Relative: {
         const joiningRequestId = buf.getVI()
         const joiningStart = buf.getVI()
-        joiningFetchProps = new JoiningFetchProps(joiningRequestId, joiningStart)
+        props = {
+          type: fetchType,
+          props: { joiningRequestId, joiningStart },
+        }
         break
       }
       case FetchType.StandAlone: {
         const fullTrackName = buf.getFullTrackName()
         const startLocation = buf.getLocation()
         const endLocation = buf.getLocation()
-        standaloneFetchProps = new StandAloneFetchProps(fullTrackName, startLocation, endLocation)
+        props = {
+          type: FetchType.StandAlone,
+          props: { fullTrackName, startLocation, endLocation },
+        }
         break
       }
+      default:
+        throw new Error(`Unknown fetch type: ${fetchType}`)
     }
+
     const paramCount = buf.getNumberVI()
     const parameters: KeyValuePair[] = new Array(paramCount)
     for (let i = 0; i < paramCount; i++) {
       parameters[i] = buf.getKeyValuePair()
     }
-    return new Fetch(
-      requestId,
-      subscriberPriority,
-      groupOrder,
-      fetchType,
-      parameters,
-      standaloneFetchProps,
-      joiningFetchProps,
-    )
+
+    return new Fetch(requestId, subscriberPriority, groupOrder, props, parameters)
   }
 }
 
@@ -197,17 +119,18 @@ if (import.meta.vitest) {
       const requestId = 161803n
       const subscriberPriority = 15
       const groupOrder = GroupOrder.Descending
-      const joiningFetchProps = new JoiningFetchProps(119n, 73n)
       const parameters = [
         KeyValuePair.tryNewVarInt(4444, 12321n),
         KeyValuePair.tryNewBytes(1, new TextEncoder().encode('fetch me ok')),
       ]
-      const fetch = Fetch.newAbsolute(
+      const fetch = new Fetch(
         requestId,
         subscriberPriority,
         groupOrder,
-        joiningFetchProps.joiningRequestId,
-        joiningFetchProps.joiningStart,
+        {
+          type: FetchType.Absolute,
+          props: { joiningRequestId: 119n, joiningStart: 73n },
+        },
         parameters,
       )
       const serialized = fetch.serialize()
@@ -219,13 +142,7 @@ if (import.meta.vitest) {
       const msgLength = frozen.getU16()
       expect(msgLength).toBe(frozen.remaining)
       const deserialized = Fetch.parsePayload(frozen)
-      expect(deserialized.requestId).toBe(fetch.requestId)
-      expect(deserialized.subscriberPriority).toBe(fetch.subscriberPriority)
-      expect(deserialized.groupOrder).toBe(fetch.groupOrder)
-      expect(deserialized.fetchType).toBe(fetch.fetchType)
-      expect(deserialized.joiningFetchProps?.joiningRequestId).toBe(joiningFetchProps.joiningRequestId)
-      expect(deserialized.joiningFetchProps?.joiningStart).toBe(joiningFetchProps.joiningStart)
-      expect(deserialized.parameters).toEqual(fetch.parameters)
+      expect(deserialized).toEqual(fetch)
       expect(frozen.remaining).toBe(0)
     })
 
@@ -233,17 +150,18 @@ if (import.meta.vitest) {
       const requestId = 161803n
       const subscriberPriority = 15
       const groupOrder = GroupOrder.Descending
-      const joiningFetchProps = new JoiningFetchProps(119n, 73n)
       const parameters = [
         KeyValuePair.tryNewVarInt(4444, 12321n),
         KeyValuePair.tryNewBytes(1, new TextEncoder().encode('fetch me ok')),
       ]
-      const fetch = Fetch.newAbsolute(
+      const fetch = new Fetch(
         requestId,
         subscriberPriority,
         groupOrder,
-        joiningFetchProps.joiningRequestId,
-        joiningFetchProps.joiningStart,
+        {
+          type: FetchType.Absolute,
+          props: { joiningRequestId: 119n, joiningStart: 73n },
+        },
         parameters,
       )
       const serialized = fetch.serialize().toUint8Array()
@@ -257,13 +175,7 @@ if (import.meta.vitest) {
       const msgLength = frozen.getU16()
       expect(msgLength).toBe(frozen.remaining - 3)
       const deserialized = Fetch.parsePayload(frozen)
-      expect(deserialized.requestId).toBe(fetch.requestId)
-      expect(deserialized.subscriberPriority).toBe(fetch.subscriberPriority)
-      expect(deserialized.groupOrder).toBe(fetch.groupOrder)
-      expect(deserialized.fetchType).toBe(fetch.fetchType)
-      expect(deserialized.joiningFetchProps?.joiningRequestId).toBe(joiningFetchProps.joiningRequestId)
-      expect(deserialized.joiningFetchProps?.joiningStart).toBe(joiningFetchProps.joiningStart)
-      expect(deserialized.parameters).toEqual(fetch.parameters)
+      expect(deserialized).toEqual(fetch)
       expect(Array.from(frozen.getBytes(3))).toEqual([9, 1, 1])
     })
 
@@ -271,17 +183,18 @@ if (import.meta.vitest) {
       const requestId = 161803n
       const subscriberPriority = 15
       const groupOrder = GroupOrder.Descending
-      const joiningFetchProps = new JoiningFetchProps(119n, 73n)
       const parameters = [
         KeyValuePair.tryNewVarInt(4444, 12321n),
         KeyValuePair.tryNewBytes(1, new TextEncoder().encode('fetch me ok')),
       ]
-      const fetch = Fetch.newAbsolute(
+      const fetch = new Fetch(
         requestId,
         subscriberPriority,
         groupOrder,
-        joiningFetchProps.joiningRequestId,
-        joiningFetchProps.joiningStart,
+        {
+          type: FetchType.Absolute,
+          props: { joiningRequestId: 119n, joiningStart: 73n },
+        },
         parameters,
       )
       const serialized = fetch.serialize().toUint8Array()

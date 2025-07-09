@@ -13,6 +13,7 @@ import {
   FetchError,
   FetchType,
   GoAway,
+  GroupOrder,
   ServerSetup,
   Subscribe,
   SubscribeAnnounces,
@@ -34,7 +35,7 @@ import {
   TrackAliasMap,
 } from '../model/data'
 import { RecvStream } from './data_stream'
-import { ProtocolViolationError, Tuple } from '../model'
+import { Location, ProtocolViolationError, Tuple, VersionSpecificParameters } from '../model'
 import { AnnounceCancel } from '../model/control/announce_cancel'
 import { Track } from './track/track'
 import { AnnounceRequest } from './request/announce'
@@ -204,32 +205,105 @@ export class MoqtailClient {
     }
   }
 
-  async fetch(msg: Fetch) {
+  // TODO: figure out how to handle joining fetch types
+  // Do we need an existing subscription? What happens if that subscription forwards objects?
+  // Will the subscribe objects be pushed through this FetchRequest.controller?
+  async fetch(args: {
+    subscriberPriority: number
+    groupOrder: GroupOrder
+    typeAndProps:
+      | {
+          type: FetchType.StandAlone
+          props: { fullTrackName: FullTrackName; startLocation: Location; endLocation: Location }
+        }
+      | {
+          type: FetchType.Relative
+          props: { joiningRequestId: bigint; joiningStart: bigint }
+        }
+      | {
+          type: FetchType.Absolute
+          props: { joiningRequestId: bigint; joiningStart: bigint }
+        }
+    parameters?: VersionSpecificParameters
+  }) {
     try {
-      const request = new FetchRequest(msg.requestId, msg)
-      this.controlStream.send(msg)
+      const { subscriberPriority, groupOrder, typeAndProps, parameters } = args
+      if (subscriberPriority < 0 || subscriberPriority > 255)
+        throw new ProtocolViolationError(
+          'MoqtailClient.fetch',
+          `subscriberPriority: ${subscriberPriority} must be in range of [0-255]`,
+        )
+      const params = parameters ? parameters.build() : new VersionSpecificParameters().build()
+      let msg: Fetch
+      let joiningRequest: MoqtailRequest | undefined
+      switch (typeAndProps.type) {
+        case FetchType.StandAlone:
+          msg = new Fetch(
+            this.nextClientRequestId,
+            subscriberPriority,
+            groupOrder,
+            { type: typeAndProps.type, props: typeAndProps.props },
+            params,
+          )
+          break
+
+        case FetchType.Relative:
+          joiningRequest = this.requests.get(typeAndProps.props.joiningRequestId)
+          if (!(joiningRequest instanceof SubscribeRequest))
+            throw new ProtocolViolationError(
+              'MoqtailClient.fetch',
+              `No subscribe request for the given joiningRequestId: ${typeAndProps.props.joiningRequestId}`,
+            )
+          msg = new Fetch(
+            this.nextClientRequestId,
+            subscriberPriority,
+            groupOrder,
+            { type: typeAndProps.type, props: typeAndProps.props },
+            params,
+          )
+          break
+        case FetchType.Absolute:
+          joiningRequest = this.requests.get(typeAndProps.props.joiningRequestId)
+          if (!(joiningRequest instanceof SubscribeRequest))
+            throw new ProtocolViolationError(
+              'MoqtailClient.fetch',
+              `No subscribe request for the given joiningRequestId: ${typeAndProps.props.joiningRequestId}`,
+            )
+          msg = new Fetch(
+            this.nextClientRequestId,
+            subscriberPriority,
+            groupOrder,
+            { type: typeAndProps.type, props: typeAndProps.props },
+            params,
+          )
+          break
+      }
+      const request = new FetchRequest(msg)
+      this.requests.set(msg.requestId, request)
+      await this.controlStream.send(msg)
       const response = await request
       if (response instanceof FetchError) {
         return response
       } else {
-        return request.stream
+        const stream = request.stream
+        return { response, stream }
       }
     } catch (err) {
-      // TODO: Match against error cases
       await this.disconnect()
       throw err
     }
   }
 
-  async fetchCancel(msg: FetchCancel) {
+  async fetchCancel(requestId: bigint | number) {
     try {
-      if (this.requests.has(msg.requestId)) {
-        const request = this.requests.get(msg.requestId)!
+      const request = this.requests.get(BigInt(requestId))
+      if (request) {
         if (request instanceof Fetch) {
           // TODO: Fetch cancel, mark data streams for closure
-          this.controlStream.send(new Unsubscribe(msg.requestId))
+          this.controlStream.send(new FetchCancel(requestId))
         }
       }
+      // No matching fetch request, idempotent
     } catch (err) {
       // TODO: Match against error cases
       await this.disconnect()
@@ -331,7 +405,6 @@ export class MoqtailClient {
   }
 
   private async _acceptIncomingUniStreams(): Promise<void> {
-    let streamCount = 0
     try {
       const uds = this.webTransport.incomingUnidirectionalStreams
       const reader = uds.getReader()
@@ -339,12 +412,8 @@ export class MoqtailClient {
         const { value, done } = await reader.read()
         if (done) {
           // WebTransport session is terminated
-          // console.log('_acceptIncomingUniStreams | WebTransport session is terminated')
           break
         }
-        ++streamCount
-        // TODO: report number of accepted streams.
-        // console.log('_acceptIncomingUniStreams | streamCount: %d', streamCount)
         let uniStream = value as ReadableStream
         this._handleRecvStreams(uniStream)
       }
@@ -363,13 +432,13 @@ export class MoqtailClient {
         const request = this.requests.get(header.requestId)
         if (request && request instanceof FetchRequest) {
           let fullTrackName: FullTrackName
-          switch (request.message.fetchType) {
+          switch (request.message.typeAndProps.type) {
             case FetchType.StandAlone:
-              fullTrackName = request.message.standaloneFetchProps!.fullTrackName
+              fullTrackName = request.message.typeAndProps.props.fullTrackName
               break
             case FetchType.Relative:
             case FetchType.Absolute: {
-              const joiningSubscription = this.requests.get(request.message.joiningFetchProps!.joiningRequestId)
+              const joiningSubscription = this.requests.get(request.message.typeAndProps.props.joiningRequestId)
               if (joiningSubscription instanceof SubscribeRequest) {
                 fullTrackName = joiningSubscription.message.fullTrackName
                 break
@@ -394,7 +463,7 @@ export class MoqtailClient {
               }
               if (nextObject) {
                 if (nextObject instanceof FetchObject) {
-                  // TODO: validate if it's a valid fetch object
+                  // TODO: validate if it's a valid fetch object, asc or desc?
                   const moqtObject = MoqtObject.fromFetchObject(nextObject, fullTrackName)
                   request.controller?.enqueue(moqtObject)
                   continue
@@ -447,6 +516,10 @@ export class MoqtailClient {
                   subgroupId,
                   this.trackAliasMap.getNameByAlias(Number(header.trackAlias)),
                 )
+                if (!subscription.largestLocation) subscription.largestLocation = moqtObject.location
+                if (subscription.largestLocation.compare(moqtObject.location) == -1)
+                  subscription.largestLocation = moqtObject.location
+
                 subscription.controller?.enqueue(moqtObject)
                 continue
               }

@@ -1,3 +1,22 @@
+/**
+ * @deprecated This class is deprecated and will be removed in a future version.
+ * Use ClockNormalizer (see ./clock_normalizer.ts) instead for better time synchronization.
+ *
+ * @see {@link ClockNormalizer} - Modern replacement with better accuracy
+ * @see {@link https://developer.mozilla.org/en-US/docs/Web/API/Performance/now} Performance.now() for basic timing
+ *
+ * @example
+ * ```typescript
+ * // ❌ Deprecated - Don't use
+ * const offset = await AkamaiOffset.getClockSkew()
+ *
+ * // ✅ Use ClockNormalizer instead
+ * import { ClockNormalizer } from './clock_normalizer'
+ * const normalizer = await ClockNormalizer.create()
+ * const offset = normalizer.getSkew()
+ * const normalizedTime = normalizer.now()
+ * ```
+ */
 export class AkamaiOffset {
   private static _offset: number | null = null
   private static _promise: Promise<number> | null = null

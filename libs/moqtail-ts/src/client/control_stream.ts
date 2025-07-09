@@ -63,7 +63,7 @@ export class ControlStream {
       await this.#writer.ready
       await this.#writer.write(serializedMessage.toUint8Array())
       if (this.onMessageSent) this.onMessageSent(message)
-    } catch (error: any) {
+    } catch (error: unknown) {
       await this.close()
       const errorMessage = error instanceof Error ? error.message : String(error)
       throw new TerminationError(
@@ -113,7 +113,7 @@ export class ControlStream {
           }
           this.#handleReadResult(readResult as ReadableStreamReadResult<Uint8Array>)
           if ((readResult as ReadableStreamReadResult<Uint8Array>).done) break
-        } catch (error: any) {
+        } catch (error: unknown) {
           if (error instanceof NotEnoughBytesError) {
             let readResult
             if (this.#partialMessageTimeoutMs !== undefined) {
@@ -128,9 +128,10 @@ export class ControlStream {
             this.#handleReadResult(readResult as ReadableStreamReadResult<Uint8Array>)
             if ((readResult as ReadableStreamReadResult<Uint8Array>).done) break
           } else {
+            const errorMessage = error instanceof Error ? error.message : String(error)
             controller.error(
               new TerminationError(
-                `ControlStream: Deserialization error: ${error.message}`,
+                `ControlStream: Deserialization error: ${errorMessage}`,
                 TerminationCode.PROTOCOL_VIOLATION,
               ),
             )
@@ -280,7 +281,6 @@ if (import.meta.vitest) {
         vi.clearAllMocks()
       })
       it('should handle full message roundtrip', async () => {
-        // Create a ClientSetup message with parameters
         const setupParams = new SetupParameters()
           .addPath('/test/path')
           .addMaxRequestId(1000n)
@@ -288,45 +288,38 @@ if (import.meta.vitest) {
           .build()
 
         const originalMessage = new ClientSetup([0xff000001], setupParams)
-        const messageBytes = originalMessage.serialize().toUint8Array() // Create mock stream with complete message
+        const messageBytes = originalMessage.serialize().toUint8Array()
         mockBidirectionalStream = createMockBidirectionalStream([messageBytes])
         controlStream = ControlStream.new(mockBidirectionalStream)
 
-        // Test sending the message
-        await controlStream.send(originalMessage) // Test receiving the message
+        await controlStream.send(originalMessage)
         const reader = controlStream.stream.getReader()
         const { value: receivedMessage } = await reader.read()
         expect(receivedMessage).toBeInstanceOf(ClientSetup)
-        expect((receivedMessage as any).supportedVersions).toEqual([0xff000001])
-        expect((receivedMessage as any).setupParameters).toEqual(setupParams)
+        expect(receivedMessage as ClientSetup).toEqual(originalMessage)
         reader.releaseLock()
       })
       it('should handle excess bytes successful roundtrip then timeout', async () => {
-        // Create message with excess bytes
         const setupParams = new SetupParameters().addPath('/excess/test').build()
-
         const originalMessage = new ClientSetup([0xff000001, 0xff000002], setupParams)
         const messageBytes = originalMessage.serialize().toUint8Array()
-        const excessBytes = new Uint8Array([0xff]) // Extra bytes
+        const excessBytes = new Uint8Array([0xff, 0x13, 0x8f])
 
-        // Combine message and excess bytes
         const combinedBytes = new Uint8Array(messageBytes.length + excessBytes.length)
         combinedBytes.set(messageBytes, 0)
         combinedBytes.set(excessBytes, messageBytes.length)
 
         mockBidirectionalStream = createMockBidirectionalStream([combinedBytes])
-        controlStream = ControlStream.new(mockBidirectionalStream, 3000)
+        controlStream = ControlStream.new(mockBidirectionalStream, 500)
         const reader = controlStream.stream.getReader()
         const { value: receivedMessage } = await reader.read()
         expect(receivedMessage).toBeInstanceOf(ClientSetup)
-        expect((receivedMessage as any).supportedVersions).toEqual([0xff000001, 0xff000002])
+        expect(receivedMessage as ClientSetup).toEqual(originalMessage)
 
-        // Second call should timeout (no more complete messages, only excess bytes)
         await expect(reader.read()).rejects.toThrow(TimeoutError)
         reader.releaseLock()
-      }, 7000)
+      }, 1000)
       it('should timeout on partial message', async () => {
-        // Create a partial message (incomplete)
         const setupParams = new SetupParameters().addPath('/partial/test').addMaxRequestId(42n).build()
 
         const originalMessage = new ClientSetup([0xff000001], setupParams)
@@ -336,11 +329,11 @@ if (import.meta.vitest) {
         const partialBytes = completeMessageBytes.slice(0, Math.min(10, completeMessageBytes.length))
 
         mockBidirectionalStream = createMockBidirectionalStream([partialBytes])
-        controlStream = ControlStream.new(mockBidirectionalStream, 3000)
+        controlStream = ControlStream.new(mockBidirectionalStream, 500)
         const reader = controlStream.stream.getReader()
         await expect(reader.read()).rejects.toThrow(TerminationError)
         reader.releaseLock()
-      }, 7000)
+      }, 1000)
     })
   })
 }
