@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Mic, MicOff, Video, VideoOff, MonitorUp, Phone, Send, Users, MessageSquare } from 'lucide-react'
+import { Mic, MicOff, Video, VideoOff, MonitorUp, Phone, Send, Users, MessageSquare, Smile } from 'lucide-react'
 import { useSession } from '../contexts/SessionContext'
 import {
   RoomUser,
@@ -58,8 +58,72 @@ function SessionPage() {
   const akamaiOffsetRef = useRef<number>(0)
   const [mediaReady, setMediaReady] = useState(false)
   const chatMessagesRef = useRef<HTMLDivElement>(null)
+  const emojiPickerRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<HTMLInputElement>(null)
   const [isUserScrolling, setIsUserScrolling] = useState(false)
   const [userColors, setUserColors] = useState<{ [userId: string]: { bgClass: string; hexColor: string } }>({})
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+
+  const emojiCategories = {
+    Faces: ['😀', '😂', '😍', '😊', '😉', '😎', '🤔', '😮', '😢', '😭', '😡', '🤯', '🙄', '😴'],
+    Gestures: ['👍', '👎', '👏', '🙌', '👋', '✌️', '🤞', '🤝', '🙏', '💪', '👌', '🤟', '✊', '👊'],
+    Hearts: ['⚡️', '💯', '⭐', '✅', '⏳'],
+    Objects: ['🎉', '🎊', '🎈', '🎁', '🎂', '🎵', '🏆', '🎯'],
+  }
+
+  const allEmojis = Object.values(emojiCategories).flat()
+
+  const quickEmojis = ['👍', '⚡️', '😀', '😂', '✅', '🎉']
+
+  const addEmoji = (emoji: string) => {
+    const input = chatInputRef.current
+    if (input) {
+      const start = input.selectionStart || 0
+      const end = input.selectionEnd || 0
+      const newValue = chatMessage.slice(0, start) + emoji + chatMessage.slice(end)
+      setChatMessage(newValue)
+
+      setTimeout(() => {
+        const newCursorPos = start + emoji.length
+        input.setSelectionRange(newCursorPos, newCursorPos)
+        input.focus()
+      }, 0)
+    } else {
+      setChatMessage((prev) => prev + emoji)
+    }
+    setShowEmojiPicker(false)
+  }
+
+  const renderMessageWithEmojis = (text: string) => {
+    const emojiOnlyRegex = /^[\p{Emoji_Presentation}\p{Emoji}\uFE0F\s]+$/u
+    const isEmojiOnly = emojiOnlyRegex.test(text) && text.trim().length <= 10 // Max 10 chars for emoji-only
+
+    if (isEmojiOnly) {
+      return <span style={{ fontSize: '2em', lineHeight: '1' }}>{text}</span>
+    }
+
+    const emojiRegex = /(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)/gu
+    const parts = text.split(emojiRegex)
+
+    return parts.map((part, index) => {
+      if (emojiRegex.test(part)) {
+        return (
+          <span
+            key={index}
+            style={{
+              fontSize: '1.2em',
+              lineHeight: '1.2',
+              display: 'inline-block',
+              margin: '0 1px',
+            }}
+          >
+            {part}
+          </span>
+        )
+      }
+      return part
+    })
+  }
 
   const handleSendMessage = async () => {
     if (chatMessage.trim()) {
@@ -686,6 +750,30 @@ function SessionPage() {
   }, [])
 
   useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false)
+      }
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowEmojiPicker(false)
+      }
+    }
+
+    if (showEmojiPicker) {
+      document.addEventListener('mousedown', handleClickOutside)
+      document.addEventListener('keydown', handleKeyDown)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [showEmojiPicker])
+
+  useEffect(() => {
     Object.values(remoteCanvasRefs).forEach((ref) => {
       handleRemoteVideo(ref)
     })
@@ -1084,8 +1172,14 @@ function SessionPage() {
                             ? 'bg-blue-500 text-white rounded-br-none'
                             : 'bg-gray-100 text-gray-800 rounded-bl-none'
                         }`}
+                        style={{
+                          wordBreak: 'break-word',
+                          whiteSpace: 'pre-wrap',
+                          fontSize: '14px',
+                          lineHeight: '1.4',
+                        }}
                       >
-                        {message.message}
+                        {renderMessageWithEmojis(message.message)}
                       </div>
                     </div>
                   </div>
@@ -1093,16 +1187,74 @@ function SessionPage() {
               })}
             </div>
             {/* Chat Input */}
-            <div className="p-4 border-t border-gray-200 flex-shrink-0">
+            <div className="p-4 border-t border-gray-200 flex-shrink-0 relative">
+              {/* Quick Emoji Reactions */}
+              <div className="mb-3">
+                <div className="flex items-center space-x-1">
+                  <span className="text-xs text-gray-500 mr-2">Quick:</span>
+                  {quickEmojis.map((emoji, index) => (
+                    <button
+                      key={index}
+                      onClick={() => addEmoji(emoji)}
+                      className="text-lg hover:bg-gray-100 rounded p-1 transition-colors duration-150 hover:scale-110 transform"
+                      title={`Add ${emoji}`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Emoji Picker */}
+              {showEmojiPicker && (
+                <div
+                  ref={emojiPickerRef}
+                  className="absolute bottom-full left-4 right-4 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg z-10"
+                >
+                  <div className="p-2 border-b border-gray-100">
+                    <p className="text-xs text-gray-500 font-medium">Choose an emoji</p>
+                  </div>
+                  <div className="p-3 max-h-40 overflow-y-auto">
+                    <div className="grid grid-cols-8 gap-1">
+                      {allEmojis.map((emoji, index) => (
+                        <button
+                          key={index}
+                          onClick={() => addEmoji(emoji)}
+                          className="text-xl hover:bg-gray-100 rounded p-2 transition-colors duration-150 hover:scale-110 transform"
+                          title={`Add ${emoji}`}
+                          style={{ fontSize: '18px' }}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex space-x-2">
-                <input
-                  type="text"
-                  value={chatMessage}
-                  onChange={(e) => setChatMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                  placeholder="Type a message..."
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                />
+                <div className="flex-1 relative">
+                  <input
+                    ref={chatInputRef}
+                    type="text"
+                    value={chatMessage}
+                    onChange={(e) => setChatMessage(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSendMessage()
+                      }
+                    }}
+                    placeholder="Type a message..."
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  />
+                  <button
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded transition-colors"
+                    title="Add emoji"
+                  >
+                    <Smile className="w-4 h-4 text-gray-500" />
+                  </button>
+                </div>
                 <button
                   onClick={handleSendMessage}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
