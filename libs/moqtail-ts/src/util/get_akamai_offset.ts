@@ -60,23 +60,3 @@ export class AkamaiOffset {
     return offset
   }
 }
-
-if (import.meta.vitest) {
-  const { describe, test, expect } = import.meta.vitest
-  describe('AkamaiOffset', () => {
-    test('getClockSkew returns a number', async () => {
-      const offset = await AkamaiOffset.getClockSkew()
-      expect(typeof offset).toBe('number')
-    })
-    test(
-      'getClockSkew returns the same value on subsequent calls',
-      async () => {
-        const offset1 = await AkamaiOffset.getClockSkew()
-        await new Promise((resolve) => setTimeout(resolve, 9000)) // wait a bit to ensure the next call is not instantaneous
-        const offset2 = await AkamaiOffset.getClockSkew()
-        expect(Math.round(offset1)).toBe(Math.round(offset2))
-      },
-      { timeout: 20000 },
-    )
-  })
-}

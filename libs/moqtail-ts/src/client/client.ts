@@ -12,6 +12,7 @@ import {
   FetchCancel,
   FetchError,
   FetchType,
+  FilterType,
   GoAway,
   GroupOrder,
   ServerSetup,
@@ -35,7 +36,14 @@ import {
   TrackAliasMap,
 } from '../model/data'
 import { RecvStream } from './data_stream'
-import { Location, ProtocolViolationError, Tuple, VersionSpecificParameters } from '../model'
+import {
+  InternalError,
+  Location,
+  MoqtailError,
+  ProtocolViolationError,
+  Tuple,
+  VersionSpecificParameters,
+} from '../model'
 import { AnnounceCancel } from '../model/control/announce_cancel'
 import { Track } from './track/track'
 import { AnnounceRequest } from './request/announce'
@@ -46,6 +54,7 @@ import { TrackStatusRequest } from './request/track_status_request'
 import { getHandlerForControlMessage } from './handler/handler'
 import { SubscribePublication } from './publication/subscribe'
 import { FetchPublication } from './publication/fetch'
+import { random60bitId } from './util/random_id'
 
 export type MoqtailRequest =
   | AnnounceRequest
@@ -55,42 +64,41 @@ export type MoqtailRequest =
   | TrackStatusRequest
 
 export class MoqtailClient {
-  public logger?: Logger
-  public readonly peerSubscribeAnnounces = new Set<Tuple>() // Set of namepace prefixes peer subscribes upon.
-  public readonly subscribedAnnounces = new Set<Tuple>() // Set of namespace prefixes this client subscribes to
-  public readonly announcedNamespaces = new Set<Tuple>() // Q: Set is inefficient for prefix matching. Consider Trie
-  public readonly trackSources: Map<string, Track> = new Map()
-  public readonly requests: Map<bigint, MoqtailRequest> = new Map()
-  public readonly publications: Map<bigint, SubscribePublication | FetchPublication> = new Map()
-  private readonly subscriptions: Map<bigint, SubscribeRequest> = new Map() // Track Alias to Subscribe Request
-  public readonly trackAliasMap: TrackAliasMap = new TrackAliasMap()
-  public _serverSetup!: ServerSetup
-  public controlStream!: ControlStream
-  public maxRequestId?: bigint
-  public dataStreamTimeoutMs?: number
-  public controlStreamTimeoutMs?: number
+  readonly peerSubscribeAnnounces = new Set<Tuple>() // Set of namepace prefixes peer subscribes upon.
+  readonly subscribedAnnounces = new Set<Tuple>() // Set of namespace prefixes this client subscribes to
+  readonly announcedNamespaces = new Set<Tuple>() // Q: Set is inefficient for prefix matching. Consider Trie
+  readonly trackSources: Map<string, Track> = new Map()
+  readonly requests: Map<bigint, MoqtailRequest> = new Map()
+  readonly publications: Map<bigint, SubscribePublication | FetchPublication> = new Map()
+  readonly subscriptions: Map<bigint, SubscribeRequest> = new Map() // Track Alias to Subscribe Request
+  readonly trackAliasMap: TrackAliasMap = new TrackAliasMap()
+  _serverSetup!: ServerSetup
+  controlStream!: ControlStream
+  dataStreamTimeoutMs?: number
+  controlStreamTimeoutMs?: number
+  maxRequestId?: bigint
+  logger?: Logger
 
-  public onTrackAnnounced?: (msg: Announce) => void
-  public onTrackUnannounced?: (msg: Unannounce) => void
-  public onGoaway?: (msg: GoAway) => void
-  public onWebTransportFail?: () => void
-  public onSessionTerminated?: () => void
-  public onMessageSent?: (msg: ControlMessage) => void
-  public onMessageReceived?: (msg: ControlMessage) => void
-  public onDataReceived?: (data: SubgroupObject | SubgroupHeader | FetchObject | FetchHeader) => void
-  public onDataSent?: (data: SubgroupObject | SubgroupHeader | FetchObject | FetchHeader) => void
-  private _requestIdGen = this._requestIdGenerator()
+  onTrackAnnounced?: (msg: Announce) => void
+  onTrackUnannounced?: (msg: Unannounce) => void
+  onGoaway?: (msg: GoAway) => void
+  onWebTransportFail?: () => void
+  onSessionTerminated?: () => void
+  onMessageSent?: (msg: ControlMessage) => void
+  onMessageReceived?: (msg: ControlMessage) => void
+  onDataReceived?: (data: SubgroupObject | SubgroupHeader | FetchObject | FetchHeader) => void
+  onDataSent?: (data: SubgroupObject | SubgroupHeader | FetchObject | FetchHeader) => void
 
-  //TODO: The id should start with 0, relay returns 1 so for quick fix we just put 1 instead
-  private *_requestIdGenerator(): Generator<bigint, never, unknown> {
-    let id: bigint = 0n
-    while (true) {
-      yield id
-      id += 2n
-    }
+  #isDestroyed = false
+  #dontUseRequestId: bigint = 0n
+  get #nextClientRequestId(): bigint {
+    const id = this.#dontUseRequestId
+    this.#dontUseRequestId += 2n
+    return id
   }
-  public get nextClientRequestId(): bigint {
-    return this._requestIdGen.next().value
+
+  #ensureActive() {
+    if (this.#isDestroyed) throw new MoqtailError('MoqtailClient is destroyed and cannot be used.')
   }
 
   // TODO: Support URL construction
@@ -127,43 +135,121 @@ export class MoqtailClient {
     if (response instanceof ServerSetup) {
       client._serverSetup = response
       reader.releaseLock()
-      client._handleIncomingControlMessages()
-      client._acceptIncomingUniStreams()
+      client.#handleIncomingControlMessages()
+      client.#acceptIncomingUniStreams()
       return client
     }
     throw new ProtocolViolationError('MoqtailClient.new', 'Expected server setup after client setup')
   }
 
   async disconnect() {
+    if (this.#isDestroyed) return
+    this.#isDestroyed = true
     // TODO: Session cleanup?
     if (!this.webTransport.closed) this.webTransport.close()
     if (this.onSessionTerminated) this.onSessionTerminated()
   }
 
   addOrUpdateTrack(track: Track) {
+    this.#ensureActive()
     this.trackSources.set(track.fullTrackName.toString(), track)
   }
 
   removeTrack(track: Track) {
+    this.#ensureActive()
     this.trackSources.delete(track.fullTrackName.toString())
   }
 
-  async subscribe(msg: Subscribe): Promise<SubscribeError | ReadableStream<MoqtObject>> {
+  async subscribe(
+    fullTrackName: FullTrackName,
+    priority: number,
+    groupOrder: GroupOrder,
+    forward: boolean,
+    filterType: FilterType,
+    parameters: VersionSpecificParameters,
+    trackAlias?: bigint,
+    startLocation?: Location,
+    endGroup?: bigint,
+  ): Promise<SubscribeError | { requestId: bigint; stream: ReadableStream<MoqtObject> }> {
+    this.#ensureActive()
     try {
-      const request = new SubscribeRequest(msg.requestId, msg)
-      await this.controlStream.send(msg)
-      this.logger?.info(`[CLIENT] Sent Subscribe: ${JSON.stringify(msg)}`)
+      let msg: Subscribe
+      if (!trackAlias) trackAlias = random60bitId()
+      switch (filterType) {
+        case FilterType.LatestObject:
+          msg = Subscribe.newLatestObject(
+            this.#nextClientRequestId,
+            trackAlias,
+            fullTrackName,
+            priority,
+            groupOrder,
+            forward,
+            parameters.build(),
+          )
+          break
+        case FilterType.NextGroupStart:
+          msg = Subscribe.newNextGroupStart(
+            this.#nextClientRequestId,
+            trackAlias,
+            fullTrackName,
+            priority,
+            groupOrder,
+            forward,
+            parameters.build(),
+          )
+          break
+        case FilterType.AbsoluteStart:
+          if (!startLocation)
+            throw new ProtocolViolationError(
+              'MoqtailClient.subscribe',
+              'FilterType.AbsoluteStart must have a start location',
+            )
+          msg = Subscribe.newAbsoluteStart(
+            this.#nextClientRequestId,
+            trackAlias,
+            fullTrackName,
+            priority,
+            groupOrder,
+            forward,
+            startLocation,
+            parameters.build(),
+          )
+          break
+        case FilterType.AbsoluteRange:
+          if (!startLocation || !endGroup)
+            throw new ProtocolViolationError(
+              'MoqtailClient.subscribe',
+              'FilterType.AbsoluteRange must have a start location and an end group',
+            )
+          if (startLocation.group >= endGroup)
+            throw new ProtocolViolationError('MoqtailClient.subscribe', 'End group must be greater than start group')
+
+          msg = Subscribe.newAbsoluteRange(
+            this.#nextClientRequestId,
+            trackAlias,
+            fullTrackName,
+            priority,
+            groupOrder,
+            forward,
+            startLocation,
+            endGroup,
+            parameters.build(),
+          )
+          break
+      }
+      const request = new SubscribeRequest(msg)
       this.requests.set(request.requestId, request)
       this.subscriptions.set(msg.trackAlias, request)
-      this.trackAliasMap.addMapping(request.message.trackAlias, request.message.fullTrackName)
+      this.trackAliasMap.addMapping(request.trackAlias, request.fullTrackName)
+      await this.controlStream.send(msg)
       const response = await request
       if (response instanceof SubscribeError) {
-        console.warn('MoqtailClient.subscribe', 'Received SubscribeError', response)
+        this.requests.delete(request.requestId)
+        this.subscriptions.delete(msg.trackAlias)
+        this.trackAliasMap.removeMappingByAlias(request.trackAlias)
         return response
       } else {
-        console.warn('MoqtailClient.subscribe', 'Subscribe successful, returning stream', response)
-        this.logger?.info(`[CLIENT] Subscribe successful: ${JSON.stringify(msg)}`)
-        return request.stream
+        return { requestId: msg.requestId, stream: request.stream }
       }
     } catch (err) {
       // TODO: Match against error cases
@@ -171,13 +257,18 @@ export class MoqtailClient {
       throw err
     }
   }
-  async unsubscribe(requestId: bigint) {
+
+  async unsubscribe(requestId: bigint): Promise<void> {
+    this.#ensureActive()
     try {
       if (this.requests.has(requestId)) {
         const request = this.requests.get(requestId)!
         if (request instanceof Subscribe) {
-          // TODO: Unsubscribe, mark data streams for closure
-          this.controlStream.send(new Unsubscribe(requestId))
+          const subscription = this.subscriptions.get(requestId)
+          if (!subscription)
+            throw new InternalError('MoqtailClient.unsubscribe', 'Request exists but subscription does not')
+          await this.controlStream.send(new Unsubscribe(requestId))
+          subscription.unsubscribe()
         }
       }
       // Q: Throw? Idempotent?
@@ -188,13 +279,39 @@ export class MoqtailClient {
     }
   }
 
-  async subscribeUpdate(msg: SubscribeUpdate) {
+  async subscribeUpdate(
+    requestId: bigint,
+    startLocation: Location,
+    endGroup: bigint,
+    priority: number,
+    forward: boolean,
+    parameters: VersionSpecificParameters,
+  ): Promise<void> {
+    this.#ensureActive()
+    if (startLocation.group >= endGroup)
+      throw new ProtocolViolationError('MoqtailClient.subscribeUpdate', 'End group must be greater than start group')
     try {
-      if (this.requests.has(msg.requestId)) {
-        const request = this.requests.get(msg.requestId)!
+      if (this.requests.has(requestId)) {
+        const request = this.requests.get(requestId)!
         if (request instanceof Subscribe) {
-          // Q: Is there any operation needs to be done?
-          this.controlStream.send(msg)
+          if (request.startLocation && request.startLocation.compare(startLocation) != 1)
+            throw new ProtocolViolationError(
+              'MoqtailClient.subscribeUpdate',
+              'Subscriptions can only become more narrow, not wider.  The start location must not decrease',
+            )
+          if (request.endGroup && request.endGroup < endGroup)
+            throw new ProtocolViolationError(
+              'MoqtailClient.subscribeUpdate',
+              'Subscriptions can only become more narrow, not wider. The end group must not increase',
+            )
+          const subscription = this.subscriptions.get(requestId)
+          if (!subscription)
+            throw new InternalError('MoqtailClient.subscribeUpdate', 'Request exists but subscription does not')
+          // TODO: If a parameter included in SUBSCRIBE is not present in SUBSCRIBE_UPDATE, its value remains unchanged.
+          // There is no mechanism to remove a parameter from a subscription. We can add parameters but check for duplicate params
+          const msg = new SubscribeUpdate(requestId, startLocation, endGroup, priority, forward, parameters.build())
+          subscription.update(msg) // This also updates the request since both maps store the same object
+          await this.controlStream.send(msg)
         }
       }
       // Q: Throw? Idempotent?
@@ -225,7 +342,8 @@ export class MoqtailClient {
           props: { joiningRequestId: bigint; joiningStart: bigint }
         }
     parameters?: VersionSpecificParameters
-  }) {
+  }): Promise<FetchError | { requestId: bigint; stream: ReadableStream<MoqtObject> }> {
+    this.#ensureActive()
     try {
       const { subscriberPriority, groupOrder, typeAndProps, parameters } = args
       if (subscriberPriority < 0 || subscriberPriority > 255)
@@ -239,7 +357,7 @@ export class MoqtailClient {
       switch (typeAndProps.type) {
         case FetchType.StandAlone:
           msg = new Fetch(
-            this.nextClientRequestId,
+            this.#nextClientRequestId,
             subscriberPriority,
             groupOrder,
             { type: typeAndProps.type, props: typeAndProps.props },
@@ -255,7 +373,7 @@ export class MoqtailClient {
               `No subscribe request for the given joiningRequestId: ${typeAndProps.props.joiningRequestId}`,
             )
           msg = new Fetch(
-            this.nextClientRequestId,
+            this.#nextClientRequestId,
             subscriberPriority,
             groupOrder,
             { type: typeAndProps.type, props: typeAndProps.props },
@@ -270,7 +388,7 @@ export class MoqtailClient {
               `No subscribe request for the given joiningRequestId: ${typeAndProps.props.joiningRequestId}`,
             )
           msg = new Fetch(
-            this.nextClientRequestId,
+            this.#nextClientRequestId,
             subscriberPriority,
             groupOrder,
             { type: typeAndProps.type, props: typeAndProps.props },
@@ -283,10 +401,11 @@ export class MoqtailClient {
       await this.controlStream.send(msg)
       const response = await request
       if (response instanceof FetchError) {
+        this.requests.delete(msg.requestId)
         return response
       } else {
         const stream = request.stream
-        return { response, stream }
+        return { requestId: msg.requestId, stream }
       }
     } catch (err) {
       await this.disconnect()
@@ -295,6 +414,7 @@ export class MoqtailClient {
   }
 
   async fetchCancel(requestId: bigint | number) {
+    this.#ensureActive()
     try {
       const request = this.requests.get(BigInt(requestId))
       if (request) {
@@ -312,6 +432,7 @@ export class MoqtailClient {
   }
 
   async trackStatusRequest(msg: TrackStatusRequestMessage) {
+    this.#ensureActive()
     try {
       const request = new TrackStatusRequest(msg.requestId, msg)
       this.controlStream.send(msg)
@@ -326,6 +447,7 @@ export class MoqtailClient {
   // TODO: Each announced track should checked against ongoing subscribe_announces
   // If matches it should send an announce to that peer automatically
   async announce(msg: Announce) {
+    this.#ensureActive()
     try {
       const request = new AnnounceRequest(msg.requestId, msg)
       this.requests.set(request.requestId, request)
@@ -340,6 +462,7 @@ export class MoqtailClient {
   }
 
   async unannounce(msg: Unannounce) {
+    this.#ensureActive()
     try {
       this.announcedNamespaces.delete(msg.trackNamespace)
       await this.controlStream.send(msg)
@@ -351,6 +474,7 @@ export class MoqtailClient {
   }
 
   async announceCancel(msg: AnnounceCancel) {
+    this.#ensureActive()
     try {
       await this.controlStream.send(msg)
     } catch (err) {
@@ -362,6 +486,7 @@ export class MoqtailClient {
 
   // INFO: Subscriber calls this the get matching announce messages with this prefix
   async subscribeAnnounces(msg: SubscribeAnnounces) {
+    this.#ensureActive()
     try {
       await this.controlStream.send(msg)
     } catch (err) {
@@ -372,6 +497,7 @@ export class MoqtailClient {
   }
 
   async unsubscribeAnnounces(msg: UnsubscribeAnnounces) {
+    this.#ensureActive()
     try {
       await this.controlStream.send(msg)
     } catch (err) {
@@ -381,22 +507,16 @@ export class MoqtailClient {
     }
   }
 
-  private async _handleIncomingControlMessages(): Promise<void> {
+  async #handleIncomingControlMessages(): Promise<void> {
+    this.#ensureActive()
     try {
       const reader = this.controlStream.stream.getReader()
       while (true) {
         const { done, value: msg } = await reader.read()
-        if (done) {
-          // WebTransport session is terminated. Could be result of goaway
-          // TODO: Terminate client
-          break
-        }
+        if (done) throw new MoqtailError('WebTransport session is terminated')
         const handler = getHandlerForControlMessage(msg)
-        if (handler) {
-          await handler(this, msg)
-        } else {
-          throw new ProtocolViolationError('MoqtailClient', 'No handler for the received message')
-        }
+        if (!handler) throw new ProtocolViolationError('MoqtailClient', 'No handler for the received message')
+        await handler(this, msg)
       }
     } catch (error) {
       this.disconnect()
@@ -404,25 +524,26 @@ export class MoqtailClient {
     }
   }
 
-  private async _acceptIncomingUniStreams(): Promise<void> {
+  async #acceptIncomingUniStreams(): Promise<void> {
+    this.#ensureActive()
     try {
       const uds = this.webTransport.incomingUnidirectionalStreams
       const reader = uds.getReader()
       while (true) {
         const { value, done } = await reader.read()
-        if (done) {
-          // WebTransport session is terminated
-          break
-        }
+        if (done) throw new MoqtailError('WebTransport session is terminated')
         let uniStream = value as ReadableStream
-        this._handleRecvStreams(uniStream)
+        this.#handleRecvStreams(uniStream)
       }
     } catch (error) {
       this.disconnect()
       throw error
     }
   }
-  private async _handleRecvStreams(incomingUniStream: ReadableStream): Promise<void> {
+  // TODO: Handle request cancellation. Cancel streams are expected to receive some on-fly objects.
+  // Do a timeout? Wait for certain amount of objects?
+  async #handleRecvStreams(incomingUniStream: ReadableStream): Promise<void> {
+    this.#ensureActive()
     try {
       const recvStream = await RecvStream.new(incomingUniStream, this.dataStreamTimeoutMs)
       const header = recvStream.header
@@ -440,7 +561,7 @@ export class MoqtailClient {
             case FetchType.Absolute: {
               const joiningSubscription = this.requests.get(request.message.typeAndProps.props.joiningRequestId)
               if (joiningSubscription instanceof SubscribeRequest) {
-                fullTrackName = joiningSubscription.message.fullTrackName
+                fullTrackName = joiningSubscription.fullTrackName
                 break
               }
               throw new ProtocolViolationError(
@@ -456,7 +577,7 @@ export class MoqtailClient {
             while (true) {
               const { done, value: nextObject } = await reader.read()
               if (done) {
-                // Cleanup
+                // Fetch Cleanup
                 this.requests.delete(request.requestId)
                 request.controller?.close()
                 break
@@ -527,9 +648,10 @@ export class MoqtailClient {
             }
           }
 
+          // Subscribe Cleanup
           if (subscription.expectedStreams && subscription.expectedStreams === subscription.streamsAccepted) {
             subscription.controller?.close()
-            this.subscriptions.delete(subscription.message.trackAlias)
+            this.subscriptions.delete(subscription.trackAlias)
             this.requests.delete(subscription.requestId)
           }
           return
