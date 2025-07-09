@@ -2,10 +2,10 @@ import { TrackAliasError } from '../error'
 import { FullTrackName } from './full_track_name'
 
 export class TrackAliasMap {
-  private aliasToName = new Map<number, FullTrackName>()
-  private nameToAlias = new Map<FullTrackName, number>()
+  private aliasToName = new Map<bigint, FullTrackName>()
+  private nameToAlias = new Map<FullTrackName, bigint>()
 
-  addMapping(alias: number, name: FullTrackName): void {
+  addMapping(alias: bigint, name: FullTrackName): void {
     if (this.aliasToName.has(alias)) {
       const existingName = this.aliasToName.get(alias)
       if (existingName === name) return
@@ -26,19 +26,19 @@ export class TrackAliasMap {
     this.nameToAlias.set(name, alias)
   }
 
-  getNameByAlias(alias: number): FullTrackName {
+  getNameByAlias(alias: bigint): FullTrackName {
     const name = this.aliasToName.get(alias)
     if (!name) throw new TrackAliasError('TrackAliasMap::getNameByAlias(name)', `Alias: ${alias} doesn't exist`)
     return name
   }
 
-  getAliasByName(name: FullTrackName): number {
+  getAliasByName(name: FullTrackName): bigint {
     const alias = this.nameToAlias.get(name)
     if (alias === undefined) throw new TrackAliasError('TrackAliasMap::getAliasByName(alias)', `Name does not exist`)
     return alias
   }
 
-  removeMappingByAlias(alias: number): FullTrackName | undefined {
+  removeMappingByAlias(alias: bigint): FullTrackName | undefined {
     const name = this.aliasToName.get(alias)
     if (name) {
       this.aliasToName.delete(alias)
@@ -48,7 +48,7 @@ export class TrackAliasMap {
     return undefined
   }
 
-  removeMappingByName(name: FullTrackName): number | undefined {
+  removeMappingByName(name: FullTrackName): bigint | undefined {
     const alias = this.nameToAlias.get(name)
     if (alias !== undefined) {
       this.nameToAlias.delete(name)
@@ -58,7 +58,7 @@ export class TrackAliasMap {
     return undefined
   }
 
-  containsAlias(alias: number): boolean {
+  containsAlias(alias: bigint): boolean {
     return this.aliasToName.has(alias)
   }
 
@@ -72,7 +72,7 @@ if (import.meta.vitest) {
   describe('TrackAliasMap', () => {
     test('add and get mapping roundtrip', () => {
       const map = new TrackAliasMap()
-      const alias = 42
+      const alias = 42n
       const name = FullTrackName.tryNew('namespace/test', 'bamboozeled')
       map.addMapping(alias, name)
       expect(map.getNameByAlias(alias)).toEqual(name)
@@ -80,7 +80,7 @@ if (import.meta.vitest) {
     })
     test('add duplicate alias error', () => {
       const map = new TrackAliasMap()
-      const alias = 1
+      const alias = 1n
       const name1 = FullTrackName.tryNew('namespace/test', 'bamboozeled')
       const name2 = FullTrackName.tryNew('namespace/test/yeeahboii', 'bamboozeled')
       map.addMapping(alias, name1)

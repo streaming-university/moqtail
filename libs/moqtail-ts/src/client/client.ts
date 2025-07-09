@@ -155,7 +155,7 @@ export class MoqtailClient {
       this.logger?.info(`[CLIENT] Sent Subscribe: ${JSON.stringify(msg)}`)
       this.requests.set(request.requestId, request)
       this.subscriptions.set(msg.trackAlias, request)
-      this.trackAliasMap.addMapping(Number(request.message.trackAlias), request.message.fullTrackName)
+      this.trackAliasMap.addMapping(request.message.trackAlias, request.message.fullTrackName)
       const response = await request
       if (response instanceof SubscribeError) {
         console.warn('MoqtailClient.subscribe', 'Received SubscribeError', response)
@@ -514,7 +514,7 @@ export class MoqtailClient {
                   header.groupId,
                   header.publisherPriority,
                   subgroupId,
-                  this.trackAliasMap.getNameByAlias(Number(header.trackAlias)),
+                  this.trackAliasMap.getNameByAlias(header.trackAlias),
                 )
                 if (!subscription.largestLocation) subscription.largestLocation = moqtObject.location
                 if (subscription.largestLocation.compare(moqtObject.location) == -1)
