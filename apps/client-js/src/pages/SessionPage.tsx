@@ -16,6 +16,7 @@ import {
   Expand,
   Minimize,
 } from 'lucide-react'
+
 import { useSession } from '../contexts/SessionContext'
 import {
   RoomUser,
@@ -93,6 +94,74 @@ function SessionPage() {
     }
   }>({})
 
+  const chatMessagesRef = useRef<HTMLDivElement>(null)
+  const emojiPickerRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<HTMLInputElement>(null)
+  const [isUserScrolling, setIsUserScrolling] = useState(false)
+  const [userColors, setUserColors] = useState<{ [userId: string]: { bgClass: string; hexColor: string } }>({})
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+
+  const emojiCategories = {
+    Faces: ['😀', '😂', '😍', '😊', '😉', '😎', '🤔', '😮', '😢', '😭', '😡', '🤯', '🙄', '😴'],
+    Gestures: ['👍', '👎', '👏', '🙌', '👋', '✌️', '🤞', '🤝', '🙏', '💪', '👌', '🤟', '✊', '👊'],
+    Hearts: ['⚡️', '💯', '⭐', '✅', '⏳'],
+    Objects: ['🎉', '🎊', '🎈', '🎁', '🎂', '🎵', '🏆', '🎯'],
+  }
+
+  const allEmojis = Object.values(emojiCategories).flat()
+
+  const quickEmojis = ['👍', '⚡️', '😀', '😂', '✅', '🎉']
+
+  const addEmoji = (emoji: string) => {
+    const input = chatInputRef.current
+    if (input) {
+      const start = input.selectionStart || 0
+      const end = input.selectionEnd || 0
+      const newValue = chatMessage.slice(0, start) + emoji + chatMessage.slice(end)
+      setChatMessage(newValue)
+
+      setTimeout(() => {
+        const newCursorPos = start + emoji.length
+        input.setSelectionRange(newCursorPos, newCursorPos)
+        input.focus()
+      }, 0)
+    } else {
+      setChatMessage((prev) => prev + emoji)
+    }
+    setShowEmojiPicker(false)
+  }
+
+  const renderMessageWithEmojis = (text: string) => {
+    const emojiOnlyRegex = /^[\p{Emoji_Presentation}\p{Emoji}\uFE0F\s]+$/u
+    const isEmojiOnly = emojiOnlyRegex.test(text) && text.trim().length <= 10 // Max 10 chars for emoji-only
+
+    if (isEmojiOnly) {
+      return <span style={{ fontSize: '2em', lineHeight: '1' }}>{text}</span>
+    }
+
+    const emojiRegex = /(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)/gu
+    const parts = text.split(emojiRegex)
+
+    return parts.map((part, index) => {
+      if (emojiRegex.test(part)) {
+        return (
+          <span
+            key={index}
+            style={{
+              fontSize: '1.2em',
+              lineHeight: '1.2',
+              display: 'inline-block',
+              margin: '0 1px',
+            }}
+          >
+            {part}
+          </span>
+        )
+      }
+      return part
+    })
+  }
+
   const handleSendMessage = async () => {
     if (chatMessage.trim()) {
       // Format timestamp as h.mmAM/PM
@@ -134,15 +203,44 @@ function SessionPage() {
     })
   }
 
-  const createCanvasRef = (userId: string): void => {
-    setRemoteCanvasRefs((prev) => ({
-      ...prev,
-      [userId]: React.createRef<HTMLCanvasElement>(),
-    }))
-  }
-
   const isSelf = (id: string): boolean => {
     return id === userId
+  }
+
+  const getUserInitials = (name: string): string => {
+    const words = name.trim().split(/\s+/)
+
+    if (words.length === 1) {
+      return words[0].substring(0, 2).toUpperCase()
+    } else {
+      return words
+
+        .slice(0, 2)
+
+        .map((word) => word.charAt(0))
+
+        .join('')
+
+        .toUpperCase()
+    }
+  }
+
+  const availableColors = [
+    { bgClass: 'bg-blue-500', hexColor: '#3b82f6' },
+
+    { bgClass: 'bg-green-500', hexColor: '#22c55e' },
+
+    { bgClass: 'bg-purple-500', hexColor: '#a855f7' },
+
+    { bgClass: 'bg-red-500', hexColor: '#ff0000' },
+
+    { bgClass: 'bg-orange-500', hexColor: '#f97316' },
+
+    { bgClass: 'bg-teal-500', hexColor: '#14b8a6' },
+  ]
+
+  const getUserColor = (userId: string): string => {
+    return userColors[userId]?.bgClass || 'bg-gray-500'
   }
 
   const toggleInfoCard = (userId: string, panelType: 'network' | 'codec' = 'network') => {
@@ -157,7 +255,108 @@ function SessionPage() {
     }))
   }
 
+  const getUserColorHex = (userId: string): string => {
+    return userColors[userId]?.hexColor || '#6b7280'
+  }
+
+  const getSenderUserId = (senderName: string): string => {
+    const user = Object.values(users).find((u) => u.name === senderName)
+
+    return user?.id || ''
+  }
+
   const handleToggle = (kind: 'mic' | 'cam') => {
+    // If trying to toggle camera while screen sharing, stop screen sharing first
+
+    if (kind === 'cam' && isScreenSharing) {
+      handleToggleScreenShare() // This will stop screen sharing
+
+      // After screen sharing stops, toggle the camera
+
+      setTimeout(() => {
+        const setter = setisCamOn
+
+        setter((prev) => {
+          const newValue = !prev
+
+          setUsers((users) => {
+            const u = users[userId]
+
+            users[userId] = { ...u, hasVideo: newValue }
+
+            // Video track switching logic for camera
+
+            const audioTrack = selfMediaStream.current?.getAudioTracks()[0]
+
+            let newStream
+
+            if (newValue) {
+              navigator.mediaDevices.getUserMedia({ video: { aspectRatio: 16 / 9 } }).then((videoStream) => {
+                const realVideoTrack = videoStream.getVideoTracks()[0]
+
+                const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
+
+                if (oldVideoTrack) {
+                  oldVideoTrack.stop()
+
+                  selfMediaStream.current?.removeTrack(oldVideoTrack)
+                }
+
+                newStream = new MediaStream()
+
+                if (audioTrack) newStream.addTrack(audioTrack)
+
+                newStream.addTrack(realVideoTrack)
+
+                selfMediaStream.current = newStream
+
+                if (videoEncoderObjRef.current) {
+                  videoEncoderObjRef.current.offset = akamaiOffsetRef.current
+
+                  videoEncoderObjRef.current.start(selfMediaStream.current)
+                }
+
+                if (selfVideoRef.current) {
+                  selfVideoRef.current.srcObject = newStream
+
+                  selfVideoRef.current.muted = true
+                }
+              })
+            } else {
+              const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
+
+              if (oldVideoTrack) {
+                oldVideoTrack.stop()
+
+                selfMediaStream.current?.removeTrack(oldVideoTrack)
+              }
+
+              newStream = new MediaStream()
+
+              if (audioTrack) newStream.addTrack(audioTrack)
+
+              selfMediaStream.current = newStream
+
+              if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream
+
+              selfVideoRef.current!.muted = true
+
+              if (videoEncoderObjRef.current) {
+                videoEncoderObjRef.current.stop()
+              }
+            }
+
+            return users
+          })
+
+          contextSocket?.emit('toggle-button', { kind, value: newValue })
+
+          return newValue
+        })
+      }, 100) // Small delay to ensure screen sharing stops first
+
+      return
+    }
     const setter = kind === 'mic' ? setIsMicOn : setisCamOn
     setter((prev) => {
       const newValue = !prev
@@ -193,21 +392,18 @@ function SessionPage() {
               }
             })
           } else {
-            // Turn OFF: stop real, add new fake
             const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
             if (oldVideoTrack) {
               oldVideoTrack.stop() // This will turn off the camera indicator
               selfMediaStream.current?.removeTrack(oldVideoTrack)
             }
-            const fakeVideoTrack = createFakeVideoTrack()
             newStream = new MediaStream()
             if (audioTrack) newStream.addTrack(audioTrack)
-            newStream.addTrack(fakeVideoTrack)
             selfMediaStream.current = newStream
             if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream
-            selfVideoRef.current!.muted = true // Ensure muted
+            selfVideoRef.current!.muted = true
             if (videoEncoderObjRef.current) {
-              videoEncoderObjRef.current.start(selfMediaStream.current)
+              videoEncoderObjRef.current.stop()
             }
           }
         }
@@ -222,14 +418,6 @@ function SessionPage() {
     const mediaStream = selfMediaStream.current!
     if (mediaStream) {
       const tracks = mediaStream.getAudioTracks()
-      tracks.forEach((track) => (track.enabled = val))
-    }
-  }
-
-  function toggleMediaStreamVideo(val: boolean) {
-    const mediaStream = selfMediaStream.current!
-    if (mediaStream) {
-      const tracks = mediaStream.getVideoTracks()
       tracks.forEach((track) => (track.enabled = val))
     }
   }
@@ -265,20 +453,22 @@ function SessionPage() {
         if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream
         if (selfVideoRef.current) selfVideoRef.current.muted = true // Ensure muted
         if (videoEncoderObjRef.current) {
+          videoEncoderObjRef.current.offset = akamaiOffsetRef.current
           videoEncoderObjRef.current.start(selfMediaStream.current)
         }
         setIsScreenSharing(true)
         contextSocket?.emit('screen-share-toggled', { userId, hasScreenshare: true })
         setUsers((users) => ({
           ...users,
-          [userId]: { ...users[userId], hasScreenshare: true },
+          [userId]: { ...users[userId], hasScreenshare: true, hasVideo: true },
         }))
         screenTrack.onended = () => {
           setIsScreenSharing(false)
+          setisCamOn(false) // Turn off video button state
           contextSocket?.emit('screen-share-toggled', { userId, hasScreenshare: false })
           setUsers((users) => ({
             ...users,
-            [userId]: { ...users[userId], hasScreenshare: false },
+            [userId]: { ...users[userId], hasScreenshare: false, hasVideo: false },
           }))
           handleRestoreCameraAfterScreenShare()
         }
@@ -292,26 +482,26 @@ function SessionPage() {
         selfMediaStream.current?.removeTrack(screenTrack)
       }
       setIsScreenSharing(false)
+      setisCamOn(false) // Turn off video button state
       contextSocket?.emit('screen-share-toggled', { userId, hasScreenshare: false })
       setUsers((users) => ({
         ...users,
-        [userId]: { ...users[userId], hasScreenshare: false },
+        [userId]: { ...users[userId], hasScreenshare: false, hasVideo: false },
       }))
       handleRestoreCameraAfterScreenShare()
     }
   }
 
   function handleRestoreCameraAfterScreenShare() {
-    const fakeVideoTrack = createFakeVideoTrack()
     const audioTrack = selfMediaStream.current?.getAudioTracks()[0]
     const newStream = new MediaStream()
     if (audioTrack) newStream.addTrack(audioTrack)
-    newStream.addTrack(fakeVideoTrack)
+    // Always turn off video when screen share ends
     selfMediaStream.current = newStream
     if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream
-    if (selfVideoRef.current) selfVideoRef.current.muted = true // Ensure muted
+    selfVideoRef.current!.muted = true
     if (videoEncoderObjRef.current) {
-      videoEncoderObjRef.current.start(selfMediaStream.current)
+      videoEncoderObjRef.current.stop()
     }
   }
 
@@ -331,7 +521,7 @@ function SessionPage() {
         selfMediaStream.current = await navigator.mediaDevices.getUserMedia({ audio: true })
         const audioTracks = selfMediaStream.current.getAudioTracks()
         audioTracks.forEach((track) => (track.enabled = false))
-        selfMediaStream.current.addTrack(createFakeVideoTrack())
+
         //console.log('Got user media:', selfMediaStream.current);
         setMediaReady(true)
 
@@ -398,7 +588,15 @@ function SessionPage() {
           offset,
           objectForwardingPreference: ObjectForwardingPreference.Subgroup,
         })
-        const videoPromise = videoEncoderObjRef.current.start(selfMediaStream.current)
+        // Only start video encoder if we have video tracks
+
+        const hasVideoTrack = selfMediaStream.current.getVideoTracks().length > 0
+
+        let videoPromise: Promise<any> = Promise.resolve()
+
+        if (hasVideoTrack) {
+          videoPromise = videoEncoderObjRef.current.start(selfMediaStream.current)
+        }
         const audioPromise = startAudioEncoder({
           stream: selfMediaStream.current,
           audioFullTrackName,
@@ -525,6 +723,7 @@ function SessionPage() {
           ...prevUsers,
           [toggledUserId]: {
             ...prevUsers[toggledUserId],
+            hasVideo: hasScreenshare,
             hasScreenshare,
           },
         }
@@ -585,10 +784,19 @@ function SessionPage() {
         delete newHistory[msg.userId]
         return newHistory
       })
+      // Clean up user color
+
+      setUserColors((prev) => {
+        const newColors = { ...prev }
+
+        delete newColors[msg.userId]
+
+        return newColors
+      })
       // TODO: unsubscribe
     })
 
-    socket.on('room-timeout', (msg: { message: string }) => {
+    socket.on('room-timeout', (msg: RoomTimeoutMessage) => {
       console.info('Room timeout:', msg.message)
       alert(`${msg.message}\n\nYou will be redirected to the home page.`)
 
@@ -604,6 +812,29 @@ function SessionPage() {
       socket.off('screen-share-toggled')
     }
   }, [contextSocket])
+
+  useEffect(() => {
+    const assignColors = () => {
+      const assigned = { ...userColors }
+      const used = new Set(Object.values(assigned).map((c) => c.bgClass))
+
+      Object.keys(users).forEach((uid) => {
+        if (!assigned[uid]) {
+          const available = availableColors.find((c) => !used.has(c.bgClass))
+          if (available) {
+            assigned[uid] = available
+            used.add(available.bgClass)
+          } else {
+            // fallback: assign gray if colors are exhausted
+            assigned[uid] = { bgClass: 'bg-gray-500', hexColor: '#6b7280' }
+          }
+        }
+      })
+      setUserColors(assigned)
+    }
+
+    assignColors()
+  }, [users])
 
   const initializeTelemetryForUser = (userId: string) => {
     if (!telemetryInstances.current[userId]) {
@@ -854,6 +1085,30 @@ function SessionPage() {
   }, [])
 
   useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false)
+      }
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowEmojiPicker(false)
+      }
+    }
+
+    if (showEmojiPicker) {
+      document.addEventListener('mousedown', handleClickOutside)
+      document.addEventListener('keydown', handleKeyDown)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [showEmojiPicker])
+
+  useEffect(() => {
     Object.values(remoteCanvasRefs).forEach((ref) => {
       handleRemoteVideo(ref)
     })
@@ -956,32 +1211,73 @@ function SessionPage() {
         const userTelemetry = telemetryInstances.current[userId]
 
         //console.log("subscribeToTrack - Use video subscriber called", videoTrackAlias, audioTrackAlias, videoFullTrackName, audioFullTrackName)
-        const [videoResult, chatResult] = await Promise.all([
-          useVideoSubscriber(
-            the_client,
-            canvasRef,
-            videoTrackAlias,
-            audioTrackAlias,
-            audioFullTrackName,
-            videoFullTrackName,
-          )(),
-          subscribeToChatTrack({
-            moqClient: the_client,
-            chatTrackAlias: chatTrackAlias,
-            chatFullTrackName,
-            onMessage: (msgObj) => {
-              setChatMessages((prev) => [
-                ...prev,
-                {
-                  id: Math.random().toString(10).slice(2),
-                  sender: msgObj.sender,
-                  message: msgObj.message,
-                  timestamp: msgObj.timestamp,
-                },
-              ])
-            },
-          }),
-        ])
+        // Subscribe to video and audio
+        const videoResult = await useVideoSubscriber(
+          the_client,
+          canvasRef,
+          videoTrackAlias,
+          audioTrackAlias,
+          audioFullTrackName,
+          videoFullTrackName,
+        )()
+
+        // Subscribe to chat if we have a valid chat track alias
+        if (chatTrackAlias > 0) {
+          console.log('Subscribing to chat track with alias:', chatTrackAlias)
+          try {
+            await subscribeToChatTrack({
+              moqClient: the_client,
+              chatTrackAlias: chatTrackAlias,
+              chatFullTrackName,
+              onMessage: (msgObj) => {
+                setChatMessages((prev) => [
+                  ...prev,
+                  {
+                    id: Math.random().toString(10).slice(2),
+                    sender: msgObj.sender,
+                    message: msgObj.message,
+                    timestamp: msgObj.timestamp,
+                  },
+                ])
+              },
+            })
+            console.log('Successfully subscribed to chat for user:', userId)
+          } catch (error) {
+            console.error('Failed to subscribe to chat for user:', userId, error)
+          }
+        } else {
+          console.warn('Chat track alias is invalid or not set:', chatTrackAlias, 'for user:', userId)
+          // Try to subscribe to chat later with a retry mechanism
+          setTimeout(async () => {
+            console.log('Retrying chat subscription for user:', userId)
+            const retrychatTrackAlias = parseInt(canvasRef.current?.dataset.chattrackalias || '-1')
+            if (retrychatTrackAlias > 0) {
+              try {
+                await subscribeToChatTrack({
+                  moqClient: the_client,
+                  chatTrackAlias: retrychatTrackAlias,
+                  chatFullTrackName,
+                  onMessage: (msgObj) => {
+                    setChatMessages((prev) => [
+                      ...prev,
+                      {
+                        id: Math.random().toString(10).slice(2),
+                        sender: msgObj.sender,
+                        message: msgObj.message,
+                        timestamp: msgObj.timestamp,
+                      },
+                    ])
+                  },
+                })
+                console.log('Successfully subscribed to chat on retry for user:', userId)
+              } catch (error) {
+                console.error('Failed to subscribe to chat on retry for user:', userId, error)
+              }
+            } else {
+              console.warn('Chat track alias still invalid on retry for user:', userId)
+            }
+          }, 2000) // Wait 2 seconds before retrying chat subscription
+        }
         //console.log('subscribeToTrack result', result)
         // TODO: result comes true all the time, refactor...
         canvasRef.current!.dataset.status = videoResult ? 'playing' : ''
@@ -991,43 +1287,6 @@ function SessionPage() {
       // reset status
       if (canvasRef.current) canvasRef.current.dataset.status = ''
     }
-  }
-
-  function createFakeVideoTrack(width = 640, height = 360): MediaStreamTrack {
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const ctx = canvas.getContext('2d')
-    function draw() {
-      if (!ctx) return
-      ctx.fillStyle = 'black'
-      ctx.fillRect(0, 0, width, height)
-      requestAnimationFrame(draw)
-    }
-    draw()
-
-    const track = canvas.captureStream(15).getVideoTracks()[0]
-
-    ;(track as any).isFake = true
-    return track
-  }
-
-  // Helper to create a fake video track
-  function createFakeVideoTrackWithColor(width = 640, height = 360): MediaStreamTrack {
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const ctx = canvas.getContext('2d')
-    let hue = 0
-    function draw() {
-      if (!ctx) return
-      ctx.fillStyle = `hsl(${hue}, 100%, 20%)`
-      ctx.fillRect(0, 0, width, height)
-      hue = (hue + 2) % 360
-      requestAnimationFrame(draw)
-    }
-    draw()
-    return canvas.captureStream(15).getVideoTracks()[0]
   }
 
   function leaveRoom() {
@@ -1063,25 +1322,39 @@ function SessionPage() {
     window.location.href = '/'
   }
 
+  useEffect(() => {
+    if (chatMessagesRef.current && !isUserScrolling) {
+      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight
+    }
+  }, [chatMessages, isUserScrolling])
+
+  const handleChatScroll = () => {
+    if (chatMessagesRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = chatMessagesRef.current
+      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 5 // 5px tolerance
+      setIsUserScrolling(!isAtBottom)
+    }
+  }
+
   const userCount = getUserCount()
 
   const usersPerPage = 3
-  const [pageIndex, setPageIndex] = React.useState(0)
+  const [pageIndex, setPageIndex] = useState(0)
 
   const userList = Object.entries(users)
     .sort((a, b) => (isSelf(b[0]) ? 1 : 0) - (isSelf(a[0]) ? 1 : 0))
     .map((item) => item[1])
     .slice(0, 6)
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (pageIndex > 0 && userCount <= 3) {
       setPageIndex(0)
     }
   }, [userCount, pageIndex])
 
-  const [isSmallScreen, setIsSmallScreen] = React.useState(false)
+  const [isSmallScreen, setIsSmallScreen] = useState(false)
 
-  React.useEffect(() => {
+  useEffect(() => {
     function handleResize() {
       setIsSmallScreen(window.innerWidth < 768)
     }
@@ -1140,18 +1413,39 @@ function SessionPage() {
                         objectFit: 'cover',
                       }}
                     />
-                    {/* <canvas ref={selfCanvasRef} className="w-full h-full object-cover" /> */}
+                    {/* Show initials when video is off */}
+                    {!user.hasVideo && !isScreenSharing && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
+                        <div
+                          className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.id)}`}
+                        >
+                          <div className="text-white text-2xl font-bold">{getUserInitials(user.name)}</div>
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : (
-                  <canvas
-                    ref={remoteCanvasRefs[user.id]}
-                    id={user.id}
-                    data-videotrackalias={user?.publishedTracks?.video?.alias}
-                    data-audiotrackalias={user?.publishedTracks?.audio?.alias}
-                    data-chattrackalias={user?.publishedTracks?.chat?.alias}
-                    data-announced={user?.publishedTracks?.video?.announced}
-                    className="w-full h-full object-cover"
-                  />
+                  <>
+                    <canvas
+                      ref={remoteCanvasRefs[user.id]}
+                      id={user.id}
+                      data-videotrackalias={user?.publishedTracks?.video?.alias}
+                      data-audiotrackalias={user?.publishedTracks?.audio?.alias}
+                      data-chattrackalias={user?.publishedTracks?.chat?.alias}
+                      data-announced={user?.publishedTracks?.video?.announced}
+                      className="w-full h-full object-cover"
+                    />
+                    {/* Show initials when remote video is off */}
+                    {!user.hasVideo && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
+                        <div
+                          className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.id)}`}
+                        >
+                          <div className="text-white text-2xl font-bold">{getUserInitials(user.name)}</div>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
                 {/* Participant Info Overlay */}
                 <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center">
@@ -1524,28 +1818,117 @@ function SessionPage() {
               </button>
             </div>
             {/* Chat Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-              {chatMessages.map((message) => (
-                <div key={message.id} className="space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-gray-900">{message.sender}</span>
-                    <span className="text-xs text-gray-500">{message.timestamp}</span>
+            <div
+              ref={chatMessagesRef}
+              className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0"
+              onScroll={handleChatScroll}
+            >
+              {chatMessages.map((message) => {
+                const isOwnMessage = message.sender === username
+                const senderUserId = getSenderUserId(message.sender)
+                return (
+                  <div key={message.id} className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-xs lg:max-w-md ${isOwnMessage ? 'order-2' : 'order-1'}`}>
+                      <div
+                        className={`flex items-center space-x-2 mb-1 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <span
+                          className={`text-sm font-medium`}
+                          style={{ color: isOwnMessage ? '#3b82f6' : getUserColorHex(senderUserId) }}
+                        >
+                          {isOwnMessage ? 'You' : message.sender}
+                        </span>
+                        <span className="text-xs text-gray-500">{message.timestamp}</span>
+                      </div>
+                      <div
+                        className={`text-sm px-3 py-2 rounded-lg ${
+                          isOwnMessage
+                            ? 'bg-blue-500 text-white rounded-br-none'
+                            : 'bg-gray-100 text-gray-800 rounded-bl-none'
+                        }`}
+                        style={{
+                          wordBreak: 'break-word',
+                          whiteSpace: 'pre-wrap',
+                          fontSize: '14px',
+                          lineHeight: '1.4',
+                        }}
+                      >
+                        {renderMessageWithEmojis(message.message)}
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2">{message.message}</p>
-                </div>
-              ))}
+                )
+              })}
             </div>
             {/* Chat Input */}
-            <div className="p-4 border-t border-gray-200 flex-shrink-0">
+            <div className="p-4 border-t border-gray-200 flex-shrink-0 relative">
+              {/* Quick Emoji Reactions */}
+              <div className="mb-3">
+                <div className="flex items-center space-x-1">
+                  <span className="text-xs text-gray-500 mr-2">Quick:</span>
+                  {quickEmojis.map((emoji, index) => (
+                    <button
+                      key={index}
+                      onClick={() => addEmoji(emoji)}
+                      className="text-lg hover:bg-gray-100 rounded p-1 transition-colors duration-150 hover:scale-110 transform"
+                      title={`Add ${emoji}`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Emoji Picker */}
+              {showEmojiPicker && (
+                <div
+                  ref={emojiPickerRef}
+                  className="absolute bottom-full left-4 right-4 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg z-10"
+                >
+                  <div className="p-2 border-b border-gray-100">
+                    <p className="text-xs text-gray-500 font-medium">Choose an emoji</p>
+                  </div>
+                  <div className="p-3 max-h-40 overflow-y-auto">
+                    <div className="grid grid-cols-8 gap-1">
+                      {allEmojis.map((emoji, index) => (
+                        <button
+                          key={index}
+                          onClick={() => addEmoji(emoji)}
+                          className="text-xl hover:bg-gray-100 rounded p-2 transition-colors duration-150 hover:scale-110 transform"
+                          title={`Add ${emoji}`}
+                          style={{ fontSize: '18px' }}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex space-x-2">
-                <input
-                  type="text"
-                  value={chatMessage}
-                  onChange={(e) => setChatMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                  placeholder="Type a message..."
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                />
+                <div className="flex-1 relative">
+                  <input
+                    ref={chatInputRef}
+                    type="text"
+                    value={chatMessage}
+                    onChange={(e) => setChatMessage(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSendMessage()
+                      }
+                    }}
+                    placeholder="Type a message..."
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  />
+                  <button
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded transition-colors"
+                    title="Add emoji"
+                  >
+                    <Smile className="w-4 h-4 text-gray-500" />
+                  </button>
+                </div>
                 <button
                   onClick={handleSendMessage}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
