@@ -7,7 +7,6 @@ import { Tuple } from '../../../../libs/moqtail-ts/src/model/common/tuple'
 import { LiveContentSource } from '../../../../libs/moqtail-ts/src/client/track/content_source'
 import { FullTrackName, MoqtObject } from '../../../../libs/moqtail-ts/src/model/data'
 import { Location } from '../../../../libs/moqtail-ts/src/model/common/location'
-import { AkamaiOffset } from '../../../../libs/moqtail-ts/src/util/get_akamai_offset'
 import { PlayoutBuffer } from '../../../../libs/moqtail-ts/src/util/playout_buffer'
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
 import { RefObject } from 'react'
@@ -183,6 +182,10 @@ export async function startAudioEncoder({
       output: (chunk) => {
         const payload = new Uint8Array(chunk.byteLength)
         chunk.copyTo(payload)
+
+        const captureTime = Math.round(performance.timeOrigin + performance.now() + offset)
+        const locHeaders = new ExtensionHeaders().addCaptureTimestamp(captureTime)
+
         // console.log('AudioEncoder output chunk:', chunk);
         const moqt = MoqtObject.newWithPayload(
           audioFullTrackName,
@@ -190,7 +193,7 @@ export async function startAudioEncoder({
           publisherPriority,
           objectForwardingPreference,
           BigInt(Math.round(performance.timeOrigin + performance.now() + offset)),
-          null,
+          locHeaders.build(),
           payload,
         )
         // console.log('AudioEncoder output:', moqt);
@@ -655,20 +658,31 @@ function subscribeAndPipeToWorker(
   })
 }
 
-function handleWorkerMessages(worker: Worker, audioNode: AudioWorkletNode, telemetry?: NetworkTelemetry) {
+function handleWorkerMessages(
+  worker: Worker,
+  audioNode: AudioWorkletNode,
+  videoTelemetry?: NetworkTelemetry,
+  audioTelemetry?: NetworkTelemetry,
+) {
   worker.onmessage = (event) => {
     if (event.data.type === 'audio') {
       // console.log('Received audio data from worker:', event.data);
       audioNode.port.postMessage(new Float32Array(event.data.samples))
     }
-    if (event.data.type === 'latency') {
-      if (telemetry) {
-        telemetry.push({ latency: Math.abs(event.data.value), size: 0 }) // Size will be added from decoder
+    if (event.data.type === 'video-latency') {
+      if (videoTelemetry) {
+        videoTelemetry.push({ latency: Math.abs(event.data.value), size: 0 })
       }
     }
-    if (event.data.type === 'throughput') {
-      if (telemetry) {
-        telemetry.push({ latency: 0, size: event.data.value })
+
+    if (event.data.type === 'video-throughput') {
+      if (videoTelemetry) {
+        videoTelemetry.push({ latency: 0, size: event.data.value })
+      }
+    }
+    if (event.data.type === 'audio-throughput') {
+      if (audioTelemetry) {
+        audioTelemetry.push({ latency: 0, size: event.data.value })
       }
     }
   }
@@ -686,7 +700,11 @@ export function useVideoPublisher(
   audioFullTrackName: FullTrackName,
 ) {
   const setup = async () => {
-    const offset = await AkamaiOffset.getClockSkew()
+    const normalizer = await ClockNormalizer.create(
+      window.appSettings.clockNormalizationConfig.timeServerUrl,
+      window.appSettings.clockNormalizationConfig.numberOfSamples,
+    )
+    const offset = normalizer.getSkew()
     const video = videoRef.current
     if (!video) {
       console.error('Video element is not available')
@@ -744,10 +762,15 @@ export function useVideoSubscriber(
   audioTrackAlias: number,
   videoFullTrackName: FullTrackName,
   audioFullTrackName: FullTrackName,
-  telemetry?: NetworkTelemetry,
+  videoTelemetry?: NetworkTelemetry,
+  audioTelemetry?: NetworkTelemetry,
 ) {
   const setup = async () => {
-    const offset = await AkamaiOffset.getClockSkew()
+    const normalizer = await ClockNormalizer.create(
+      window.appSettings.clockNormalizationConfig.timeServerUrl,
+      window.appSettings.clockNormalizationConfig.numberOfSamples,
+    )
+    const offset = normalizer.getSkew()
     const canvas = canvasRef.current
     console.log('Now will check for canvas ref')
     if (!canvas) return
@@ -756,7 +779,7 @@ export function useVideoSubscriber(
     const audioNode = await setupAudioPlayback(new AudioContext({ sampleRate: 48000 }))
     console.log('Worker and audio node initialized')
 
-    handleWorkerMessages(worker, audioNode, telemetry)
+    handleWorkerMessages(worker, audioNode, videoTelemetry, audioTelemetry)
 
     console.log('Going to subscribe to audio')
     const subscribeAudio = Subscribe.newLatestObject(

@@ -81,7 +81,16 @@ export default function JoinPage() {
         </h1>
         <h2>Join a Room</h2>
         <div className="browser-compatibility">
-          Please use a recent browser that supports WebCodecs and WebTransport APIs.
+          Please use a recent version of Chrome that supports WebCodecs and WebTransport APIs. Report any issues on{' '}
+          <a
+            href="https://github.com/streaming-university/moqtail"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="github-link"
+          >
+            GitHub
+          </a>
+          .
         </div>
         <form onSubmit={handleSubmit} className="join-form">
           <input
@@ -249,6 +258,15 @@ export default function JoinPage() {
         background-color: #ecf0f1;
         border-radius: 6px;
         line-height: 1.4;
+      }
+      .github-link {
+        color: #577B9F;
+        text-decoration: underline;
+        font-weight: 600;
+        transition: color 0.2s;
+      }
+      .github-link:hover {
+        color: #D74401;
       }
       @media (max-width: 600px) {
         .join-logo {

@@ -40,8 +40,8 @@ import {
   useVideoSubscriber,
 } from '../composables/useVideoPipeline'
 import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client'
-import { AkamaiOffset } from '../../../../libs/moqtail-ts/src/util/get_akamai_offset'
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
+import { ClockNormalizer } from '../../../../libs/moqtail-ts/src/util/clock_normalizer'
 
 function SessionPage() {
   // initialize the MOQTail client
@@ -63,11 +63,10 @@ function SessionPage() {
   const [telemetryData, setTelemetryData] = useState<{
     [userId: string]: { latency: number; videoBitrate: number; audioBitrate: number }
   }>({})
-  const telemetryInstances = useRef<{ [userId: string]: NetworkTelemetry }>({})
+  const telemetryInstances = useRef<{ [userId: string]: { video: NetworkTelemetry; audio: NetworkTelemetry } }>({})
   const [latencyHistory, setLatencyHistory] = useState<{ [userId: string]: number[] }>({})
   const [videoBitrateHistory, setVideoBitrateHistory] = useState<{ [userId: string]: number[] }>({})
   const [audioBitrateHistory, setAudioBitrateHistory] = useState<{ [userId: string]: number[] }>({})
-  const [fakeDataCounters, setFakeDataCounters] = useState<{ [userId: string]: number }>({})
   const [timeRemaining, setTimeRemaining] = useState<string>('--:--')
   const [timeRemainingColor, setTimeRemainingColor] = useState<string>('text-green-400')
   const selfVideoRef = useRef<HTMLVideoElement>(null)
@@ -76,7 +75,7 @@ function SessionPage() {
   const moqtailClientInitStarted = useRef<boolean>(false)
   const videoEncoderObjRef = useRef<any>(null)
   const chatSenderRef = useRef<{ send: (msg: string) => void } | null>(null)
-  const akamaiOffsetRef = useRef<number>(0)
+  const offsetRef = useRef<number>(0)
   const [mediaReady, setMediaReady] = useState(false)
   const [showInfoCards, setShowInfoCards] = useState<{ [userId: string]: boolean }>({})
   const [infoPanelType, setInfoPanelType] = useState<{ [userId: string]: 'network' | 'codec' }>({})
@@ -311,7 +310,7 @@ function SessionPage() {
                 selfMediaStream.current = newStream
 
                 if (videoEncoderObjRef.current) {
-                  videoEncoderObjRef.current.offset = akamaiOffsetRef.current
+                  videoEncoderObjRef.current.offset = offsetRef.current
 
                   videoEncoderObjRef.current.start(selfMediaStream.current)
                 }
@@ -383,7 +382,7 @@ function SessionPage() {
               newStream.addTrack(realVideoTrack)
               selfMediaStream.current = newStream
               if (videoEncoderObjRef.current) {
-                videoEncoderObjRef.current.offset = akamaiOffsetRef.current
+                videoEncoderObjRef.current.offset = offsetRef.current
                 videoEncoderObjRef.current.start(selfMediaStream.current)
               }
               if (selfVideoRef.current) {
@@ -453,7 +452,7 @@ function SessionPage() {
         if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream
         if (selfVideoRef.current) selfVideoRef.current.muted = true // Ensure muted
         if (videoEncoderObjRef.current) {
-          videoEncoderObjRef.current.offset = akamaiOffsetRef.current
+          videoEncoderObjRef.current.offset = offsetRef.current
           videoEncoderObjRef.current.start(selfMediaStream.current)
         }
         setIsScreenSharing(true)
@@ -568,8 +567,12 @@ function SessionPage() {
           return
         }
 
-        const offset = await AkamaiOffset.getClockSkew()
-        akamaiOffsetRef.current = offset
+        const normalizer = await ClockNormalizer.create(
+          window.appSettings.clockNormalizationConfig.timeServerUrl,
+          window.appSettings.clockNormalizationConfig.numberOfSamples,
+        )
+        const offset = normalizer.getSkew()
+        offsetRef.current = offset
         announceNamespaces(moqClient!, videoFullTrackName.namespace)
         let tracks = setupTracks(
           moqClient!,
@@ -751,9 +754,7 @@ function SessionPage() {
       })
 
       delete telemetryInstances.current[msg.userId]
-      // Clean up previous values and trending factors for smooth interpolation
       delete previousValues.current[msg.userId]
-      delete trendingFactors.current[msg.userId]
       setTelemetryData((prev) => {
         const newData = { ...prev }
         delete newData[msg.userId]
@@ -763,11 +764,6 @@ function SessionPage() {
         const newData = { ...prev }
         delete newData[msg.userId]
         return newData
-      })
-      setFakeDataCounters((prev) => {
-        const newCounters = { ...prev }
-        delete newCounters[msg.userId]
-        return newCounters
       })
       setLatencyHistory((prev) => {
         const newHistory = { ...prev }
@@ -838,11 +834,10 @@ function SessionPage() {
 
   const initializeTelemetryForUser = (userId: string) => {
     if (!telemetryInstances.current[userId]) {
-      telemetryInstances.current[userId] = new NetworkTelemetry(1000) // 1 second window
-      setFakeDataCounters((prev) => ({
-        ...prev,
-        [userId]: Math.floor(Math.random() * 100), // Start with random offset for variety
-      }))
+      telemetryInstances.current[userId] = {
+        video: new NetworkTelemetry(1000), // 1 second window
+        audio: new NetworkTelemetry(1000), // 1 second window
+      }
 
       setCodecData((prev) => ({
         ...prev,
@@ -889,117 +884,8 @@ function SessionPage() {
   const previousValues = useRef<{ [userId: string]: { latency: number; videoBitrate: number; audioBitrate: number } }>(
     {},
   )
-  const trendingFactors = useRef<{
-    [userId: string]: { latencyTrend: number; videoTrend: number; audioTrend: number }
-  }>({})
 
-  const generateFakeLatency = (userId: string, counter: number): number => {
-    if (!trendingFactors.current[userId]) {
-      trendingFactors.current[userId] = {
-        latencyTrend: 0,
-        videoTrend: 0,
-        audioTrend: 0,
-      }
-    }
-
-    const slowWave = Math.sin(counter * 0.015) * 8
-    const mediumWave = Math.sin(counter * 0.06) * 4
-    const fastWave = Math.sin(counter * 0.12) * 2
-
-    const trendChange = (Math.random() - 0.5) * 0.1
-    trendingFactors.current[userId].latencyTrend = Math.max(
-      -5,
-      Math.min(5, trendingFactors.current[userId].latencyTrend + trendChange),
-    )
-
-    const baseLatency = 48 + slowWave + mediumWave + fastWave + trendingFactors.current[userId].latencyTrend
-
-    const randomWalk = (Math.random() - 0.5) * 1.2
-
-    let networkFluctuation = 0
-    if (Math.random() < 0.015) {
-      networkFluctuation = Math.sin(counter * 0.25) * 12
-    }
-
-    const newValue = Math.max(25, Math.min(100, baseLatency + randomWalk + networkFluctuation))
-
-    const prevValue = previousValues.current[userId]?.latency ?? newValue
-    const smoothFactor = 0.75 // How much to blend with previous value
-    const smoothedValue = prevValue * smoothFactor + newValue * (1 - smoothFactor)
-
-    return Math.round(smoothedValue)
-  }
-
-  const generateFakeVideoThroughput = (userId: string, counter: number): number => {
-    if (!trendingFactors.current[userId]) {
-      trendingFactors.current[userId] = {
-        latencyTrend: 0,
-        videoTrend: 0,
-        audioTrend: 0,
-      }
-    }
-
-    const basePattern = Math.sin(counter * 0.02) * 1.2 // ~1.2 Mbps variation
-    const qualityAdjustment = Math.sin(counter * 0.006) * 0.8 // Slower quality changes
-    const networkVariation = Math.sin(counter * 0.045) * 0.4 // Network fluctuations
-
-    const trendChange = (Math.random() - 0.5) * 0.05
-    trendingFactors.current[userId].videoTrend = Math.max(
-      -1.5,
-      Math.min(1.5, trendingFactors.current[userId].videoTrend + trendChange),
-    )
-
-    const baseBitrate =
-      6.2 + basePattern + qualityAdjustment + networkVariation + trendingFactors.current[userId].videoTrend
-
-    const randomComponent = (Math.random() - 0.5) * 0.2
-
-    let qualityBurst = 0
-    if (Math.random() < 0.008) {
-      qualityBurst = Math.sin(counter * 0.2) * 1.5
-    }
-
-    const newValue = Math.max(3.0, Math.min(9.0, baseBitrate + randomComponent + qualityBurst))
-
-    const prevValue = previousValues.current[userId]?.videoBitrate ?? newValue
-    const smoothFactor = 0.82 // Video bitrate should be fairly stable
-    const smoothedValue = prevValue * smoothFactor + newValue * (1 - smoothFactor)
-
-    return parseFloat(smoothedValue.toFixed(1))
-  }
-
-  const generateFakeAudioThroughput = (userId: string, counter: number): number => {
-    if (!trendingFactors.current[userId]) {
-      trendingFactors.current[userId] = {
-        latencyTrend: 0,
-        videoTrend: 0,
-        audioTrend: 0,
-      }
-    }
-
-    const basePattern = Math.sin(counter * 0.025) * 12 // Small variations in Kbps
-    const codecVariation = Math.sin(counter * 0.009) * 6 // Codec efficiency changes
-
-    const trendChange = (Math.random() - 0.5) * 0.02
-    trendingFactors.current[userId].audioTrend = Math.max(
-      -8,
-      Math.min(8, trendingFactors.current[userId].audioTrend + trendChange),
-    )
-
-    const baseBitrate = 158 + basePattern + codecVariation + trendingFactors.current[userId].audioTrend
-
-    const randomComponent = (Math.random() - 0.5) * 3
-
-    const newValue = Math.max(96, Math.min(224, baseBitrate + randomComponent))
-
-    const prevValue = previousValues.current[userId]?.audioBitrate ?? newValue
-    const smoothFactor = 0.88 // High smoothing for stable audio
-    const smoothedValue = prevValue * smoothFactor + newValue * (1 - smoothFactor)
-
-    return Math.round(smoothedValue)
-  }
-
-  // Update every 80ms for smoother animations
+  // Update every 100ms
   useEffect(() => {
     const interval = setInterval(() => {
       const newTelemetryData: { [userId: string]: { latency: number; videoBitrate: number; audioBitrate: number } } = {}
@@ -1007,79 +893,52 @@ function SessionPage() {
       Object.keys(telemetryInstances.current).forEach((userId) => {
         const telemetry = telemetryInstances.current[userId]
         if (telemetry) {
-          setFakeDataCounters((prev) => {
-            const currentCounter = (prev[userId] || 0) + 1
-            const newCounters = { ...prev, [userId]: currentCounter }
+          const videoLatency = isSelf(userId) ? 0 : Math.round(telemetry.video.latency)
+          const videoBitrate = (telemetry.video.throughput * 8) / 1000 // bytes/s to Kbps
+          const audioBitrate = (telemetry.audio.throughput * 8) / 1000 // bytes/s to Kbps
 
-            const fakeLatency = isSelf(userId) ? 0 : generateFakeLatency(userId, currentCounter) // Skip latency for self
-            const fakeVideoBitrate = generateFakeVideoThroughput(userId, currentCounter)
-            const fakeAudioBitrate = generateFakeAudioThroughput(userId, currentCounter)
+          newTelemetryData[userId] = {
+            latency: videoLatency,
+            videoBitrate: Math.max(0, videoBitrate),
+            audioBitrate: Math.max(0, audioBitrate),
+          }
 
-            previousValues.current[userId] = {
-              latency: fakeLatency,
-              videoBitrate: fakeVideoBitrate,
-              audioBitrate: fakeAudioBitrate,
-            }
-
-            newTelemetryData[userId] = {
-              latency: fakeLatency,
-              videoBitrate: fakeVideoBitrate,
-              audioBitrate: fakeAudioBitrate,
-            }
-
-            setCodecData((prevCodec) => {
-              if (prevCodec[userId]) {
-                const newSyncDrift = Math.round(Math.sin(currentCounter * 0.03) * 8 + (Math.random() - 0.5) * 3)
-                return {
-                  ...prevCodec,
-                  [userId]: {
-                    ...prevCodec[userId],
-                    syncDrift: newSyncDrift,
-                  },
-                }
-              }
-              return prevCodec
-            })
-
-            // Latency history (last 30 points)
-            if (!isSelf(userId)) {
-              setLatencyHistory((prevLatency) => {
-                const userHistory = prevLatency[userId] || []
-                const newHistory = [...userHistory, fakeLatency].slice(-30)
-                return {
-                  ...prevLatency,
-                  [userId]: newHistory,
-                }
-              })
-            }
-
-            // Video bitrate history (last 30 points)
-            setVideoBitrateHistory((prevVideoBitrate) => {
-              const userHistory = prevVideoBitrate[userId] || []
-              const newHistory = [...userHistory, fakeVideoBitrate].slice(-30)
+          // Latency history (last 30 points)
+          if (!isSelf(userId)) {
+            setLatencyHistory((prevLatency) => {
+              const userHistory = prevLatency[userId] || []
+              const newHistory = [...userHistory, videoLatency].slice(-30)
               return {
-                ...prevVideoBitrate,
+                ...prevLatency,
                 [userId]: newHistory,
               }
             })
+          }
 
-            // Audio bitrate history (last 30 points)
-            setAudioBitrateHistory((prevAudioBitrate) => {
-              const userHistory = prevAudioBitrate[userId] || []
-              const newHistory = [...userHistory, fakeAudioBitrate].slice(-30)
-              return {
-                ...prevAudioBitrate,
-                [userId]: newHistory,
-              }
-            })
+          // Video bitrate history (last 30 points)
+          setVideoBitrateHistory((prevVideoBitrate) => {
+            const userHistory = prevVideoBitrate[userId] || []
+            const newHistory = [...userHistory, videoBitrate].slice(-30)
+            return {
+              ...prevVideoBitrate,
+              [userId]: newHistory,
+            }
+          })
 
-            return newCounters
+          // Audio bitrate history (last 30 points)
+          setAudioBitrateHistory((prevAudioBitrate) => {
+            const userHistory = prevAudioBitrate[userId] || []
+            const newHistory = [...userHistory, audioBitrate].slice(-30)
+            return {
+              ...prevAudioBitrate,
+              [userId]: newHistory,
+            }
           })
         }
       })
 
       setTelemetryData(newTelemetryData)
-    }, 80)
+    }, 100)
 
     return () => clearInterval(interval)
   }, [])
@@ -1217,8 +1076,10 @@ function SessionPage() {
           canvasRef,
           videoTrackAlias,
           audioTrackAlias,
-          audioFullTrackName,
           videoFullTrackName,
+          audioFullTrackName,
+          userTelemetry.video,
+          userTelemetry.audio,
         )()
 
         // Subscribe to chat if we have a valid chat track alias
@@ -1453,12 +1314,13 @@ function SessionPage() {
                     <div>
                       {user.name} {isSelf(user.id) && '(You)'}
                     </div>
-                    {telemetryData[user.id] && (
-                      <div className="hidden md:block text-xs text-gray-300 mt-1">
-                        {telemetryData[user.id].latency}ms | {telemetryData[user.id].videoBitrate}Mbit/s |{' '}
-                        {telemetryData[user.id].audioBitrate}Kbit/s
-                      </div>
-                    )}
+                    {telemetryData[user.id] &&
+                      !isSelf(user.id) && ( // TODO: Calculate throughputs for self user
+                        <div className="hidden md:block text-xs text-gray-300 mt-1">
+                          {telemetryData[user.id].latency}ms | {telemetryData[user.id].videoBitrate.toFixed(0)}Kbit/s |{' '}
+                          {telemetryData[user.id].audioBitrate.toFixed(0)}Kbit/s
+                        </div>
+                      )}
                   </div>
                   <div className="flex space-x-1">
                     <div className={user.hasAudio ? 'bg-gray-700 p-1 rounded' : 'bg-red-600 p-1 rounded'}>
@@ -1486,17 +1348,19 @@ function SessionPage() {
                 {/* Info card toggle buttons */}
                 <div className="absolute top-3 right-3 flex space-x-1">
                   {/* Network Stats Button */}
-                  <button
-                    onClick={() => toggleInfoCard(user.id, 'network')}
-                    className={`p-1 rounded-full transition-all duration-200 ${
-                      showInfoCards[user.id] && infoPanelType[user.id] === 'network'
-                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                        : 'bg-gray-700 hover:bg-blue-600 text-white'
-                    }`}
-                    title="Network Statistics"
-                  >
-                    <Activity className="w-4 h-4" />
-                  </button>
+                  {!isSelf(user.id) && ( // TODO: Calculate throughputs for self user
+                    <button
+                      onClick={() => toggleInfoCard(user.id, 'network')}
+                      className={`p-1 rounded-full transition-all duration-200 ${
+                        showInfoCards[user.id] && infoPanelType[user.id] === 'network'
+                          ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                          : 'bg-gray-700 hover:bg-blue-600 text-white'
+                      }`}
+                      title="Network Statistics"
+                    >
+                      <Activity className="w-4 h-4" />
+                    </button>
+                  )}
                   {/* Media Info Button */}
                   <button
                     onClick={() => toggleInfoCard(user.id, 'codec')}
@@ -1562,7 +1426,7 @@ function SessionPage() {
                           <div className="grid grid-cols-3 gap-1 mb-3 flex-shrink-0">
                             <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
                               {telemetryData[user.id]
-                                ? `${telemetryData[user.id].videoBitrate.toFixed(1)} Mbit/s`
+                                ? `${telemetryData[user.id].videoBitrate.toFixed(0)} Kbit/s`
                                 : 'N/A'}
                             </span>
                             <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
@@ -1582,8 +1446,8 @@ function SessionPage() {
                             {/* Graph container */}
                             <div className="h-full bg-gray-50 rounded relative overflow-hidden border border-gray-200 min-h-16">
                               {/* Left Y-axis labels (Bitrate) */}
-                              <div className="absolute left-1 top-1 text-xs text-gray-500 leading-none">10M</div>
-                              <div className="absolute left-1 top-1/2 text-xs text-gray-500 leading-none">5M</div>
+                              <div className="absolute left-1 top-1 text-xs text-gray-500 leading-none">500K</div>
+                              <div className="absolute left-1 top-1/2 text-xs text-gray-500 leading-none">250K</div>
                               <div className="absolute left-1 bottom-1 text-xs text-gray-500 leading-none">0</div>
 
                               {/* Right Y-axis labels (Latency) */}
@@ -1613,11 +1477,11 @@ function SessionPage() {
                                             .map((videoBitrate, index) => {
                                               const x =
                                                 (index / Math.max(videoBitrateHistory[user.id].length - 1, 1)) * 300
-                                              const y = 100 - Math.min((videoBitrate / 10) * 100, 100)
+                                              const y = 100 - Math.min((videoBitrate / 500) * 100, 100)
                                               return `${x},${y}`
                                             })
                                             .join(' ')
-                                        : '0,25 20,23 40,24 60,22 80,25 100,23 120,26 140,24 160,22 180,25 200,23 220,27 240,25 260,24 280,26 300,24'
+                                        : ''
                                     }
                                   />
                                 </svg>
@@ -1642,7 +1506,7 @@ function SessionPage() {
                                               return `${x},${y}`
                                             })
                                             .join(' ')
-                                        : '0,95 20,94 40,95 60,93 80,95 100,94 120,96 140,95 160,93 180,95 200,94 220,96 240,95 260,94 280,95 300,94'
+                                        : ''
                                     }
                                   />
                                 </svg>
@@ -1660,7 +1524,7 @@ function SessionPage() {
                                     points={
                                       !isSelf(user.id) && latencyHistory[user.id] && latencyHistory[user.id].length > 0
                                         ? latencyHistory[user.id]
-                                            .map((latency, index) => {
+                                            .map((latency: number, index: number) => {
                                               const x = (index / Math.max(latencyHistory[user.id].length - 1, 1)) * 300
                                               const y = 100 - Math.min((latency / 200) * 100, 100)
                                               return `${x},${y}`
@@ -1668,7 +1532,7 @@ function SessionPage() {
                                             .join(' ')
                                         : isSelf(user.id)
                                           ? '' // No line for self user
-                                          : '0,85 20,83 40,87 60,84 80,86 100,85 120,88 140,82 160,85 180,87 200,84 220,89 240,83 260,86 280,84 300,85'
+                                          : ''
                                     }
                                   />
                                 </svg>
