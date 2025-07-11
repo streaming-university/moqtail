@@ -2,12 +2,12 @@
 'client-js': minor
 ---
 
-### Feature Added: Emoji Support in Chat Interface
+Feature Added: Emoji Support in Chat Interface
 
-**Issue:**  
+Issue:
 Previously, users could not send or view emojis in the MOQtail chat, resulting in a limited chat experience.
 
-**Fix Summary:**
+Fix Summary:
 
 - Integrated an emoji picker UI with categorized emoji sets.
 - Enabled emoji insertion via quick reactions and full picker interface.
