@@ -16,10 +16,10 @@ import { FullTrackName, ObjectForwardingPreference, Tuple } from '../../../../li
 import {
   announceNamespaces,
   initializeChatMessageSender,
+  initializeAudioEncoder,
   initializeVideoEncoder,
   sendClientSetup,
   setupTracks,
-  startAudioEncoder,
   startVideoEncoder,
   subscribeToChatTrack,
   useVideoPublisher,
@@ -54,6 +54,7 @@ function SessionPage() {
   const publisherInitialized = useRef<boolean>(false)
   const moqtailClientInitStarted = useRef<boolean>(false)
   const videoEncoderObjRef = useRef<any>(null)
+  const audioEncoderObjRef = useRef<any>(null)
   const chatSenderRef = useRef<{ send: (msg: string) => void } | null>(null)
   const akamaiOffsetRef = useRef<number>(0)
   const [mediaReady, setMediaReady] = useState(false)
@@ -281,6 +282,16 @@ function SessionPage() {
         if (kind === 'mic') {
           users[userId] = { ...u, hasAudio: newValue }
           toggleMediaStreamAudio(newValue)
+          // Audio encoder control - enable/disable sending based on mic state
+          if (newValue) {
+            if (audioEncoderObjRef.current) {
+              audioEncoderObjRef.current.enableSending()
+            }
+          } else {
+            if (audioEncoderObjRef.current) {
+              audioEncoderObjRef.current.disableSending()
+            }
+          }
         } else if (kind === 'cam') {
           users[userId] = { ...u, hasVideo: newValue }
           // --- Video track switching logic ---
@@ -508,6 +519,14 @@ function SessionPage() {
           objectForwardingPreference: ObjectForwardingPreference.Subgroup,
         })
 
+        audioEncoderObjRef.current = initializeAudioEncoder({
+          audioFullTrackName,
+          audioStreamController: tracks.getAudioStreamController(),
+          publisherPriority: 1,
+          offset,
+          objectForwardingPreference: ObjectForwardingPreference.Subgroup,
+        })
+
         // Only start video encoder if we have video tracks
         const hasVideoTrack = selfMediaStream.current.getVideoTracks().length > 0
         let videoPromise: Promise<any> = Promise.resolve()
@@ -516,15 +535,19 @@ function SessionPage() {
           videoPromise = videoEncoderObjRef.current.start(selfMediaStream.current)
         }
 
-        const audioPromise = startAudioEncoder({
-          stream: selfMediaStream.current,
-          audioFullTrackName,
-          audioStreamController: tracks.getAudioStreamController(),
-          publisherPriority: 1,
-          audioGroupId: 0,
-          offset,
-          objectForwardingPreference: ObjectForwardingPreference.Subgroup,
-        })
+        // Always start audio encoder (for receiving), but control sending based on mic state
+        const hasAudioTrack = selfMediaStream.current.getAudioTracks().length > 0
+        let audioPromise: Promise<any> = Promise.resolve()
+
+        if (hasAudioTrack) {
+          audioPromise = audioEncoderObjRef.current.start(selfMediaStream.current)
+          // Control sending based on initial mic state
+          if (isMicOn) {
+            audioEncoderObjRef.current.enableSending()
+          } else {
+            audioEncoderObjRef.current.disableSending()
+          }
+        }
         chatSenderRef.current = initializeChatMessageSender({
           chatFullTrackName,
           chatStreamController: tracks.getChatStreamController(),

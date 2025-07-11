@@ -193,7 +193,7 @@ export async function startAudioEncoder({
           null,
           payload,
         )
-        // console.log('AudioEncoder output:', moqt);
+        console.log('Encoding audio object:', moqt)
         audioStreamController?.enqueue(moqt)
       },
       error: console.error,
@@ -315,6 +315,7 @@ export function initializeVideoEncoder({
           frameData,
         )
         if (videoStreamController) {
+          console.log('Enqueuing video object')
           videoStreamController.enqueue(moqt)
         } else {
           console.error('videoStreamController is not available')
@@ -682,8 +683,10 @@ export function useVideoPublisher(
   userId: string,
   videoTrackAlias: number,
   audioTrackAlias: number,
+  chatTrackAlias: number,
   videoFullTrackName: FullTrackName,
   audioFullTrackName: FullTrackName,
+  chatFullTrackName: FullTrackName,
 ) {
   const setup = async () => {
     const offset = await AkamaiOffset.getClockSkew()
@@ -709,8 +712,10 @@ export function useVideoPublisher(
       moqClient,
       audioFullTrackName,
       videoFullTrackName,
+      chatFullTrackName,
       BigInt(audioTrackAlias),
       BigInt(videoTrackAlias),
+      BigInt(chatTrackAlias),
     )
 
     const videoPromise = startVideoEncoder({
@@ -732,7 +737,7 @@ export function useVideoPublisher(
       objectForwardingPreference: ObjectForwardingPreference.Subgroup,
     })
 
-    const [videoEncoderResult, audioEncoderResult] = await Promise.all([videoPromise, audioPromise])
+    await Promise.all([videoPromise, audioPromise])
   }
   return setup
 }
@@ -835,4 +840,240 @@ export async function subscribeToChatTrack({
       console.error('Subscribe failed:', stream)
     }
   })
+}
+
+export function initializeAudioEncoder({
+  audioFullTrackName,
+  audioStreamController,
+  publisherPriority,
+  offset,
+  objectForwardingPreference,
+}: {
+  audioFullTrackName: FullTrackName
+  audioStreamController: ReadableStreamDefaultController<MoqtObject> | null
+  publisherPriority: number
+  offset: number
+  objectForwardingPreference: ObjectForwardingPreference
+}) {
+  let audioEncoder: AudioEncoder | null = null
+  let encoderActive = true
+  let shouldSendObjects = false // Control whether to actually send objects
+  let audioObjectId = 0n
+  let currentAudioGroupId = 0
+  let audioContext: AudioContext | null = null
+  let audioNode: AudioWorkletNode | null = null
+  let source: MediaStreamAudioSourceNode | null = null
+  let groupIdInterval: NodeJS.Timeout | null = null
+
+  const createAudioEncoder = () => {
+    audioObjectId = 0n
+    currentAudioGroupId = 0
+
+    audioEncoder = new AudioEncoder({
+      output: (chunk) => {
+        if (!encoderActive || !shouldSendObjects) return
+
+        const payload = new Uint8Array(chunk.byteLength)
+        chunk.copyTo(payload)
+        const moqt = MoqtObject.newWithPayload(
+          audioFullTrackName,
+          new Location(BigInt(currentAudioGroupId), BigInt(audioObjectId++)),
+          publisherPriority,
+          objectForwardingPreference,
+          BigInt(Math.round(performance.timeOrigin + performance.now() + offset)),
+          null,
+          payload,
+        )
+        console.log('Encoding audio object')
+        audioStreamController?.enqueue(moqt)
+      },
+      error: console.error,
+    })
+    audioEncoder.configure(window.appSettings.audioEncoderConfig)
+  }
+
+  const stop = async () => {
+    console.log('Audio encoder stop called, encoderActive:', encoderActive)
+    encoderActive = false
+    shouldSendObjects = false
+
+    if (groupIdInterval) {
+      clearInterval(groupIdInterval)
+      groupIdInterval = null
+    }
+
+    if (source) {
+      source.disconnect()
+      source = null
+    }
+
+    if (audioNode) {
+      audioNode.disconnect()
+      audioNode = null
+    }
+
+    if (audioContext && audioContext.state !== 'closed') {
+      try {
+        await audioContext.close()
+        console.log('AudioContext closed')
+      } catch (e) {
+        console.warn('Failed to close AudioContext:', e)
+      }
+      audioContext = null
+    }
+
+    if (audioEncoder) {
+      try {
+        await audioEncoder.flush()
+        audioEncoder.close()
+      } catch (e) {
+        // ignore close errors
+      }
+      audioEncoder = null
+    }
+  }
+
+  return {
+    audioEncoder,
+    encoderActive,
+    offset,
+    start: async (stream: MediaStream) => {
+      console.log('Audio encoder start called, encoderActive:', encoderActive)
+      // Stop previous encoder and reset state
+      if (audioEncoder && encoderActive) {
+        console.log('Stopping existing audio encoder')
+        encoderActive = false
+        await stop()
+      }
+
+      if (!stream) {
+        console.warn('No stream provided to audio encoder')
+        return { audioEncoder: null, audioNode: null }
+      }
+
+      const audioTrack = stream.getAudioTracks()[0]
+      if (!audioTrack) {
+        console.warn('No audio track found in stream')
+        return { audioEncoder: null, audioNode: null }
+      }
+
+      console.log('Audio track found:', audioTrack.label, 'enabled:', audioTrack.enabled)
+      encoderActive = true
+      shouldSendObjects = true // Enable sending objects
+      createAudioEncoder()
+
+      console.log('Starting audio encoder with group ID:', currentAudioGroupId)
+
+      // Set up group ID interval
+      groupIdInterval = setInterval(() => {
+        if (encoderActive) {
+          currentAudioGroupId += 2
+        }
+      }, 2000)
+
+      audioContext = new AudioContext({ sampleRate: 48000 })
+      console.log('AudioContext created, state:', audioContext.state)
+
+      // Wait for the context to be running
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume()
+      }
+
+      try {
+        await audioContext.audioWorklet.addModule(new URL('@app/workers/pcmPlayerProcessor.js', import.meta.url))
+        console.log('AudioWorklet module loaded successfully')
+
+        // Add a small delay to ensure the module is fully loaded
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      } catch (error) {
+        console.error('Failed to load AudioWorklet module:', error)
+        // Try again once more
+        try {
+          console.log('Retrying AudioWorklet module load...')
+          await audioContext.audioWorklet.addModule(new URL('@app/workers/pcmPlayerProcessor.js', import.meta.url))
+          console.log('AudioWorklet module loaded on retry')
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        } catch (retryError) {
+          console.error('Failed to load AudioWorklet module on retry:', retryError)
+          throw retryError
+        }
+      }
+
+      source = audioContext.createMediaStreamSource(stream)
+
+      try {
+        audioNode = new AudioWorkletNode(audioContext, 'audio-encoder-processor')
+        console.log('AudioWorkletNode created successfully')
+      } catch (error) {
+        console.error('Failed to create AudioWorkletNode:', error)
+        console.log('AudioContext state:', audioContext.state)
+
+        // If the first attempt fails, wait and try once more
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        try {
+          audioNode = new AudioWorkletNode(audioContext, 'audio-encoder-processor')
+          console.log('AudioWorkletNode created successfully on retry')
+        } catch (retryError) {
+          console.error('Failed to create AudioWorkletNode on retry:', retryError)
+          throw retryError
+        }
+      }
+
+      source.connect(audioNode)
+      audioNode.connect(audioContext.destination)
+
+      console.log('adding audio encoder')
+
+      let pcmBuffer: Float32Array[] = []
+      const AUDIO_PACKET_SAMPLES = 960
+
+      audioNode.port.onmessage = (event) => {
+        if (!audioEncoder || !encoderActive) return
+
+        const samples = event.data as Float32Array
+        pcmBuffer.push(samples)
+
+        let totalSamples = pcmBuffer.reduce((sum, arr) => sum + arr.length, 0)
+        while (totalSamples >= AUDIO_PACKET_SAMPLES) {
+          let out = new Float32Array(AUDIO_PACKET_SAMPLES)
+          let offset = 0
+          while (offset < AUDIO_PACKET_SAMPLES && pcmBuffer.length > 0) {
+            let needed = AUDIO_PACKET_SAMPLES - offset
+            let chunk = pcmBuffer[0]
+            if (chunk.length <= needed) {
+              out.set(chunk, offset)
+              offset += chunk.length
+              pcmBuffer.shift()
+            } else {
+              out.set(chunk.subarray(0, needed), offset)
+              pcmBuffer[0] = chunk.subarray(needed)
+              offset += needed
+            }
+          }
+          const audioData = new AudioData({
+            format: 'f32',
+            sampleRate: 48000,
+            numberOfFrames: AUDIO_PACKET_SAMPLES,
+            numberOfChannels: 1,
+            timestamp: performance.now() * 1000,
+            data: out.buffer,
+          })
+          audioEncoder.encode(audioData)
+          audioData.close()
+          totalSamples -= AUDIO_PACKET_SAMPLES
+        }
+      }
+
+      return { audioEncoder, audioNode }
+    },
+    stop,
+    enableSending: () => {
+      shouldSendObjects = true
+      console.log('Audio sending enabled')
+    },
+    disableSending: () => {
+      shouldSendObjects = false
+      console.log('Audio sending disabled')
+    },
+  }
 }
