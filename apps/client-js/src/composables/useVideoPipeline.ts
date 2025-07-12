@@ -13,12 +13,37 @@ import { RefObject } from 'react'
 import { ClockNormalizer } from '../../../../libs/moqtail-ts/src/util/clock_normalizer'
 
 let clockNormal: ClockNormalizer
+let recalibrationInterval: NodeJS.Timeout | null = null
+
 async function setupClockNormalizer() {
   clockNormal = await ClockNormalizer.create(
     window.appSettings.clockNormalizationConfig.timeServerUrl,
     window.appSettings.clockNormalizationConfig.numberOfSamples,
   )
+
+  // Recalibrate every 10 seconds
+  if (recalibrationInterval) {
+    clearInterval(recalibrationInterval)
+  }
+
+  recalibrationInterval = setInterval(async () => {
+    try {
+      await clockNormal.recalibrate()
+    } catch (error) {
+      console.warn('Failed to recalibrate clock normalizer:', error)
+    }
+  }, 10 * 1000)
 }
+
+function cleanupClockNormalizer() {
+  if (recalibrationInterval) {
+    clearInterval(recalibrationInterval)
+    recalibrationInterval = null
+  }
+}
+
+export { cleanupClockNormalizer }
+
 setupClockNormalizer()
 
 async function initTransport(url: string) {
@@ -704,7 +729,7 @@ export function useVideoPublisher(
       window.appSettings.clockNormalizationConfig.timeServerUrl,
       window.appSettings.clockNormalizationConfig.numberOfSamples,
     )
-    const offset = normalizer.getSkew()
+    let offset = normalizer.getSkew()
     const video = videoRef.current
     if (!video) {
       console.error('Video element is not available')
@@ -731,6 +756,18 @@ export function useVideoPublisher(
       BigInt(videoTrackAlias),
     )
 
+    // Set up periodic recalibration for publisher
+    const publisherRecalibrationInterval = setInterval(async () => {
+      try {
+        const newOffset = await normalizer.recalibrate()
+        offset = newOffset
+        // Note: The offset is used in encoder functions, but they capture it at creation time
+        // For real-time updates, we'd need to modify the encoder functions to accept dynamic offsets
+      } catch (error) {
+        console.warn('Failed to recalibrate publisher clock normalizer:', error)
+      }
+    }, 10 * 1000)
+
     const videoPromise = startVideoEncoder({
       stream,
       videoFullTrackName,
@@ -751,6 +788,10 @@ export function useVideoPublisher(
     })
 
     const [videoEncoderResult, audioEncoderResult] = await Promise.all([videoPromise, audioPromise])
+
+    return () => {
+      clearInterval(publisherRecalibrationInterval)
+    }
   }
   return setup
 }
@@ -779,6 +820,16 @@ export function useVideoSubscriber(
     const audioNode = await setupAudioPlayback(new AudioContext({ sampleRate: 48000 }))
     console.log('Worker and audio node initialized')
 
+    const subscriberRecalibrationInterval = setInterval(async () => {
+      try {
+        const newOffset = await normalizer.recalibrate()
+        // Update the worker with the new offset
+        worker.postMessage({ type: 'update-offset', offset: newOffset })
+      } catch (error) {
+        console.warn('Failed to recalibrate subscriber clock normalizer:', error)
+      }
+    }, 10 * 1000)
+
     handleWorkerMessages(worker, audioNode, videoTelemetry, audioTelemetry)
 
     console.log('Going to subscribe to audio')
@@ -805,7 +856,11 @@ export function useVideoSubscriber(
     )
     console.log('Subscribed to video', videoFullTrackName)
     subscribeAndPipeToWorker(moqClient, subscribeVideo, worker, 'moq')
-    return true
+
+    return () => {
+      clearInterval(subscriberRecalibrationInterval)
+      worker.terminate()
+    }
   }
   return setup
 }

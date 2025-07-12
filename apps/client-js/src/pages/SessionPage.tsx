@@ -38,6 +38,7 @@ import {
   startAudioEncoder,
   subscribeToChatTrack,
   useVideoSubscriber,
+  cleanupClockNormalizer,
 } from '../composables/useVideoPipeline'
 import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client'
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
@@ -1176,7 +1177,8 @@ function SessionPage() {
       contextSocket.disconnect()
     }
     moqClient?.disconnect()
-    //console.log('Disconnected from socket and MoQtail client', moqClient);
+
+    cleanupClockNormalizer()
 
     clearSession()
 

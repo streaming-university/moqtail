@@ -133,6 +133,12 @@ self.onmessage = (e) => {
     self.postMessage({ type: 'audio-throughput', value: moqtObj.payload.length })
   }
 
+  if (type === 'update-offset') {
+    normalizerOffset = offset
+    console.log('Updated normalizer offset in worker:', offset)
+    return
+  }
+
   function handleFrame(frame: VideoFrame) {
     try {
       if (!ctx) {
