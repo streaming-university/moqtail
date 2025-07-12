@@ -12,6 +12,58 @@ import { PlayoutBuffer } from '../../../../libs/moqtail-ts/src/util/playout_buff
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
 import { RefObject } from 'react'
 import { ClockNormalizer } from '../../../../libs/moqtail-ts/src/util/clock_normalizer'
+import { RewindBuffer } from './rewindBuffer'
+
+// Global rewind buffer manager to store buffers per user
+const rewindBuffers = new Map<string, RewindBuffer>()
+
+// Global worker tracking for canvas clearing
+const activeWorkers = new Map<string, Worker>()
+
+export function getRewindBuffer(userId: string): RewindBuffer {
+  if (!rewindBuffers.has(userId)) {
+    rewindBuffers.set(userId, new RewindBuffer(30000)) // 30 seconds rolling window, no object limit
+  }
+  return rewindBuffers.get(userId)!
+}
+
+export function clearRewindBuffer(userId: string): void {
+  const buffer = rewindBuffers.get(userId)
+  if (buffer) {
+    buffer.clear()
+  }
+}
+
+export function clearAllRewindBuffers(): void {
+  rewindBuffers.forEach((buffer) => buffer.clear())
+  rewindBuffers.clear()
+}
+
+export function trackWorker(userId: string, worker: Worker): void {
+  activeWorkers.set(userId, worker)
+}
+
+export function clearWorkerCanvas(userId: string): void {
+  const worker = activeWorkers.get(userId)
+  if (worker) {
+    console.log('Clearing canvas for user:', userId)
+    worker.postMessage({ type: 'clear' })
+  } else {
+    console.warn('No active worker found for user:', userId)
+  }
+}
+
+export function clearAllWorkerCanvases(): void {
+  console.log('Clearing all worker canvases')
+  activeWorkers.forEach((worker, userId) => {
+    console.log('Clearing canvas for user:', userId)
+    worker.postMessage({ type: 'clear' })
+  })
+}
+
+export function cleanupWorker(userId: string): void {
+  activeWorkers.delete(userId)
+}
 
 let clockNormal: ClockNormalizer
 async function setupClockNormalizer() {
@@ -609,6 +661,7 @@ function subscribeAndPipeToWorker(
   subscribeMsg: Subscribe,
   worker: Worker,
   type: 'moq' | 'moq-audio',
+  userId?: string,
 ) {
   moqClient.subscribe(subscribeMsg).then((stream) => {
     window.appSettings.playoutBufferConfig.maxLatencyMs
@@ -630,6 +683,14 @@ function subscribeAndPipeToWorker(
           // Request next object immediately
           return
         }
+
+        // Store in rewind buffer if userId is provided
+        if (userId) {
+          const rewindBuffer = getRewindBuffer(userId)
+          const bufferType = type === 'moq' ? 'video' : 'audio'
+          rewindBuffer.addObject(obj, bufferType)
+        }
+
         // Send to worker
         worker.postMessage({ type, extentions: obj.extensionHeaders, payload: obj }, [obj.payload.buffer])
       }
@@ -745,6 +806,7 @@ export function useVideoSubscriber(
   videoFullTrackName: FullTrackName,
   audioFullTrackName: FullTrackName,
   telemetry?: NetworkTelemetry,
+  userId?: string,
 ) {
   const setup = async () => {
     const offset = await AkamaiOffset.getClockSkew()
@@ -753,6 +815,12 @@ export function useVideoSubscriber(
     if (!canvas) return
     console.log('Worker and audio node is going to be initialized')
     const worker = initWorkerAndCanvas(canvas, offset)
+
+    // Track this worker for canvas clearing
+    if (userId) {
+      trackWorker(userId, worker)
+    }
+
     const audioNode = await setupAudioPlayback(new AudioContext({ sampleRate: 48000 }))
     console.log('Worker and audio node initialized')
 
@@ -768,7 +836,7 @@ export function useVideoSubscriber(
       true,
       [],
     )
-    subscribeAndPipeToWorker(moqClient, subscribeAudio, worker, 'moq-audio')
+    subscribeAndPipeToWorker(moqClient, subscribeAudio, worker, 'moq-audio', userId)
     console.log('Subscribed to audio', audioFullTrackName)
 
     const subscribeVideo = Subscribe.newLatestObject(
@@ -781,7 +849,7 @@ export function useVideoSubscriber(
       [],
     )
     console.log('Subscribed to video', videoFullTrackName)
-    subscribeAndPipeToWorker(moqClient, subscribeVideo, worker, 'moq')
+    subscribeAndPipeToWorker(moqClient, subscribeVideo, worker, 'moq', userId)
     return true
   }
   return setup

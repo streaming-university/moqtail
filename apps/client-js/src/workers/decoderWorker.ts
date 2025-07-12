@@ -39,6 +39,56 @@ self.onmessage = (e) => {
     return
   }
 
+  if (type === 'clear') {
+    console.log('Live decoder worker: Clearing canvas and resetting state')
+
+    // Clear the canvas to remove stale frames
+    if (ctx) {
+      ctx.fillStyle = '#1a1a1a'
+      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+      console.log('Live decoder worker: Canvas cleared')
+    }
+
+    // Reset decoder state
+    waitingForKeyframe = true
+
+    // Reset video decoder
+    if (videoDecoder) {
+      try {
+        videoDecoder.reset()
+        console.log('Live decoder worker: Video decoder reset')
+      } catch (e) {
+        console.warn('Live decoder worker: Error resetting video decoder:', e)
+        // If reset fails, close and recreate
+        try {
+          videoDecoder.close()
+          videoDecoder = null
+        } catch (closeError) {
+          // ignore close errors
+        }
+      }
+    }
+
+    // Reset audio decoder
+    if (audioDecoder) {
+      try {
+        audioDecoder.reset()
+        console.log('Live decoder worker: Audio decoder reset')
+      } catch (e) {
+        console.warn('Live decoder worker: Error resetting audio decoder:', e)
+        try {
+          audioDecoder.close()
+          audioDecoder = null
+        } catch (closeError) {
+          // ignore close errors
+        }
+      }
+    }
+
+    self.postMessage({ type: 'clear-complete' })
+    return
+  }
+
   if (type === 'moq') {
     const moqtObj = payload
     const extensionHeaders = extentions

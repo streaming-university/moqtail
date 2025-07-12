@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Mic, MicOff, Video, VideoOff, MonitorUp, Phone, Send, Users, MessageSquare, Smile } from 'lucide-react'
+import {
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  MonitorUp,
+  Phone,
+  Send,
+  Users,
+  MessageSquare,
+  Smile,
+  RotateCcw,
+} from 'lucide-react'
 import { useSession } from '../contexts/SessionContext'
 import {
   RoomUser,
@@ -9,7 +21,6 @@ import {
   UserDisconnectedMessage,
   TrackType,
   UpdateTrackRequest,
-  RoomTimeoutMessage,
 } from '../types/types'
 import { useSocket } from '../sockets/SocketContext'
 import { FullTrackName, ObjectForwardingPreference, Tuple } from '../../../../libs/moqtail-ts/src/model'
@@ -24,10 +35,14 @@ import {
   subscribeToChatTrack,
   useVideoPublisher,
   useVideoSubscriber,
+  getRewindBuffer,
+  clearRewindBuffer,
+  clearAllRewindBuffers,
 } from '../composables/useVideoPipeline'
 import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client'
 import { AkamaiOffset } from '../../../../libs/moqtail-ts/src/util/get_akamai_offset'
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
+import { RewindPlayer } from './RewindPlayer'
 
 function SessionPage() {
   // initialize the MOQTail client
@@ -63,6 +78,11 @@ function SessionPage() {
   const [isUserScrolling, setIsUserScrolling] = useState(false)
   const [userColors, setUserColors] = useState<{ [userId: string]: { bgClass: string; hexColor: string } }>({})
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+
+  // Rewind player state
+  const [isRewindPlayerOpen, setIsRewindPlayerOpen] = useState(false)
+  const [selectedRewindUserId, setSelectedRewindUserId] = useState<string>('')
+  const isRewindCleaningUp = useRef<boolean>(false)
 
   const emojiCategories = {
     Faces: ['😀', '😂', '😍', '😊', '😉', '😎', '🤔', '😮', '😢', '😭', '😡', '🤯', '🙄', '😴'],
@@ -214,6 +234,12 @@ function SessionPage() {
 
   // Toggle mic handler
   const handleToggle = (kind: 'mic' | 'cam') => {
+    // Don't allow toggles while rewind player is cleaning up
+    if (isRewindCleaningUp.current) {
+      console.log('SessionPage: Ignoring toggle request while rewind player is cleaning up')
+      return
+    }
+
     // If trying to toggle camera while screen sharing, stop screen sharing first
     if (kind === 'cam' && isScreenSharing) {
       handleToggleScreenShare() // This will stop screen sharing
@@ -229,39 +255,58 @@ function SessionPage() {
             const audioTrack = selfMediaStream.current?.getAudioTracks()[0]
             let newStream
             if (newValue) {
-              navigator.mediaDevices.getUserMedia({ video: { aspectRatio: 16 / 9 } }).then((videoStream) => {
-                const realVideoTrack = videoStream.getVideoTracks()[0]
-                const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
-                if (oldVideoTrack) {
-                  oldVideoTrack.stop()
-                  selfMediaStream.current?.removeTrack(oldVideoTrack)
-                }
-                newStream = new MediaStream()
-                if (audioTrack) newStream.addTrack(audioTrack)
-                newStream.addTrack(realVideoTrack)
-                selfMediaStream.current = newStream
-                if (videoEncoderObjRef.current) {
-                  videoEncoderObjRef.current.offset = akamaiOffsetRef.current
-                  videoEncoderObjRef.current.start(selfMediaStream.current)
-                }
-                if (selfVideoRef.current) {
-                  selfVideoRef.current.srcObject = newStream
-                  selfVideoRef.current.muted = true
-                }
-              })
+              navigator.mediaDevices
+                .getUserMedia({ video: { aspectRatio: 16 / 9 } })
+                .then((videoStream) => {
+                  const realVideoTrack = videoStream.getVideoTracks()[0]
+                  const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
+                  if (oldVideoTrack) {
+                    oldVideoTrack.stop()
+                    selfMediaStream.current?.removeTrack(oldVideoTrack)
+                  }
+                  newStream = new MediaStream()
+                  if (audioTrack) newStream.addTrack(audioTrack)
+                  newStream.addTrack(realVideoTrack)
+                  selfMediaStream.current = newStream
+                  if (videoEncoderObjRef.current) {
+                    console.log('SessionPage: Starting video encoder with new stream')
+                    videoEncoderObjRef.current.offset = akamaiOffsetRef.current
+                    videoEncoderObjRef.current.start(selfMediaStream.current)
+                  } else {
+                    console.error('SessionPage: videoEncoderObjRef.current is null!')
+                  }
+                  if (selfVideoRef.current) {
+                    console.log('SessionPage: Setting new video stream to video element')
+                    selfVideoRef.current.srcObject = newStream
+                    selfVideoRef.current.muted = true
+                  } else {
+                    console.error('SessionPage: selfVideoRef.current is null!')
+                  }
+                })
+                .catch((error) => {
+                  console.error('SessionPage: Error getting user media for camera:', error)
+                })
             } else {
+              console.log('SessionPage: Turning camera OFF')
               const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
               if (oldVideoTrack) {
+                console.log('SessionPage: Stopping old video track')
                 oldVideoTrack.stop()
                 selfMediaStream.current?.removeTrack(oldVideoTrack)
               }
               newStream = new MediaStream()
               if (audioTrack) newStream.addTrack(audioTrack)
               selfMediaStream.current = newStream
-              if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream
+              if (selfVideoRef.current) {
+                console.log('SessionPage: Setting audio-only stream to video element')
+                selfVideoRef.current.srcObject = newStream
+              }
               selfVideoRef.current!.muted = true
               if (videoEncoderObjRef.current) {
+                console.log('SessionPage: Stopping video encoder')
                 videoEncoderObjRef.current.stop()
+              } else {
+                console.warn('SessionPage: videoEncoderObjRef.current is null when trying to stop')
               }
             }
             return users
@@ -282,12 +327,15 @@ function SessionPage() {
           users[userId] = { ...u, hasAudio: newValue }
           toggleMediaStreamAudio(newValue)
         } else if (kind === 'cam') {
+          console.log('SessionPage: Toggling camera to:', newValue)
           users[userId] = { ...u, hasVideo: newValue }
           // --- Video track switching logic ---
           const audioTrack = selfMediaStream.current?.getAudioTracks()[0]
           let newStream
           if (newValue) {
+            console.log('SessionPage: Turning camera ON')
             navigator.mediaDevices.getUserMedia({ video: { aspectRatio: 16 / 9 } }).then((videoStream) => {
+              console.log('SessionPage: Got new video stream')
               const realVideoTrack = videoStream.getVideoTracks()[0]
               const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
               if (oldVideoTrack) {
@@ -678,10 +726,12 @@ function SessionPage() {
         delete newColors[msg.userId]
         return newColors
       })
+      // Clean up rewind buffer for this user
+      clearRewindBuffer(msg.userId)
       // TODO: unsubscribe
     })
 
-    socket.on('room-timeout', (msg: RoomTimeoutMessage) => {
+    socket.on('room-timeout', (msg: { message: string }) => {
       console.info('Room timeout:', msg.message)
       alert(`${msg.message}\n\nYou will be redirected to the home page.`)
 
@@ -893,6 +943,8 @@ function SessionPage() {
           audioTrackAlias,
           audioFullTrackName,
           videoFullTrackName,
+          telemetryInstances.current[userId],
+          userId,
         )()
 
         // Subscribe to chat if we have a valid chat track alias
@@ -988,6 +1040,10 @@ function SessionPage() {
     if (contextSocket && contextSocket.connected) {
       contextSocket.disconnect()
     }
+
+    // Clean up all rewind buffers
+    clearAllRewindBuffers()
+
     moqClient?.disconnect()
     //console.log('Disconnected from socket and MoQtail client', moqClient);
 
@@ -1010,6 +1066,30 @@ function SessionPage() {
       const isAtBottom = scrollTop + clientHeight >= scrollHeight - 5 // 5px tolerance
       setIsUserScrolling(!isAtBottom)
     }
+  }
+
+  const handleOpenRewindPlayer = (userId: string) => {
+    const rewindBuffer = getRewindBuffer(userId)
+    if (rewindBuffer.getCount() === 0) {
+      console.warn('No rewind data available for user:', userId)
+      return
+    }
+    setSelectedRewindUserId(userId)
+    setIsRewindPlayerOpen(true)
+  }
+
+  const handleCloseRewindPlayer = () => {
+    console.log('SessionPage: Closing rewind player')
+    isRewindCleaningUp.current = true
+    setIsRewindPlayerOpen(false)
+    setSelectedRewindUserId('')
+
+    // Add a delay to ensure rewind player cleanup is complete
+    // before allowing other operations
+    setTimeout(() => {
+      console.log('SessionPage: Rewind player cleanup complete')
+      isRewindCleaningUp.current = false
+    }, 300)
   }
 
   return (
@@ -1101,6 +1181,16 @@ function SessionPage() {
                       )}
                     </div>
                     <div className="flex space-x-1">
+                      {/* Rewind button for remote users */}
+                      {!isSelf(user.id) && (
+                        <button
+                          onClick={() => handleOpenRewindPlayer(user.id)}
+                          className="bg-blue-600 hover:bg-blue-700 p-1 rounded transition-colors"
+                          title="Rewind video"
+                        >
+                          <RotateCcw className="w-3 h-3 text-white" />
+                        </button>
+                      )}
                       <div className={user.hasAudio ? 'bg-gray-700 p-1 rounded' : 'bg-red-600 p-1 rounded'}>
                         {user.hasAudio ? (
                           <Mic className="w-3 h-3 text-white" />
@@ -1313,6 +1403,18 @@ function SessionPage() {
           </button>
         )}
       </div>
+
+      {/* Rewind Player */}
+      {isRewindPlayerOpen && selectedRewindUserId && (
+        <RewindPlayer
+          isOpen={isRewindPlayerOpen}
+          onClose={handleCloseRewindPlayer}
+          videoObjects={getRewindBuffer(selectedRewindUserId).getVideoObjects()}
+          audioObjects={getRewindBuffer(selectedRewindUserId).getAudioObjects()}
+          userName={users[selectedRewindUserId]?.name || 'Unknown User'}
+          userColor={getUserColorHex(selectedRewindUserId)}
+        />
+      )}
     </div>
   )
 }
