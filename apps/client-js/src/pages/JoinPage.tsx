@@ -81,7 +81,16 @@ export default function JoinPage() {
         </h1>
         <h2>Join a Room</h2>
         <div className="browser-compatibility">
-          Please use a recent browser that supports WebCodecs and WebTransport APIs.
+          Please use a recent version of Chrome that supports WebCodecs and WebTransport APIs. Report any issues on{' '}
+          <a
+            href="https://github.com/streaming-university/moqtail"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="github-link"
+          >
+            GitHub
+          </a>
+          .
         </div>
         <form onSubmit={handleSubmit} className="join-form">
           <input
@@ -170,7 +179,7 @@ export default function JoinPage() {
       .join-nav {
         display: flex;
         gap: 1.8rem;
-        margin-bottom: 1.2rem;
+        margin-bottom: 0rem;
         font-size: 1.08rem;
         font-weight: 500;
       }
@@ -250,17 +259,93 @@ export default function JoinPage() {
         border-radius: 6px;
         line-height: 1.4;
       }
+      .github-link {
+        color: #577B9F;
+        text-decoration: underline;
+        font-weight: 600;
+        transition: color 0.2s;
+      }
+      .github-link:hover {
+        color: #D74401;
+      }
       @media (max-width: 600px) {
-        .join-container {
-          flex-direction: column;
-          gap: 0;
-          padding: 1.2rem;
-        }
-        .join-content {
-          max-width: 100%;
+        .join-logo {
+          max-height: 250px;
+          min-height: 100px;
+          width: 100%;
+          margin-top: -10px;
         }
         .join-logo img {
-          max-height: 300px;
+          max-height: 100%;
+          max-width: 100%;
+          width: auto;
+          height: auto;
+          object-fit: contain;
+       }
+        .join-content {
+          max-width: 100%;     
+          max-height: 500px;       
+          padding: 1px;
+          overflow: hidden;         
+       }
+        .browser-compatibility {
+          font-size: 0.726rem;
+          color: #577B9F;
+          margin-bottom: 0.5rem;
+          padding: 0.8rem 0.2rem;
+          background-color: #ecf0f1;
+          border-radius: 3px;
+          line-height: 1.4;
+        }
+        h1 {
+          font-size: 2rem;
+          margin-bottom: 0.0rem;
+          color: #2c3e50;
+          font-family: 'MoqBold', 'Segoe UI', sans-serif;
+        }
+        h2 {
+          font-family: 'MoqSemiBold', 'Segoe UI', sans-serif;
+          font-weight: 400;
+          margin-bottom: 0.1rem;
+          color: #34495e;
+          margin-top: 0;
+        }
+        .join-form {
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          gap: 0.6rem;
+        }
+        .join-input {
+          padding: 0.3rem 1rem;
+          font-size: 1.0rem;
+          border: 1.8px solid #ddd;
+          border-radius: 6px;
+          background-color: transparent;
+          transition: border-color 0.3s, box-shadow 0.3s;
+          outline-offset: 2px;
+        }
+        .join-container {
+          flex-direction: column;
+          gap: 0rem;
+          padding: 1rem;
+        }
+        .join-content {
+          max-width: 100%;     
+          max-height: 60rem;       
+          padding: 1px;
+          overflow: hidden;  
+        }
+        .join-button {
+          padding: 0.5rem 0.8rem;
+          font-size: 0.9rem;
+          font-weight: 600;
+          background-color: #577B9F;
+          border: none;
+          border-radius: 6px;
+          color: white;
+          cursor: pointer;
+          transition: background-color 0.25s;
         }
       }
       `}</style>

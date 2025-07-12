@@ -7,19 +7,43 @@ import { Tuple } from '../../../../libs/moqtail-ts/src/model/common/tuple'
 import { LiveContentSource } from '../../../../libs/moqtail-ts/src/client/track/content_source'
 import { FullTrackName, MoqtObject } from '../../../../libs/moqtail-ts/src/model/data'
 import { Location } from '../../../../libs/moqtail-ts/src/model/common/location'
-import { AkamaiOffset } from '../../../../libs/moqtail-ts/src/util/get_akamai_offset'
 import { PlayoutBuffer } from '../../../../libs/moqtail-ts/src/util/playout_buffer'
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
 import { RefObject } from 'react'
 import { ClockNormalizer } from '../../../../libs/moqtail-ts/src/util/clock_normalizer'
 
 let clockNormal: ClockNormalizer
+let recalibrationInterval: NodeJS.Timeout | null = null
+
 async function setupClockNormalizer() {
   clockNormal = await ClockNormalizer.create(
     window.appSettings.clockNormalizationConfig.timeServerUrl,
     window.appSettings.clockNormalizationConfig.numberOfSamples,
   )
+
+  // Recalibrate every 10 seconds
+  if (recalibrationInterval) {
+    clearInterval(recalibrationInterval)
+  }
+
+  recalibrationInterval = setInterval(async () => {
+    try {
+      await clockNormal.recalibrate()
+    } catch (error) {
+      console.warn('Failed to recalibrate clock normalizer:', error)
+    }
+  }, 10 * 1000)
 }
+
+function cleanupClockNormalizer() {
+  if (recalibrationInterval) {
+    clearInterval(recalibrationInterval)
+    recalibrationInterval = null
+  }
+}
+
+export { cleanupClockNormalizer }
+
 setupClockNormalizer()
 
 async function initTransport(url: string) {
@@ -183,6 +207,10 @@ export async function startAudioEncoder({
       output: (chunk) => {
         const payload = new Uint8Array(chunk.byteLength)
         chunk.copyTo(payload)
+
+        const captureTime = Math.round(performance.timeOrigin + performance.now() + offset)
+        const locHeaders = new ExtensionHeaders().addCaptureTimestamp(captureTime)
+
         // console.log('AudioEncoder output chunk:', chunk);
         const moqt = MoqtObject.newWithPayload(
           audioFullTrackName,
@@ -190,7 +218,7 @@ export async function startAudioEncoder({
           publisherPriority,
           objectForwardingPreference,
           BigInt(Math.round(performance.timeOrigin + performance.now() + offset)),
-          null,
+          locHeaders.build(),
           payload,
         )
         // console.log('AudioEncoder output:', moqt);
@@ -655,20 +683,31 @@ function subscribeAndPipeToWorker(
   })
 }
 
-function handleWorkerMessages(worker: Worker, audioNode: AudioWorkletNode, telemetry?: NetworkTelemetry) {
+function handleWorkerMessages(
+  worker: Worker,
+  audioNode: AudioWorkletNode,
+  videoTelemetry?: NetworkTelemetry,
+  audioTelemetry?: NetworkTelemetry,
+) {
   worker.onmessage = (event) => {
     if (event.data.type === 'audio') {
       // console.log('Received audio data from worker:', event.data);
       audioNode.port.postMessage(new Float32Array(event.data.samples))
     }
-    if (event.data.type === 'latency') {
-      if (telemetry) {
-        telemetry.push({ latency: Math.abs(event.data.value), size: 0 }) // Size will be added from decoder
+    if (event.data.type === 'video-latency') {
+      if (videoTelemetry) {
+        videoTelemetry.push({ latency: Math.abs(event.data.value), size: 0 })
       }
     }
-    if (event.data.type === 'throughput') {
-      if (telemetry) {
-        telemetry.push({ latency: 0, size: event.data.value })
+
+    if (event.data.type === 'video-throughput') {
+      if (videoTelemetry) {
+        videoTelemetry.push({ latency: 0, size: event.data.value })
+      }
+    }
+    if (event.data.type === 'audio-throughput') {
+      if (audioTelemetry) {
+        audioTelemetry.push({ latency: 0, size: event.data.value })
       }
     }
   }
@@ -686,7 +725,11 @@ export function useVideoPublisher(
   audioFullTrackName: FullTrackName,
 ) {
   const setup = async () => {
-    const offset = await AkamaiOffset.getClockSkew()
+    const normalizer = await ClockNormalizer.create(
+      window.appSettings.clockNormalizationConfig.timeServerUrl,
+      window.appSettings.clockNormalizationConfig.numberOfSamples,
+    )
+    let offset = normalizer.getSkew()
     const video = videoRef.current
     if (!video) {
       console.error('Video element is not available')
@@ -713,6 +756,18 @@ export function useVideoPublisher(
       BigInt(videoTrackAlias),
     )
 
+    // Set up periodic recalibration for publisher
+    const publisherRecalibrationInterval = setInterval(async () => {
+      try {
+        const newOffset = await normalizer.recalibrate()
+        offset = newOffset
+        // Note: The offset is used in encoder functions, but they capture it at creation time
+        // For real-time updates, we'd need to modify the encoder functions to accept dynamic offsets
+      } catch (error) {
+        console.warn('Failed to recalibrate publisher clock normalizer:', error)
+      }
+    }, 10 * 1000)
+
     const videoPromise = startVideoEncoder({
       stream,
       videoFullTrackName,
@@ -733,6 +788,10 @@ export function useVideoPublisher(
     })
 
     const [videoEncoderResult, audioEncoderResult] = await Promise.all([videoPromise, audioPromise])
+
+    return () => {
+      clearInterval(publisherRecalibrationInterval)
+    }
   }
   return setup
 }
@@ -744,10 +803,15 @@ export function useVideoSubscriber(
   audioTrackAlias: number,
   videoFullTrackName: FullTrackName,
   audioFullTrackName: FullTrackName,
-  telemetry?: NetworkTelemetry,
+  videoTelemetry?: NetworkTelemetry,
+  audioTelemetry?: NetworkTelemetry,
 ) {
   const setup = async () => {
-    const offset = await AkamaiOffset.getClockSkew()
+    const normalizer = await ClockNormalizer.create(
+      window.appSettings.clockNormalizationConfig.timeServerUrl,
+      window.appSettings.clockNormalizationConfig.numberOfSamples,
+    )
+    const offset = normalizer.getSkew()
     const canvas = canvasRef.current
     console.log('Now will check for canvas ref')
     if (!canvas) return
@@ -756,7 +820,17 @@ export function useVideoSubscriber(
     const audioNode = await setupAudioPlayback(new AudioContext({ sampleRate: 48000 }))
     console.log('Worker and audio node initialized')
 
-    handleWorkerMessages(worker, audioNode, telemetry)
+    const subscriberRecalibrationInterval = setInterval(async () => {
+      try {
+        const newOffset = await normalizer.recalibrate()
+        // Update the worker with the new offset
+        worker.postMessage({ type: 'update-offset', offset: newOffset })
+      } catch (error) {
+        console.warn('Failed to recalibrate subscriber clock normalizer:', error)
+      }
+    }, 10 * 1000)
+
+    handleWorkerMessages(worker, audioNode, videoTelemetry, audioTelemetry)
 
     console.log('Going to subscribe to audio')
     const subscribeAudio = Subscribe.newLatestObject(
@@ -782,7 +856,11 @@ export function useVideoSubscriber(
     )
     console.log('Subscribed to video', videoFullTrackName)
     subscribeAndPipeToWorker(moqClient, subscribeVideo, worker, 'moq')
-    return true
+
+    return () => {
+      clearInterval(subscriberRecalibrationInterval)
+      worker.terminate()
+    }
   }
   return setup
 }

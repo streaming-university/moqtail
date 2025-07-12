@@ -7,7 +7,7 @@ let ctx: OffscreenCanvasRenderingContext2D | null = null
 let videoDecoder: VideoDecoder | null = null
 let audioDecoder: AudioDecoder | null = null
 let waitingForKeyframe = true
-let akamaiOffset: number | null = null
+let normalizerOffset: number | null = null
 let theDecoderConfig: VideoDecoderConfig | null = null
 
 self.onmessage = (e) => {
@@ -15,7 +15,7 @@ self.onmessage = (e) => {
 
   if (type === 'init') {
     ctx = canvas?.getContext?.('2d') ?? null
-    akamaiOffset = offset
+    normalizerOffset = offset
     theDecoderConfig = decoderConfig || null
     return
   }
@@ -86,17 +86,21 @@ self.onmessage = (e) => {
       console.error('Error decoding video chunk:', decodeError)
     }
 
-    if (akamaiOffset !== null && timestamp !== 0) {
-      const arrivalTime = Math.round(performance.timeOrigin + performance.now() + akamaiOffset)
-      self.postMessage({ type: 'latency', value: arrivalTime - timestamp })
+    if (normalizerOffset !== null && timestamp !== 0) {
+      const arrivalTime = Math.round(performance.timeOrigin + performance.now() + normalizerOffset)
+      self.postMessage({ type: 'video-latency', value: arrivalTime - timestamp })
     }
 
-    self.postMessage({ type: 'throughput', value: moqtObj.payload.length })
+    self.postMessage({ type: 'video-throughput', value: moqtObj.payload.length })
   }
 
   if (type === 'moq-audio') {
     const moqtObj = payload
     const extensionHeaders = extentions
+
+    const headers = ExtensionHeaders.fromKeyValuePairs(extensionHeaders ?? [])
+    const timestamp = Number(headers.find((h) => ExtensionHeader.isCaptureTimestamp(h))?.timestamp ?? 0n)
+
     if (!audioDecoder) {
       audioDecoder = new AudioDecoder({
         output: (frame) => {
@@ -120,8 +124,19 @@ self.onmessage = (e) => {
     })
     audioDecoder.decode(chunk)
 
+    if (normalizerOffset !== null && timestamp !== 0) {
+      const arrivalTime = Math.round(performance.timeOrigin + performance.now() + normalizerOffset)
+      self.postMessage({ type: 'audio-latency', value: arrivalTime - timestamp })
+    }
+
     // Send throughput data for audio (payload size)
-    self.postMessage({ type: 'throughput', value: moqtObj.payload.length })
+    self.postMessage({ type: 'audio-throughput', value: moqtObj.payload.length })
+  }
+
+  if (type === 'update-offset') {
+    normalizerOffset = offset
+    console.log('Updated normalizer offset in worker:', offset)
+    return
   }
 
   function handleFrame(frame: VideoFrame) {
