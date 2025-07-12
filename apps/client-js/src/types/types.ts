@@ -62,6 +62,10 @@ export interface UserDisconnectedMessage {
   userId: string
 }
 
+export interface RoomTimeoutMessage {
+  message: string
+}
+
 export interface ToggleRequest {
   kind: 'cam' | 'mic' | 'screenshare'
   value: boolean
