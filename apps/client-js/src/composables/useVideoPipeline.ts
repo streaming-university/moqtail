@@ -402,8 +402,6 @@ export function initializeVideoEncoder({
         return { videoEncoder: null, videoReader: null }
       }
 
-      const isFake = (videoTrack as any).isFake === true
-
       videoReader = new (window as any).MediaStreamTrackProcessor({
         track: videoTrack,
       }).readable.getReader()

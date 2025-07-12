@@ -9,6 +9,8 @@ let audioDecoder: AudioDecoder | null = null
 let waitingForKeyframe = true
 let normalizerOffset: number | null = null
 let theDecoderConfig: VideoDecoderConfig | null = null
+let frameTimeoutId: ReturnType<typeof setTimeout> | null = null
+const FRAME_TIMEOUT_MS = 300 // Clear canvas if no frames for 00ms
 
 self.onmessage = (e) => {
   const { type, canvas, offset, payload, extentions, decoderConfig } = e.data
@@ -22,6 +24,11 @@ self.onmessage = (e) => {
 
   if (type === 'reset') {
     waitingForKeyframe = true
+    if (frameTimeoutId) {
+      clearTimeout(frameTimeoutId)
+      frameTimeoutId = null
+    }
+    clearCanvas()
     if (videoDecoder) {
       try {
         videoDecoder.reset()
@@ -49,6 +56,13 @@ self.onmessage = (e) => {
     const timestamp = Number(headers.find((h) => ExtensionHeader.isCaptureTimestamp(h))?.timestamp ?? 0n)
     const configHeader = headers.find((h) => ExtensionHeader.isVideoConfig(h))
     const isKey = headers.some((h) => ExtensionHeader.isVideoFrameMarking(h) && h.value === 1n)
+
+    if (frameTimeoutId) {
+      clearTimeout(frameTimeoutId)
+    }
+    frameTimeoutId = setTimeout(() => {
+      clearCanvas()
+    }, FRAME_TIMEOUT_MS)
 
     if ((configHeader || isKey) && !videoDecoder && theDecoderConfig) {
       videoDecoder = new VideoDecoder({
@@ -179,5 +193,21 @@ self.onmessage = (e) => {
         frame.close()
       }
     }
+  }
+
+  function clearCanvas() {
+    if (ctx) {
+      const targetWidth = 640
+      const targetHeight = 360
+      ctx.canvas.width = targetWidth
+      ctx.canvas.height = targetHeight
+      ctx.fillStyle = '#1a1a1a'
+      ctx.fillRect(0, 0, targetWidth, targetHeight)
+    }
+  }
+
+  if (type === 'clear') {
+    clearCanvas()
+    return
   }
 }
