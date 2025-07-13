@@ -224,10 +224,10 @@ impl Client {
       loop {
         info!("Waiting for incoming unidirectional streams...");
         // listen for incoming unidirectional streams
-        let stream = Arc::new(Mutex::new(connection.accept_uni().await.unwrap()));
+        let stream = connection.accept_uni().await.unwrap();
         info!("Accepted unidirectional stream");
 
-        let mut stream_handler = &RecvDataStream::new(stream.clone(), pending_fetches.clone());
+        let mut stream_handler = &RecvDataStream::new(stream, pending_fetches.clone());
 
         loop {
           let next = stream_handler.next_object().await;

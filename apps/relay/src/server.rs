@@ -3,6 +3,7 @@ mod client_manager;
 mod config;
 mod errors;
 mod session;
+mod subscription;
 mod track;
 mod track_cache;
 mod utils;
@@ -10,7 +11,7 @@ mod utils;
 use crate::server::{config::AppConfig, session::Session};
 use anyhow::Result;
 use client_manager::ClientManager;
-use dashmap::DashMap;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
@@ -21,7 +22,7 @@ use wtransport::Endpoint;
 
 pub(crate) struct Server {
   pub client_manager: Arc<RwLock<ClientManager>>,
-  pub tracks: Arc<DashMap<u64, Track>>, // the tracks the relay is subscribed to, key is the track alias
+  pub tracks: Arc<RwLock<BTreeMap<u64, Track>>>, // the tracks the relay is subscribed to, key is the track alias
   pub app_config: &'static AppConfig,
 }
 
@@ -35,7 +36,7 @@ impl Server {
 
     Server {
       client_manager: Arc::new(RwLock::new(ClientManager::new())),
-      tracks: Arc::new(DashMap::new()),
+      tracks: Arc::new(RwLock::new(BTreeMap::new())),
       app_config: config,
     }
   }

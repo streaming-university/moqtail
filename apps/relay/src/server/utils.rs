@@ -2,6 +2,11 @@ use bytes::Bytes;
 use moqtail::{
   model::control::control_message::ControlMessageTrait, transport::data_stream_handler::HeaderInfo,
 };
+use once_cell::sync::Lazy;
+use std::time::Instant;
+
+// Static reference time: set when the program starts
+pub static BASE_TIME: Lazy<Instant> = Lazy::new(Instant::now);
 
 pub fn print_msg_bytes(msg: &impl ControlMessageTrait) {
   let bytes = msg.serialize();
