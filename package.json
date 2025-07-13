@@ -17,7 +17,9 @@
     "format:room-server": "npm --prefix apps/room-server run format",
     "build": "npm-run-all --continue-on-error build:moqtail build:client",
     "test": "npm-run-all --continue-on-error test:client test:moqtail",
-    "format": "npm-run-all --continue-on-error format:client format:moqtail format:room-server"
+    "format": "npm-run-all --continue-on-error format:client format:moqtail format:room-server",
+    "dev:ws": "npm --prefix apps/room-server run dev",
+    "dev:client": "npm --prefix apps/client-js run dev"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.1",

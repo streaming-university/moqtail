@@ -7,6 +7,7 @@ export interface PastObjectSource {
   readonly cache: ObjectCache
   getRange(start?: Location, end?: Location): Promise<MoqtObject[]>
 }
+
 export interface LiveObjectSource {
   readonly stream: ReadableStream<MoqtObject>
   readonly largestLocation: Location | undefined
@@ -14,11 +15,13 @@ export interface LiveObjectSource {
   onDone(listener: () => void): () => void
   stop(): void
 }
-export interface ContentSource {
+
+export interface TrackSource {
   readonly past?: PastObjectSource
   readonly live?: LiveObjectSource
 }
-class PastObjectSourceImpl implements PastObjectSource {
+
+export class StaticTrackSource implements PastObjectSource {
   readonly cache: ObjectCache
 
   constructor(cache: ObjectCache) {
@@ -30,7 +33,7 @@ class PastObjectSourceImpl implements PastObjectSource {
   }
 }
 
-class LiveObjectSourceImpl implements LiveObjectSource {
+export class LiveTrackSource implements LiveObjectSource {
   readonly stream: ReadableStream<MoqtObject>
   readonly #listeners = new Set<(obj: MoqtObject) => void>()
   readonly #doneListeners = new Set<() => void>()
@@ -93,27 +96,12 @@ class LiveObjectSourceImpl implements LiveObjectSource {
   }
 }
 
-export class StaticContentSource implements ContentSource {
-  readonly past: PastObjectSource
-
-  constructor(cache: ObjectCache) {
-    this.past = new PastObjectSourceImpl(cache)
-  }
-}
-
-export class LiveContentSource implements ContentSource {
-  readonly live: LiveObjectSource
-
-  constructor(stream: ReadableStream<MoqtObject>) {
-    this.live = new LiveObjectSourceImpl(stream)
-  }
-}
-export class HybridContentSource implements ContentSource {
+export class HybridTrackSource implements TrackSource {
   readonly past: PastObjectSource
   readonly live: LiveObjectSource
 
   constructor(cache: ObjectCache, stream: ReadableStream<MoqtObject>) {
-    this.past = new PastObjectSourceImpl(cache)
-    this.live = new LiveObjectSourceImpl(stream)
+    this.past = new StaticTrackSource(cache)
+    this.live = new LiveTrackSource(stream)
   }
 }

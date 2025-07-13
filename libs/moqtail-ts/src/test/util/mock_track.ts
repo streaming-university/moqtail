@@ -1,5 +1,5 @@
 import { Track } from '../../client/track/track'
-import { LiveContentSource } from '../../client/track/content_source'
+import { LiveTrackSource, TrackSource } from '../../client/track/content_source'
 import { FullTrackName, ObjectForwardingPreference } from '../../model/data'
 import { MoqtObject } from '../../model/data/object'
 import { Location } from '../../model/common/location'
@@ -19,7 +19,7 @@ export class MockTrack implements Track {
   public readonly fullTrackName: FullTrackName
   public readonly trackAlias: bigint
   public readonly forwardingPreference: ObjectForwardingPreference
-  public readonly contentSource: LiveContentSource
+  public readonly trackSource: TrackSource
   public readonly publisherPriority: number
 
   private groupId = 0n
@@ -45,8 +45,7 @@ export class MockTrack implements Track {
         this.stop()
       },
     })
-
-    this.contentSource = new LiveContentSource(stream)
+    this.trackSource = { live: new LiveTrackSource(stream) }
   }
   private _startProduction() {
     if (this.isProducing || !this.controller) return

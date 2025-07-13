@@ -2,7 +2,6 @@ import { ReasonPhrase } from '@/model'
 import { Subscribe, SubscribeError, SubscribeErrorCode, SubscribeOk } from '../../model/control'
 import { ControlMessageHandler } from './handler'
 import { SubscribePublication } from '../publication/subscribe'
-import { LiveContentSource, StaticContentSource } from '../track/content_source'
 import { random60bitId } from '../util/random_id'
 
 export const handlerSubscribe: ControlMessageHandler<Subscribe> = async (client, msg) => {
@@ -17,7 +16,7 @@ export const handlerSubscribe: ControlMessageHandler<Subscribe> = async (client,
     await client.controlStream.send(subscribeError)
     return
   }
-  if (!track.contentSource.live) {
+  if (!track.trackSource.live) {
     const response = new SubscribeError(
       msg.requestId,
       SubscribeErrorCode.NotSupported,
@@ -38,13 +37,12 @@ export const handlerSubscribe: ControlMessageHandler<Subscribe> = async (client,
     await client.controlStream.send(response)
     return
   }
-
   let subscribeOk: SubscribeOk
-  if (track.contentSource.live.largestLocation) {
+  if (track.trackSource.live.largestLocation) {
     subscribeOk = SubscribeOk.newAscendingWithContent(
       msg.requestId,
       0n,
-      track.contentSource.live.largestLocation,
+      track.trackSource.live.largestLocation,
       msg.subscribeParameters,
     )
   } else {

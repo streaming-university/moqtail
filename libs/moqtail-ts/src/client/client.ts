@@ -35,7 +35,6 @@ import {
 import { RecvStream } from './data_stream'
 import {
   InternalError,
-  Location,
   MoqtailError,
   ProtocolViolationError,
   SetupParameters,
@@ -53,13 +52,7 @@ import { getHandlerForControlMessage } from './handler/handler'
 import { SubscribePublication } from './publication/subscribe'
 import { FetchPublication } from './publication/fetch'
 import { random60bitId } from './util/random_id'
-
-export type MoqtailRequest =
-  | AnnounceRequest
-  | SubscribeAnnouncesRequest
-  | FetchRequest
-  | SubscribeRequest
-  | TrackStatusRequest
+import { MoqtailRequest, SubscribeOptions, SubscribeUpdateOptions, FetchOptions, MoqtailClientOptions } from './types'
 
 export class MoqtailClient {
   readonly peerSubscribeAnnounces = new Set<Tuple>() // Set of namepace prefixes peer subscribes upon.
@@ -103,19 +96,16 @@ export class MoqtailClient {
 
   private constructor() {}
 
-  static async new(
-    url: string | URL,
-    supportedVersions: number[],
-    setupParameters?: SetupParameters,
-    transportOptions?: WebTransportOptions,
-    dataStreamTimeoutMs?: number,
-    controlStreamTimeoutMs?: number,
-    callbacks?: {
-      onMessageSent?: (msg: ControlMessage) => void
-      onMessageReceived?: (msg: ControlMessage) => void
-      onSessionTerminated?: (reason?: unknown) => void
-    },
-  ): Promise<MoqtailClient> {
+  static async new(args: MoqtailClientOptions): Promise<MoqtailClient> {
+    const {
+      url,
+      supportedVersions,
+      setupParameters,
+      transportOptions,
+      dataStreamTimeoutMs,
+      controlStreamTimeoutMs,
+      callbacks,
+    } = args
     const client = new MoqtailClient()
 
     client.webTransport = new WebTransport(url, transportOptions)
@@ -135,8 +125,8 @@ export class MoqtailClient {
         client.onMessageSent,
         client.onMessageReceived,
       )
-      if (!setupParameters) setupParameters = new SetupParameters()
-      const clientSetup = new ClientSetup(supportedVersions, setupParameters.build())
+      const params = setupParameters ? setupParameters.build() : new SetupParameters().build()
+      const clientSetup = new ClientSetup(supportedVersions, params)
       client.controlStream.send(clientSetup)
       const reader = client.controlStream.stream.getReader()
       const { value: response, done } = await reader.read()
@@ -178,19 +168,25 @@ export class MoqtailClient {
   }
 
   async subscribe(
-    fullTrackName: FullTrackName,
-    priority: number, // 0 is highest, 255 is lowest. Values are rounded to nearest integer then clamped between 0 and 255
-    groupOrder: GroupOrder,
-    forward: boolean,
-    filterType: FilterType,
-    parameters?: VersionSpecificParameters,
-    trackAlias?: bigint,
-    startLocation?: Location,
-    endGroup?: bigint,
+    args: SubscribeOptions,
   ): Promise<SubscribeError | { requestId: bigint; stream: ReadableStream<MoqtObject> }> {
     this.#ensureActive()
     try {
+      let {
+        fullTrackName,
+        priority,
+        groupOrder,
+        forward,
+        filterType,
+        parameters,
+        trackAlias,
+        startLocation,
+        endGroup,
+      } = args
+
       let msg: Subscribe
+      if (typeof endGroup === 'number') endGroup = BigInt(endGroup)
+      if (typeof trackAlias === 'number') trackAlias = BigInt(trackAlias)
       if (!trackAlias) trackAlias = random60bitId()
       if (!parameters) parameters = new VersionSpecificParameters()
       switch (filterType) {
@@ -277,8 +273,9 @@ export class MoqtailClient {
     }
   }
 
-  async unsubscribe(requestId: bigint): Promise<void> {
+  async unsubscribe(requestId: bigint | number): Promise<void> {
     this.#ensureActive()
+    if (typeof requestId === 'number') requestId = BigInt(requestId)
     try {
       if (this.requests.has(requestId)) {
         const request = this.requests.get(requestId)!
@@ -299,15 +296,9 @@ export class MoqtailClient {
     }
   }
 
-  async subscribeUpdate(
-    requestId: bigint,
-    startLocation: Location,
-    endGroup: bigint,
-    priority: number, // 0 is highest, 255 is lowest. Values are rounded to nearest integer then clamped between 0 and 255
-    forward: boolean,
-    parameters?: VersionSpecificParameters,
-  ): Promise<void> {
+  async subscribeUpdate(args: SubscribeUpdateOptions): Promise<void> {
     this.#ensureActive()
+    let { requestId, priority, forward, parameters, startLocation, endGroup } = args
     if (startLocation.group >= endGroup)
       throw new ProtocolViolationError('MoqtailClient.subscribeUpdate', 'End group must be greater than start group')
     try {
@@ -347,24 +338,7 @@ export class MoqtailClient {
   // TODO: figure out how to handle joining fetch types
   // Do we need an existing subscription? What happens if that subscription forwards objects?
   // Will the subscribe objects be pushed through this FetchRequest.controller?
-  async fetch(args: {
-    priority: number // 0 is highest, 255 is lowest. Values are rounded to nearest integer then clamped between 0 and 255
-    groupOrder: GroupOrder
-    typeAndProps:
-      | {
-          type: FetchType.StandAlone
-          props: { fullTrackName: FullTrackName; startLocation: Location; endLocation: Location }
-        }
-      | {
-          type: FetchType.Relative
-          props: { joiningRequestId: bigint; joiningStart: bigint }
-        }
-      | {
-          type: FetchType.Absolute
-          props: { joiningRequestId: bigint; joiningStart: bigint }
-        }
-    parameters?: VersionSpecificParameters
-  }): Promise<FetchError | { requestId: bigint; stream: ReadableStream<MoqtObject> }> {
+  async fetch(args: FetchOptions): Promise<FetchError | { requestId: bigint; stream: ReadableStream<MoqtObject> }> {
     this.#ensureActive()
     try {
       const { priority, groupOrder, typeAndProps, parameters } = args
@@ -440,7 +414,8 @@ export class MoqtailClient {
   async fetchCancel(requestId: bigint | number) {
     this.#ensureActive()
     try {
-      const request = this.requests.get(BigInt(requestId))
+      if (typeof requestId === 'number') requestId = BigInt(requestId)
+      const request = this.requests.get(requestId)
       if (request) {
         if (request instanceof Fetch) {
           // TODO: Fetch cancel, mark data streams for closure
@@ -456,9 +431,11 @@ export class MoqtailClient {
     }
   }
 
-  async trackStatusRequest(msg: TrackStatusRequestMessage) {
+  async trackStatusRequest(fullTrackName: FullTrackName, parameters?: VersionSpecificParameters) {
     this.#ensureActive()
     try {
+      const params = parameters ? parameters.build() : new VersionSpecificParameters().build()
+      const msg = new TrackStatusRequestMessage(this.#nextClientRequestId, fullTrackName, params)
       const request = new TrackStatusRequest(msg.requestId, msg)
       this.controlStream.send(msg)
       return await request
@@ -476,8 +453,8 @@ export class MoqtailClient {
     this.#ensureActive()
     try {
       // TODO: Check for duplicate announces
-      if (!parameters) parameters = new VersionSpecificParameters()
-      const msg = new Announce(this.#nextClientRequestId, trackNamespace, parameters.build())
+      const params = parameters ? parameters.build() : new VersionSpecificParameters().build()
+      const msg = new Announce(this.#nextClientRequestId, trackNamespace, params)
       const request = new AnnounceRequest(msg.requestId, msg)
       this.requests.set(msg.requestId, request)
       this.controlStream.send(msg)

@@ -3,7 +3,6 @@ import { Fetch, FetchError, FetchErrorCode, FetchOk, FetchType } from '../../mod
 import { ControlMessageHandler } from './handler'
 import { SubscribePublication } from '../publication/subscribe'
 import { FetchPublication } from '../publication/fetch'
-import { LiveContentSource } from '../track/content_source'
 
 export const handlerFetch: ControlMessageHandler<Fetch> = async (client, msg) => {
   // TODO: Use fetch parameters and handle authorization
@@ -33,7 +32,7 @@ export const handlerFetch: ControlMessageHandler<Fetch> = async (client, msg) =>
     return
   }
 
-  if (track.contentSource instanceof LiveContentSource) {
+  if (!track.trackSource.past) {
     const response = new FetchError(
       msg.requestId,
       FetchErrorCode.NotSupported,

@@ -1,16 +1,16 @@
 import { ExtensionHeaders } from '../../../../libs/moqtail-ts/src/model/extension_header/extension_header'
 import { ObjectForwardingPreference } from '../../../../libs/moqtail-ts/src/model/data/constant'
 import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client'
-import { Announce, ClientSetup, GroupOrder, Subscribe } from '../../../../libs/moqtail-ts/src/model/control'
-import { SetupParameters } from '../../../../libs/moqtail-ts/src/model/parameter/setup_parameter'
+import { FilterType, GroupOrder, SubscribeError } from '../../../../libs/moqtail-ts/src/model/control'
 import { Tuple } from '../../../../libs/moqtail-ts/src/model/common/tuple'
-import { LiveContentSource } from '../../../../libs/moqtail-ts/src/client/track/content_source'
+import { LiveTrackSource } from '../../../../libs/moqtail-ts/src/client/track/content_source'
 import { FullTrackName, MoqtObject } from '../../../../libs/moqtail-ts/src/model/data'
 import { Location } from '../../../../libs/moqtail-ts/src/model/common/location'
 import { PlayoutBuffer } from '../../../../libs/moqtail-ts/src/util/playout_buffer'
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
 import { RefObject } from 'react'
 import { ClockNormalizer } from '../../../../libs/moqtail-ts/src/util/clock_normalizer'
+import { SubscribeOptions } from '../../../../libs/moqtail-ts/src/client/types'
 
 let clockNormal: ClockNormalizer
 let recalibrationInterval: NodeJS.Timeout | null = null
@@ -46,23 +46,12 @@ export { cleanupClockNormalizer }
 
 setupClockNormalizer()
 
-async function initTransport(url: string) {
-  const transport = new WebTransport(url)
-  await transport.ready
-  return transport
-}
-
-export async function sendClientSetup(relayConnectionUrl: string) {
-  const webTransport = await initTransport(relayConnectionUrl)
-  const setupParams = new SetupParameters()
-  const clientSetup = new ClientSetup([0xff00000b], setupParams.build())
-  const moqClient = await MoqtailClient.new(clientSetup, webTransport)
-  return moqClient
+export async function connectToRelay(url: string) {
+  return await MoqtailClient.new({ url, supportedVersions: [0xff00000b] })
 }
 
 export async function announceNamespaces(moqClient: MoqtailClient, namespace: Tuple) {
-  const announceMessage = new Announce(moqClient.nextClientRequestId, namespace, [])
-  await moqClient.announce(announceMessage)
+  await moqClient.announce(namespace)
 }
 
 export function setupTracks(
@@ -101,26 +90,29 @@ export function setupTracks(
       chatStreamController = null
     },
   })
-  const audioContentSource = new LiveContentSource(audioStream)
+  const audioContentSource = new LiveTrackSource(audioStream)
   moqClient.addOrUpdateTrack({
     fullTrackName: audioFullTrackName,
-    trackAlias: audioTrackAlias,
     forwardingPreference: ObjectForwardingPreference.Subgroup,
-    contentSource: audioContentSource,
+    trackSource: { live: audioContentSource },
+    publisherPriority: 128, // Magic number
+    trackAlias: audioTrackAlias,
   })
-  const videoContentSource = new LiveContentSource(videoStream)
+  const videoContentSource = new LiveTrackSource(videoStream)
   moqClient.addOrUpdateTrack({
     fullTrackName: videoFullTrackName,
-    trackAlias: videoTrackAlias,
     forwardingPreference: ObjectForwardingPreference.Subgroup,
-    contentSource: videoContentSource,
+    trackSource: { live: videoContentSource },
+    publisherPriority: 128, // Magic number
+    trackAlias: videoTrackAlias,
   })
-  const chatContentSource = new LiveContentSource(chatStream)
+  const chatContentSource = new LiveTrackSource(chatStream)
   moqClient.addOrUpdateTrack({
     fullTrackName: chatFullTrackName,
-    trackAlias: chatTrackAlias,
     forwardingPreference: ObjectForwardingPreference.Subgroup,
-    contentSource: chatContentSource,
+    trackSource: { live: chatContentSource },
+    publisherPriority: 128, // Magic number
+    trackAlias: chatTrackAlias,
   })
   return {
     audioStream,
@@ -647,13 +639,14 @@ async function setupAudioPlayback(audioContext: AudioContext) {
 
 function subscribeAndPipeToWorker(
   moqClient: MoqtailClient,
-  subscribeMsg: Subscribe,
+  subscribeArgs: SubscribeOptions,
   worker: Worker,
   type: 'moq' | 'moq-audio',
 ) {
-  moqClient.subscribe(subscribeMsg).then((stream) => {
+  moqClient.subscribe(subscribeArgs).then((response) => {
     window.appSettings.playoutBufferConfig.maxLatencyMs
-    if (stream instanceof ReadableStream) {
+    if (!(response instanceof SubscribeError)) {
+      const { requestId, stream } = response
       const buffer = new PlayoutBuffer(stream, {
         targetLatencyMs: window.appSettings.playoutBufferConfig.targetLatencyMs,
         maxLatencyMs: window.appSettings.playoutBufferConfig.maxLatencyMs,
@@ -691,7 +684,7 @@ function subscribeAndPipeToWorker(
       })()
       */
     } else {
-      console.error('Subscribe failed:', stream)
+      console.error('Subscribe Error:', response)
     }
   })
 }
@@ -761,13 +754,8 @@ export function useVideoPublisher(
     }
     video.muted = true
     announceNamespaces(moqClient, videoFullTrackName.namespace)
-    let tracks = setupTracks(
-      moqClient,
-      audioFullTrackName,
-      videoFullTrackName,
-      BigInt(audioTrackAlias),
-      BigInt(videoTrackAlias),
-    )
+    // TODO: Add chat track
+    let tracks = setupTracks(moqClient, audioFullTrackName, videoFullTrackName)
 
     // Set up periodic recalibration for publisher
     const publisherRecalibrationInterval = setInterval(async () => {
@@ -846,29 +834,36 @@ export function useVideoSubscriber(
     handleWorkerMessages(worker, audioNode, videoTelemetry, audioTelemetry)
 
     console.log('Going to subscribe to audio')
-    const subscribeAudio = Subscribe.newLatestObject(
-      moqClient.nextClientRequestId,
-      BigInt(audioTrackAlias),
-      audioFullTrackName,
-      0,
-      GroupOrder.Original,
-      true,
-      [],
+
+    subscribeAndPipeToWorker(
+      moqClient,
+      {
+        fullTrackName: audioFullTrackName,
+        groupOrder: GroupOrder.Original,
+        filterType: FilterType.LatestObject,
+        forward: true,
+        priority: 0,
+        trackAlias: audioTrackAlias,
+      },
+      worker,
+      'moq-audio',
     )
-    subscribeAndPipeToWorker(moqClient, subscribeAudio, worker, 'moq-audio')
     console.log('Subscribed to audio', audioFullTrackName)
 
-    const subscribeVideo = Subscribe.newLatestObject(
-      moqClient.nextClientRequestId,
-      BigInt(videoTrackAlias),
-      videoFullTrackName,
-      0,
-      GroupOrder.Original,
-      true,
-      [],
-    )
     console.log('Subscribed to video', videoFullTrackName)
-    subscribeAndPipeToWorker(moqClient, subscribeVideo, worker, 'moq')
+    subscribeAndPipeToWorker(
+      moqClient,
+      {
+        fullTrackName: videoFullTrackName,
+        groupOrder: GroupOrder.Original,
+        filterType: FilterType.LatestObject,
+        forward: true,
+        priority: 0,
+        trackAlias: videoTrackAlias,
+      },
+      worker,
+      'moq',
+    )
 
     return () => {
       clearInterval(subscriberRecalibrationInterval)
@@ -889,41 +884,41 @@ export async function subscribeToChatTrack({
   chatFullTrackName: FullTrackName
   onMessage: (msg: any) => void
 }) {
-  const subscribeMsg = Subscribe.newLatestObject(
-    moqClient.nextClientRequestId,
-    BigInt(chatTrackAlias),
-    chatFullTrackName,
-    0,
-    GroupOrder.Original,
-    true,
-    [],
-  )
-
-  moqClient.subscribe(subscribeMsg).then((stream) => {
-    if (stream instanceof ReadableStream) {
-      const reader = stream.getReader()
-      ;(async () => {
-        while (true) {
-          const { done, value: obj } = await reader.read()
-          console.log('Received chat object:', obj?.location?.group?.toString(), obj?.location?.object?.toString())
-          if (!(obj instanceof MoqtObject)) throw new Error('Expected MoqtObject, got: ' + obj)
-          if (done) break
-          if (!obj.payload) {
-            console.warn('Received MoqtObject without payload, skipping:', obj)
-            continue
+  moqClient
+    .subscribe({
+      fullTrackName: chatFullTrackName,
+      groupOrder: GroupOrder.Original,
+      filterType: FilterType.LatestObject,
+      forward: true,
+      priority: 0,
+      trackAlias: chatTrackAlias,
+    })
+    .then((response) => {
+      if (!(response instanceof SubscribeError)) {
+        const { requestId, stream } = response
+        const reader = stream.getReader()
+        ;(async () => {
+          while (true) {
+            const { done, value: obj } = await reader.read()
+            console.log('Received chat object:', obj?.location?.group?.toString(), obj?.location?.object?.toString())
+            if (!(obj instanceof MoqtObject)) throw new Error('Expected MoqtObject, got: ' + obj)
+            if (done) break
+            if (!obj.payload) {
+              console.warn('Received MoqtObject without payload, skipping:', obj)
+              continue
+            }
+            try {
+              const decoded = new TextDecoder().decode(obj.payload)
+              const msgObj = JSON.parse(decoded)
+              console.log('Decoded chat message:', msgObj)
+              onMessage(msgObj)
+            } catch (e) {
+              console.error('Failed to decode chat message', e)
+            }
           }
-          try {
-            const decoded = new TextDecoder().decode(obj.payload)
-            const msgObj = JSON.parse(decoded)
-            console.log('Decoded chat message:', msgObj)
-            onMessage(msgObj)
-          } catch (e) {
-            console.error('Failed to decode chat message', e)
-          }
-        }
-      })()
-    } else {
-      console.error('Subscribe failed:', stream)
-    }
-  })
+        })()
+      } else {
+        console.error('Subscribe Error:', response)
+      }
+    })
 }

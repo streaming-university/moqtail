@@ -12,7 +12,6 @@ import {
 import { SendStream } from '../data_stream'
 import { SubgroupHeader } from '@/model/data/subgroup_header'
 import { MoqtObject } from '@/model/data/object'
-import { LiveContentSource } from '../track/content_source'
 import { SimpleLock } from '../../util/simple_lock'
 import { getTransportPriority } from '../util/priority'
 export class SubscribePublication {
@@ -105,15 +104,15 @@ export class SubscribePublication {
   }
 
   async publish(): Promise<void> {
-    if (!this.track.contentSource.live)
+    if (!this.track.trackSource.live)
       throw new InternalError('SubscribePublication.publish', 'Track does not support live content')
 
     //TODO: HybridContent is also allowed
-    this.track.contentSource.live.onDone(() => {
+    this.track.trackSource.live.onDone(() => {
       this.done(SubscribeDoneStatusCode.TrackEnded)
     })
 
-    this.#cancelPublishing = this.track.contentSource.live.onNewObject(async (obj: MoqtObject) => {
+    this.#cancelPublishing = this.track.trackSource.live.onNewObject(async (obj: MoqtObject) => {
       if (this.#isCompleted) return
       if (!this.#forward) return
       if (!this.#isStarted && this.#startLocation.compare(obj.location) <= 0) {
