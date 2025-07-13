@@ -188,6 +188,8 @@ export async function startAudioEncoder({
   console.log('Starting audio encoder with group ID:', audioGroupId)
   let audioObjectId = 0n
   let currentAudioGroupId = audioGroupId
+  let shouldEncode = true
+
   setInterval(() => {
     currentAudioGroupId += 2
   }, 2000)
@@ -205,6 +207,8 @@ export async function startAudioEncoder({
   if (typeof AudioEncoder !== 'undefined') {
     audioEncoder = new AudioEncoder({
       output: (chunk) => {
+        if (!shouldEncode) return
+
         const payload = new Uint8Array(chunk.byteLength)
         chunk.copyTo(payload)
 
@@ -235,6 +239,8 @@ export async function startAudioEncoder({
   audioNode.port.onmessage = (event) => {
     // console.log('Received audio data from AudioWorkletNode:', event.data);
     if (!audioEncoder) return
+    if (!shouldEncode) return
+
     // console.log('Audio data received, processing...');
     const samples = event.data as Float32Array
     pcmBuffer.push(samples)
@@ -270,7 +276,16 @@ export async function startAudioEncoder({
     }
   }
 
-  return { audioNode, audioEncoder }
+  return {
+    audioNode,
+    audioEncoder,
+    setEncoding: (enabled: boolean) => {
+      shouldEncode = enabled
+      if (!enabled) {
+        pcmBuffer = []
+      }
+    },
+  }
 }
 
 export function initializeVideoEncoder({
