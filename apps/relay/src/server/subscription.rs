@@ -22,12 +22,11 @@ use wtransport::SendStream;
 #[derive(Debug, Clone)]
 pub struct Subscription {
   pub subscribe_message: Subscribe,
-  pub created_at: Instant,
-
   subscriber: Arc<RwLock<MOQTClient>>,
   event_rx: Arc<Mutex<Option<Receiver<TrackEvent>>>>,
   send_streams: Arc<RwLock<BTreeMap<String, Arc<Mutex<SendStream>>>>>,
   finished: Arc<RwLock<bool>>, // Indicates if the subscription is finished
+  #[allow(dead_code)]
   cache: TrackCache,
 }
 
@@ -40,7 +39,6 @@ impl Subscription {
   ) -> Self {
     Self {
       subscribe_message,
-      created_at: Instant::now(),
       subscriber,
       event_rx,
       send_streams: Arc::new(RwLock::new(BTreeMap::new())),

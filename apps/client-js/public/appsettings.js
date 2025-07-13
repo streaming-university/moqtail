@@ -5,18 +5,18 @@ window.appSettings = {
   posthog_host: 'https://eu.i.posthog.com',
   posthog_code: '***',
   videoEncoderConfig: {
-    codec: 'av01.0.15M.08',
+    codec: 'avc1.42E01E',
     width: 640,
     height: 360,
     bitrate: 300_000,
     framerate: 25,
     latencyMode: 'realtime',
-    hardwareAcceleration: 'no-preference',
+    hardwareAcceleration: 'prefer-software',
   },
   videoDecoderConfig: {
-    codec: 'av01.0.15M.08',
+    codec: 'avc1.42E01E',
     optimizeForLatency: true,
-    hardwareAcceleration: 'no-preference',
+    hardwareAcceleration: 'prefer-software',
   },
   audioEncoderConfig: {
     codec: 'opus',

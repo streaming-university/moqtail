@@ -281,7 +281,7 @@ impl Session {
           );
           // Close the stream for all subscribers
           if let Some(track) = &current_track {
-            track.stream_closed(header_id.clone()).await;
+            return track.stream_closed(header_id.clone()).await;
           }
           break;
         }

@@ -26,8 +26,10 @@ pub struct Track {
   #[allow(dead_code)]
   pub track_name: String,
   subscriptions: Arc<RwLock<BTreeMap<usize, Arc<RwLock<Subscription>>>>>,
+  #[allow(dead_code)]
   pub(crate) cache: TrackCache,
   event_tx: Arc<Sender<TrackEvent>>,
+  #[allow(dead_code)]
   event_rx: Arc<Receiver<TrackEvent>>,
 }
 

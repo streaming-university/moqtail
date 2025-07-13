@@ -11,11 +11,13 @@ use crate::server::utils;
 
 #[derive(Debug, Clone)]
 pub struct TrackCache {
+  #[allow(dead_code)]
   pub track_alias: u64,
   headers: Arc<RwLock<BTreeMap<String, HeaderInfo>>>,
   objects: Arc<RwLock<BTreeMap<String, Vec<Object>>>>,
   // Ring buffer implementation: keep track of header IDs in order of insertion
   header_queue: Arc<RwLock<VecDeque<String>>>,
+  #[allow(dead_code)]
   cache_size: usize,
 }
 
@@ -30,6 +32,7 @@ impl TrackCache {
     }
   }
 
+  #[allow(dead_code)]
   pub async fn add_header(&self, header: HeaderInfo) -> Option<HeaderInfo> {
     let header_id = utils::build_header_id(&header);
 
