@@ -10,7 +10,7 @@ use std::time::Instant;
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
 use tokio::sync::broadcast::{Receiver, Sender};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 #[derive(Debug, Clone)]
 pub enum TrackEvent {
   Header { header: HeaderInfo },
@@ -120,18 +120,18 @@ impl Track {
   }
 
   pub async fn new_object(&self, header_id: String, object: &Object) -> Result<(), anyhow::Error> {
-    /*self
-    .cache
-    .add_object(header_id.clone(), object.clone())
-    .await;*/
-
-    info!(
+    debug!(
       "new_object: track: {:?} location: {:?} stream_id: {} diff_ms: {}",
       object.track_alias,
       object.location,
       &header_id,
       (Instant::now() - *utils::BASE_TIME).as_millis()
     );
+
+    self
+      .cache
+      .add_object(header_id.clone(), object.clone())
+      .await;
 
     let object_event = TrackEvent::Object {
       header_id: header_id.clone(),

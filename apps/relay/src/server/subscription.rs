@@ -235,6 +235,7 @@ impl Subscription {
       // TODO: revisit this logic to set priority based on the subscription
       let priority = i32::MAX
         - (Instant::now().duration_since(*utils::BASE_TIME).as_millis() % i32::MAX as u128) as i32;
+
       let send_stream = match self
         .subscriber
         .read()
@@ -267,9 +268,7 @@ impl Subscription {
     stream_id: String,
     send_stream: Arc<Mutex<SendStream>>,
   ) -> Result<()> {
-    // Handle the object information
-    // debug!("Handling object: {:?} stream_id: {} diff_ms: {}", object, &stream_id, (Instant::now() - self.created_at).as_millis());
-    info!(
+    debug!(
       "Handling object track: {} location: {:?} stream_id: {} diff_ms: {}",
       object.track_alias,
       object.location,
