@@ -20,19 +20,6 @@ async function setupClockNormalizer() {
     window.appSettings.clockNormalizationConfig.timeServerUrl,
     window.appSettings.clockNormalizationConfig.numberOfSamples,
   )
-
-  // Recalibrate every 10 seconds
-  if (recalibrationInterval) {
-    clearInterval(recalibrationInterval)
-  }
-
-  recalibrationInterval = setInterval(async () => {
-    try {
-      await clockNormal.recalibrate()
-    } catch (error) {
-      console.warn('Failed to recalibrate clock normalizer:', error)
-    }
-  }, 10 * 1000)
 }
 
 function cleanupClockNormalizer() {
@@ -137,7 +124,6 @@ export function initializeChatMessageSender({
   chatStreamController,
   publisherPriority = 1,
   objectForwardingPreference,
-  offset = 0,
   initialChatGroupId = 10001,
   initialChatObjectId = 0,
 }: {
@@ -145,7 +131,6 @@ export function initializeChatMessageSender({
   chatStreamController: ReadableStreamDefaultController<any> | null
   publisherPriority?: number
   objectForwardingPreference: any
-  offset?: number
   initialChatGroupId?: number
   initialChatObjectId?: number
 }) {
@@ -157,7 +142,7 @@ export function initializeChatMessageSender({
       new Location(BigInt(initialChatGroupId++), BigInt(initialChatObjectId)),
       publisherPriority,
       objectForwardingPreference,
-      BigInt(Math.round(performance.timeOrigin + performance.now() + offset)),
+      BigInt(Math.round(clockNormal.now())),
       null,
       payload,
     )
@@ -174,7 +159,6 @@ export async function startAudioEncoder({
   audioStreamController,
   publisherPriority,
   audioGroupId,
-  offset,
   objectForwardingPreference,
 }: {
   stream: MediaStream
@@ -182,7 +166,6 @@ export async function startAudioEncoder({
   audioStreamController: ReadableStreamDefaultController<MoqtObject> | null
   publisherPriority: number
   audioGroupId: number
-  offset: number
   objectForwardingPreference: ObjectForwardingPreference
 }) {
   console.log('Starting audio encoder with group ID:', audioGroupId)
@@ -212,7 +195,7 @@ export async function startAudioEncoder({
         const payload = new Uint8Array(chunk.byteLength)
         chunk.copyTo(payload)
 
-        const captureTime = Math.round(performance.timeOrigin + performance.now() + offset)
+        const captureTime = Math.round(clockNormal.now())
         const locHeaders = new ExtensionHeaders().addCaptureTimestamp(captureTime)
 
         // console.log('AudioEncoder output chunk:', chunk);
@@ -221,7 +204,7 @@ export async function startAudioEncoder({
           new Location(BigInt(currentAudioGroupId), BigInt(audioObjectId++)),
           publisherPriority,
           objectForwardingPreference,
-          BigInt(Math.round(performance.timeOrigin + performance.now() + offset)),
+          BigInt(Math.round(clockNormal.now())),
           locHeaders.build(),
           payload,
         )
@@ -292,13 +275,11 @@ export function initializeVideoEncoder({
   videoFullTrackName,
   videoStreamController,
   publisherPriority,
-  offset,
   objectForwardingPreference,
 }: {
   videoFullTrackName: FullTrackName
   videoStreamController: ReadableStreamDefaultController<MoqtObject> | null
   publisherPriority: number
-  offset: number
   objectForwardingPreference: ObjectForwardingPreference
 }) {
   let videoEncoder: VideoEncoder | null = null
@@ -329,7 +310,7 @@ export function initializeVideoEncoder({
         let captureTime = pendingVideoTimestamps.shift()
         if (captureTime === undefined) {
           console.warn('No capture time available for video frame, skipping')
-          captureTime = Math.round(performance.timeOrigin + performance.now() + offset)
+          captureTime = Math.round(clockNormal.now())
         }
 
         const locHeaders = new ExtensionHeaders()
@@ -397,7 +378,6 @@ export function initializeVideoEncoder({
     encoderActive,
     pendingVideoTimestamps,
     frameCounter,
-    offset,
     start: async (stream: MediaStream) => {
       // Stop previous encoder and reset state
       if (videoEncoder && encoderActive) {
@@ -427,8 +407,7 @@ export function initializeVideoEncoder({
             const result = await reader.read()
             if (result.done) break
 
-            // Use 0 timestamp for fake tracks, normal timing for real tracks
-            const captureTime = Math.round(performance.timeOrigin + performance.now() + offset)
+            const captureTime = Math.round(clockNormal.now())
             pendingVideoTimestamps.push(captureTime)
 
             try {
@@ -473,14 +452,12 @@ export async function startVideoEncoder({
   videoFullTrackName,
   videoStreamController,
   publisherPriority,
-  offset,
   objectForwardingPreference,
 }: {
   stream: MediaStream
   videoFullTrackName: FullTrackName
   videoStreamController: ReadableStreamDefaultController<MoqtObject> | null
   publisherPriority: number
-  offset: number
   objectForwardingPreference: ObjectForwardingPreference
 }) {
   if (!stream) {
@@ -516,11 +493,11 @@ export async function startVideoEncoder({
         let captureTime = pendingVideoTimestamps.shift()
         if (captureTime === undefined) {
           console.warn('No capture time available for video frame, skipping')
-          captureTime = Math.round(performance.timeOrigin + performance.now() + offset)
+          captureTime = Math.round(clockNormal.now())
         }
 
         const locHeaders = new ExtensionHeaders()
-          .addCaptureTimestamp(clockNormal.now())
+          .addCaptureTimestamp(captureTime)
           .addVideoFrameMarking(chunk.type === 'key' ? 1 : 0)
 
         const desc = meta?.decoderConfig?.description
@@ -563,8 +540,6 @@ export async function startVideoEncoder({
     return { stop: async () => {} }
   }
 
-  const isFake = (videoTrack as any).isFake === true
-
   videoReader = new (window as any).MediaStreamTrackProcessor({
     track: videoTrack,
   }).readable.getReader()
@@ -575,7 +550,7 @@ export async function startVideoEncoder({
         const result = await reader.read()
         if (result.done) break
 
-        const captureTime = Math.round(performance.timeOrigin + performance.now() + offset)
+        const captureTime = Math.round(clockNormal.now())
         pendingVideoTimestamps.push(captureTime)
 
         // Our video is 25 fps. Each 2s, we can send a new keyframe.
@@ -628,13 +603,12 @@ export async function startVideoEncoder({
   return { videoEncoder, videoReader, stop }
 }
 
-function initWorkerAndCanvas(canvas: HTMLCanvasElement, offset: number) {
+function initWorkerAndCanvas(canvas: HTMLCanvasElement) {
   const worker = new Worker(new URL('@app/workers/decoderWorker.ts', import.meta.url), { type: 'module' })
   const offscreen = canvas.transferControlToOffscreen()
-  worker.postMessage(
-    { type: 'init', canvas: offscreen, offset, decoderConfig: window.appSettings.videoDecoderConfig },
-    [offscreen],
-  )
+  worker.postMessage({ type: 'init', canvas: offscreen, decoderConfig: window.appSettings.videoDecoderConfig }, [
+    offscreen,
+  ])
   return worker
 }
 
@@ -742,7 +716,8 @@ export function useVideoPublisher(
       window.appSettings.clockNormalizationConfig.timeServerUrl,
       window.appSettings.clockNormalizationConfig.numberOfSamples,
     )
-    let offset = normalizer.getSkew()
+    // Update the global clockNormal instance
+    clockNormal = normalizer
     const video = videoRef.current
     if (!video) {
       console.error('Video element is not available')
@@ -769,24 +744,11 @@ export function useVideoPublisher(
       BigInt(videoTrackAlias),
     )
 
-    // Set up periodic recalibration for publisher
-    const publisherRecalibrationInterval = setInterval(async () => {
-      try {
-        const newOffset = await normalizer.recalibrate()
-        offset = newOffset
-        // Note: The offset is used in encoder functions, but they capture it at creation time
-        // For real-time updates, we'd need to modify the encoder functions to accept dynamic offsets
-      } catch (error) {
-        console.warn('Failed to recalibrate publisher clock normalizer:', error)
-      }
-    }, 10 * 1000)
-
     const videoPromise = startVideoEncoder({
       stream,
       videoFullTrackName,
       videoStreamController: tracks.getVideoStreamController(),
       publisherPriority: 1,
-      offset,
       objectForwardingPreference: ObjectForwardingPreference.Subgroup,
     })
 
@@ -796,15 +758,12 @@ export function useVideoPublisher(
       audioStreamController: tracks.getAudioStreamController(),
       publisherPriority: 1,
       audioGroupId: 0,
-      offset,
       objectForwardingPreference: ObjectForwardingPreference.Subgroup,
     })
 
-    const [videoEncoderResult, audioEncoderResult] = await Promise.all([videoPromise, audioPromise])
+    await Promise.all([videoPromise, audioPromise])
 
-    return () => {
-      clearInterval(publisherRecalibrationInterval)
-    }
+    return () => {}
   }
   return setup
 }
@@ -824,24 +783,15 @@ export function useVideoSubscriber(
       window.appSettings.clockNormalizationConfig.timeServerUrl,
       window.appSettings.clockNormalizationConfig.numberOfSamples,
     )
-    const offset = normalizer.getSkew()
+    // Update the global clockNormal instance
+    clockNormal = normalizer
     const canvas = canvasRef.current
     console.log('Now will check for canvas ref')
     if (!canvas) return
     console.log('Worker and audio node is going to be initialized')
-    const worker = initWorkerAndCanvas(canvas, offset)
+    const worker = initWorkerAndCanvas(canvas)
     const audioNode = await setupAudioPlayback(new AudioContext({ sampleRate: 48000 }))
     console.log('Worker and audio node initialized')
-
-    const subscriberRecalibrationInterval = setInterval(async () => {
-      try {
-        const newOffset = await normalizer.recalibrate()
-        // Update the worker with the new offset
-        worker.postMessage({ type: 'update-offset', offset: newOffset })
-      } catch (error) {
-        console.warn('Failed to recalibrate subscriber clock normalizer:', error)
-      }
-    }, 10 * 1000)
 
     handleWorkerMessages(worker, audioNode, videoTelemetry, audioTelemetry)
 
@@ -871,7 +821,6 @@ export function useVideoSubscriber(
     subscribeAndPipeToWorker(moqClient, subscribeVideo, worker, 'moq')
 
     return () => {
-      clearInterval(subscriberRecalibrationInterval)
       worker.terminate()
     }
   }
