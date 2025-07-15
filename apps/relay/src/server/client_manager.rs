@@ -5,7 +5,6 @@ use tokio::sync::RwLock;
 use tracing::{debug, info};
 
 pub(crate) struct ClientManager {
-  // TODO: get rid of dashmap and use RwLock with BTree
   pub clients: Arc<RwLock<BTreeMap<usize, Arc<RwLock<MOQTClient>>>>>,
 }
 

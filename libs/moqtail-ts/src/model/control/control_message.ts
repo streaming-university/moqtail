@@ -1,11 +1,11 @@
 import { FrozenByteBuffer } from '../common/byte_buffer'
-import { ControlMessageType, controlMessageTypeFromBigInt, GroupOrder } from './constant'
+import { ControlMessageType, controlMessageTypeFromBigInt, FetchType, GroupOrder } from './constant'
 import { Announce } from './announce'
 import { AnnounceCancel } from './announce_cancel'
 import { AnnounceError } from './announce_error'
 import { AnnounceOk } from './announce_ok'
 import { ClientSetup } from './client_setup'
-import { Fetch, JoiningFetchProps } from './fetch'
+import { Fetch } from './fetch'
 import { FetchCancel } from './fetch_cancel'
 import { FetchError } from './fetch_error'
 import { FetchOk } from './fetch_ok'
@@ -179,17 +179,18 @@ if (import.meta.vitest) {
         const requestId = 161803n
         const subscriberPriority = 15
         const groupOrder = GroupOrder.Descending
-        const joiningFetchProps = new JoiningFetchProps(119n, 73n)
+        const joiningRequestId = 119n
+        const joiningStart = 73n
+        const type = FetchType.Relative
         const parameters = [
           KeyValuePair.tryNewVarInt(4444, 12321n),
           KeyValuePair.tryNewBytes(1, new TextEncoder().encode('fetch me ok')),
         ]
-        return Fetch.newAbsolute(
+        return new Fetch(
           requestId,
           subscriberPriority,
           groupOrder,
-          joiningFetchProps.joiningRequestId,
-          joiningFetchProps.joiningStart,
+          { type, props: { joiningRequestId, joiningStart } },
           parameters,
         )
       }

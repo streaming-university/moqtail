@@ -1,8 +1,11 @@
 import { Fetch, FetchError, FetchOk, MoqtObject } from '@/model'
 
+// TODO: add timeout mechanism for cancelled requests
+// (we cant know how many in-flight objects there are)
 export class FetchRequest implements PromiseLike<FetchOk | FetchError> {
   public readonly requestId: bigint
   public readonly message: Fetch
+  // TODO: add lateinit attributes from FetchOk for object validation in dataRecvLoop
   private _resolve!: (value: FetchOk | FetchError | PromiseLike<FetchOk | FetchError>) => void
   private _reject!: (reason?: any) => void
   private promise: Promise<FetchOk | FetchError>
@@ -11,8 +14,8 @@ export class FetchRequest implements PromiseLike<FetchOk | FetchError> {
   public isActive: boolean = true
   public isResolved: boolean = false
 
-  constructor(requestId: bigint, message: Fetch) {
-    this.requestId = requestId
+  constructor(message: Fetch) {
+    this.requestId = message.requestId
     this.message = message
     this.stream = new ReadableStream<MoqtObject>({
       start: (controller) => {

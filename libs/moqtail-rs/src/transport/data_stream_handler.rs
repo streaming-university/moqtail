@@ -211,11 +211,11 @@ pub struct RecvDataStream {
 
 impl RecvDataStream {
   pub fn new(
-    recv_stream: Arc<Mutex<RecvStream>>,
+    recv_stream: RecvStream,
     pending_fetchs: Arc<RwLock<BTreeMap<u64, FetchRequest>>>, // Mutable borrow to potentially remove entry
   ) -> Self {
     Self {
-      recv_stream,
+      recv_stream: Arc::new(Mutex::new(recv_stream)),
       header_info: Arc::new(Mutex::new(None)), // Initially no header info
       pending_fetchs,
       objects: Arc::new(RwLock::new(VecDeque::new())), // Initialize the object buffer
@@ -304,7 +304,6 @@ impl RecvDataStream {
 
       let stream = recv_stream.clone();
       let mut stream = stream.lock().await;
-      debug!("RecvDataStream::new() Locking stream for reading");
 
       tokio::select! {
           biased;
@@ -319,18 +318,18 @@ impl RecvDataStream {
             match read_result {
               Ok(Some(n)) => {
                 if n > 0 {
-                  debug!("RecvDataStream::read Read {} bytes", n);
+                  // debug!("RecvDataStream::read Read {} bytes", n);
                   recv_bytes.put_slice(&recv_buf[..n]);
                   timeout_at = Instant::now() + DATA_STREAM_TIMEOUT;
                 } else {
                   // Spurious read, loop again
-                  debug!("RecvDataStream::read Read 0 bytes, spurious read");
+                  // debug!("RecvDataStream::read Read 0 bytes, spurious read");
                 }
               }
               Ok(None) => {
                 // If the stream is closed and no more data is available, break or return error
                 // otherwise, handle the remaining bytes in the next iteration
-                debug!("RecvDataStream::read Read None (EOF or stream closed)");
+                // debug!("RecvDataStream::read Read None (EOF or stream closed)");
                 *is_closed.write().await = true;
               }
               Err(e) => {
@@ -423,12 +422,12 @@ impl RecvDataStream {
     is_closed: Arc<RwLock<bool>>,
     objects: Arc<RwLock<VecDeque<Object>>>,
   ) -> Result<usize, ParseError> {
-    debug!("RecvDataStream::parse_object() called");
+    // debug!("RecvDataStream::parse_object() called");
 
     if !bytes_cursor.is_empty() {
       let original_remaining = bytes_cursor.remaining();
 
-      debug!("bytes_cursor remaining: {}", original_remaining);
+      // debug!("bytes_cursor remaining: {}", original_remaining);
 
       let parse_result = match header_info {
         HeaderInfo::Fetch { .. } => {
@@ -454,22 +453,24 @@ impl RecvDataStream {
         }
       };
 
-      debug!("parse_result: {:?}", parse_result);
+      // debug!("parse_result: {:?}", parse_result);
 
       match parse_result {
         Ok(object) => {
           let consumed = original_remaining - bytes_cursor.remaining();
+          /*
           debug!(
             "consumed: {} Parsed  payload object: {:?}",
             consumed, object
           );
+          */
           let mut objects = objects.write().await;
           objects.push_back(object);
           Ok(consumed)
         }
         Err(ParseError::NotEnoughBytes { .. }) => {
           // Not enough bytes to parse the object, continue reading
-          debug!("Not enough bytes to parse the object, continuing to read...");
+          // debug!("Not enough bytes to parse the object, continuing to read...");
           Ok(0) // Indicate that we need more data
         }
         Err(e) => {
@@ -487,7 +488,7 @@ impl RecvDataStream {
   }
 
   pub async fn next_object(&self) -> (&Self, Option<Object>) {
-    debug!("RecvDataStream::next_object() called");
+    // debug!("RecvDataStream::next_object() called");
 
     // Start the read task only once
     let mut started = self.started_read_task.lock().await;
@@ -968,7 +969,7 @@ mod tests {
 
     let pending_fetchs = Arc::new(RwLock::new(pending_fetchs));
 
-    let receiver = RecvDataStream::new(Arc::new(Mutex::new(recv)), pending_fetchs);
+    let receiver = RecvDataStream::new(recv, pending_fetchs);
 
     // Serialize object and send in two parts
     let bytes = fetch_obj.serialize().unwrap();
