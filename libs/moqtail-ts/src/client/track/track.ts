@@ -1,9 +1,10 @@
 import { FullTrackName, ObjectForwardingPreference } from '@/model'
-import { ContentSource } from './content_source'
+import { TrackSource } from './content_source'
 
 export type Track = {
   fullTrackName: FullTrackName
-  trackAlias: bigint
   forwardingPreference: ObjectForwardingPreference
-  contentSource: ContentSource
+  trackSource: TrackSource
+  publisherPriority: number // 0 is highest, 255 is lowest. Values are rounded to nearest integer then clamped between 0 and 255
+  trackAlias?: bigint
 }

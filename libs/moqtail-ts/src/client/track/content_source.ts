@@ -2,93 +2,106 @@ import { ObjectCache } from './object_cache'
 import { Location } from '../../model/common/location'
 import { MoqtObject } from '../../model/data/object'
 
-export interface ContentSource {
-  readonly objectCache?: ObjectCache
-  readonly liveStream?: ReadableStream<MoqtObject>
-  getObjectRange?(start?: Location, end?: Location): Promise<MoqtObject[]>
-  onNewObject?(listener: (obj: MoqtObject) => Promise<void> | void): () => void
+// TODO: Consider switching to readbable stream
+export interface PastObjectSource {
+  readonly cache: ObjectCache
+  getRange(start?: Location, end?: Location): Promise<MoqtObject[]>
 }
 
-export class StaticContentSource implements ContentSource {
-  readonly objectCache: ObjectCache
+export interface LiveObjectSource {
+  readonly stream: ReadableStream<MoqtObject>
+  readonly largestLocation: Location | undefined
+  onNewObject(listener: (obj: MoqtObject) => void): () => void
+  onDone(listener: () => void): () => void
+  stop(): void
+}
 
-  constructor(objectCache: ObjectCache) {
-    this.objectCache = objectCache
+export interface TrackSource {
+  readonly past?: PastObjectSource
+  readonly live?: LiveObjectSource
+}
+
+export class StaticTrackSource implements PastObjectSource {
+  readonly cache: ObjectCache
+
+  constructor(cache: ObjectCache) {
+    this.cache = cache
   }
 
-  async getObjectRange(start?: Location, end?: Location): Promise<MoqtObject[]> {
-    return this.objectCache.getRange(start, end)
+  async getRange(start?: Location, end?: Location): Promise<MoqtObject[]> {
+    return this.cache.getRange(start, end)
   }
 }
 
-export class LiveContentSource implements ContentSource {
-  readonly liveStream: ReadableStream<MoqtObject>
+export class LiveTrackSource implements LiveObjectSource {
+  readonly stream: ReadableStream<MoqtObject>
   readonly #listeners = new Set<(obj: MoqtObject) => void>()
   readonly #doneListeners = new Set<() => void>()
 
-  largestLocation?: Location
+  #largestLocation: Location | undefined
   #ingestActive = false
+  #reader?: ReadableStreamDefaultReader<MoqtObject>
 
-  constructor(liveStream: ReadableStream<MoqtObject>) {
-    this.liveStream = liveStream
+  constructor(stream: ReadableStream<MoqtObject>) {
+    this.stream = stream
     this.#startIngest()
+  }
+
+  get largestLocation(): Location | undefined {
+    return this.#largestLocation
   }
 
   async #startIngest() {
     if (this.#ingestActive) return
     this.#ingestActive = true
-    const reader = this.liveStream.getReader()
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
-      this.largestLocation = value.location
-      for (const listener of this.#listeners) Promise.resolve().then(() => listener(value))
+
+    try {
+      this.#reader = this.stream.getReader()
+
+      while (this.#ingestActive) {
+        const { value, done } = await this.#reader.read()
+        if (done) break
+
+        this.#largestLocation = value.location
+
+        for (const listener of this.#listeners) {
+          Promise.resolve().then(() => listener(value))
+        }
+      }
+    } catch (error) {
+      console.error('Error during live object ingestion:', error)
+    } finally {
+      this.#ingestActive = false
+      this.#reader?.releaseLock()
+
+      for (const doneListener of this.#doneListeners) {
+        Promise.resolve().then(() => doneListener())
+      }
     }
-    this.#ingestActive = false
-    for (const doneListener of this.#doneListeners) Promise.resolve().then(() => doneListener())
   }
 
-  onNewObject(listener: (obj: MoqtObject) => void) {
+  onNewObject(listener: (obj: MoqtObject) => void): () => void {
     this.#listeners.add(listener)
     return () => this.#listeners.delete(listener)
   }
+
   onDone(listener: () => void): () => void {
     this.#doneListeners.add(listener)
     return () => this.#doneListeners.delete(listener)
   }
+
+  stop(): void {
+    this.#ingestActive = false
+    this.#reader?.cancel()
+  }
 }
 
-export class HybridContentSource implements ContentSource {
-  readonly objectCache: ObjectCache
-  readonly liveStream: ReadableStream<MoqtObject>
-  private ingestActive = false
-  private listeners = new Set<(obj: MoqtObject) => void>()
+export class HybridTrackSource implements TrackSource {
+  readonly past: PastObjectSource
+  readonly live: LiveObjectSource
 
-  constructor(objectCache: ObjectCache, liveStream: ReadableStream<MoqtObject>) {
-    this.objectCache = objectCache
-    this.liveStream = liveStream
-    this._startIngest()
-  }
-
-  private async _startIngest() {
-    if (this.ingestActive) return
-    this.ingestActive = true
-    const reader = this.liveStream.getReader()
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
-      this.objectCache.add(value)
-      for (const listener of this.listeners) Promise.resolve(listener(value))
-    }
-    this.ingestActive = false
-  }
-
-  async getObjectRange(start?: Location, end?: Location): Promise<MoqtObject[]> {
-    return this.objectCache.getRange(start, end)
-  }
-
-  onNewObject(listener: (obj: MoqtObject) => void): () => void {
-    this.listeners.add(listener)
-    return () => this.listeners.delete(listener)
+  constructor(cache: ObjectCache, stream: ReadableStream<MoqtObject>) {
+    this.past = new StaticTrackSource(cache)
+    this.live = new LiveTrackSource(stream)
   }
 }

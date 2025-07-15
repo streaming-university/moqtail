@@ -33,7 +33,7 @@ import {
   announceNamespaces,
   initializeChatMessageSender,
   initializeVideoEncoder,
-  sendClientSetup,
+  connectToRelay,
   setupTracks,
   startAudioEncoder,
   subscribeToChatTrack,
@@ -670,7 +670,7 @@ function SessionPage() {
       moqtailClientInitStarted.current = true
 
       const initClient = async () => {
-        const client = await sendClientSetup(relayUrl + '/' + username)
+        const client = await connectToRelay(relayUrl + '/' + username)
         setMoqClient(client)
         //console.log('initClient', client)
         if (roomState && Object.values(users).length === 0) {

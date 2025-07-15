@@ -2,21 +2,22 @@ import { ByteBuffer, FrozenByteBuffer, BaseByteBuffer } from '../common/byte_buf
 import { ProtocolViolationError } from '../error'
 import { SubgroupHeaderType } from './constant'
 
+// TODO: couple type and subgroup id
 export class SubgroupHeader {
-  public readonly trackAlias: bigint
-  public readonly groupId: bigint
-  public readonly subgroupId: bigint | null
+  readonly subgroupId: bigint | undefined
+  readonly trackAlias: bigint
+  readonly groupId: bigint
 
   constructor(
-    public readonly headerType: SubgroupHeaderType,
-    trackAlias: bigint,
-    groupId: bigint,
-    subgroupId: bigint | number | null,
-    public readonly publisherPriority: number,
+    readonly type: SubgroupHeaderType,
+    trackAlias: bigint | number,
+    groupId: bigint | number,
+    subgroupId: bigint | number | undefined,
+    readonly publisherPriority: number,
   ) {
     this.trackAlias = BigInt(trackAlias)
     this.groupId = BigInt(groupId)
-    if (subgroupId !== null) {
+    if (subgroupId !== undefined) {
       this.subgroupId = BigInt(subgroupId)
     } else {
       this.subgroupId = subgroupId
@@ -25,13 +26,13 @@ export class SubgroupHeader {
 
   serialize(): FrozenByteBuffer {
     const buf = new ByteBuffer()
-    buf.putVI(this.headerType)
+    buf.putVI(this.type)
     buf.putVI(this.trackAlias)
     buf.putVI(this.groupId)
-    if (SubgroupHeaderType.hasExplicitSubgroupId(this.headerType)) {
-      if (this.subgroupId === null || this.subgroupId === undefined) {
+    if (SubgroupHeaderType.hasExplicitSubgroupId(this.type)) {
+      if (this.subgroupId === undefined) {
         throw new ProtocolViolationError(
-          'SubgroupHeader::serialize',
+          'SubgroupHeader.serialize',
           'Subgroup_id field is required for this header type',
         )
       }
@@ -45,13 +46,11 @@ export class SubgroupHeader {
     const headerType = SubgroupHeaderType.tryFrom(buf.getNumberVI())
     const trackAlias = buf.getVI()
     const groupId = buf.getVI()
-    let subgroupId: bigint | null = null
+    let subgroupId: bigint | undefined
     if (SubgroupHeaderType.hasExplicitSubgroupId(headerType)) {
       subgroupId = buf.getVI()
     } else if (headerType === SubgroupHeaderType.Type0x08 || headerType === SubgroupHeaderType.Type0x09) {
       subgroupId = 0n
-    } else {
-      subgroupId = null
     }
     const publisherPriority = buf.getU8()
     return new SubgroupHeader(headerType, trackAlias, groupId, subgroupId, publisherPriority)
@@ -70,7 +69,7 @@ if (import.meta.vitest) {
       const header = new SubgroupHeader(headerType, trackAlias, groupId, subgroupId, publisherPriority)
       const frozen = header.serialize()
       const parsed = SubgroupHeader.deserialize(frozen)
-      expect(parsed.headerType).toBe(header.headerType)
+      expect(parsed.type).toBe(header.type)
       expect(parsed.trackAlias).toBe(header.trackAlias)
       expect(parsed.groupId).toBe(header.groupId)
       expect(parsed.subgroupId).toBe(header.subgroupId)
@@ -91,7 +90,7 @@ if (import.meta.vitest) {
       buf.putBytes(excess)
       const frozen = buf.freeze()
       const parsed = SubgroupHeader.deserialize(frozen)
-      expect(parsed.headerType).toBe(header.headerType)
+      expect(parsed.type).toBe(header.type)
       expect(parsed.trackAlias).toBe(header.trackAlias)
       expect(parsed.groupId).toBe(header.groupId)
       expect(parsed.subgroupId).toBe(header.subgroupId)

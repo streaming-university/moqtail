@@ -5,6 +5,7 @@ import { KeyValuePair } from '../common/pair'
 import { ControlMessageType, FilterType, GroupOrder } from '../control/constant'
 import { FullTrackName } from '../data'
 
+// TODO: Couple filter type and bounded parameters for idiomatic design
 export class Subscribe {
   private constructor(
     public requestId: bigint,

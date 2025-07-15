@@ -12,7 +12,7 @@ import { NotEnoughBytesError, ProtocolViolationError, TimeoutError } from '../mo
 
 export class SendStream {
   readonly #writer: WritableStreamDefaultWriter<Uint8Array>
-  public onDataSent?: (data: SubgroupObject | SubgroupHeader | FetchObject | FetchHeader) => void
+  readonly onDataSent?: (data: SubgroupObject | SubgroupHeader | FetchObject | FetchHeader) => void
   private constructor(
     readonly header: Header,
     writer: WritableStreamDefaultWriter<Uint8Array>,
@@ -31,7 +31,7 @@ export class SendStream {
     const serializedHeader = header.serialize().toUint8Array()
     await writer.write(serializedHeader)
     if (onDataSent) onDataSent(header)
-    return new SendStream(header, writer)
+    return new SendStream(header, writer, onDataSent)
   }
 
   async write(object: FetchObject | SubgroupObject): Promise<void> {
@@ -61,7 +61,7 @@ export class RecvStream {
   readonly #partialDataTimeout: number | undefined
   readonly #reader: ReadableStreamDefaultReader<Uint8Array>
   readonly #internalBuffer: ByteBuffer
-  public onDataReceived?: (data: SubgroupObject | SubgroupHeader | FetchObject | FetchHeader) => void
+  readonly onDataReceived?: (data: SubgroupObject | SubgroupHeader | FetchObject | FetchHeader) => void
   private constructor(
     readonly header: Header,
     reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -117,6 +117,7 @@ export class RecvStream {
           internalBuffer.checkpoint()
           headerInstance = Header.deserialize(internalBuffer)
           internalBuffer.commit()
+          if (onDataReceived) onDataReceived(headerInstance)
           break
         } catch (e) {
           if (e instanceof NotEnoughBytesError) {
@@ -150,7 +151,7 @@ export class RecvStream {
             } else {
               object = SubgroupObject.deserialize(
                 this.#internalBuffer,
-                SubgroupHeaderType.hasExtensions(this.header.headerType),
+                SubgroupHeaderType.hasExtensions(this.header.type),
               )
             }
             this.#internalBuffer.commit()
