@@ -2,23 +2,31 @@ import {
   ExtensionHeader,
   ExtensionHeaders,
 } from '../../../../libs/moqtail-ts/src/model/extension_header/extension_header'
+import { ClockNormalizer } from '../../../../libs/moqtail-ts/src/util/clock_normalizer'
 
 let ctx: OffscreenCanvasRenderingContext2D | null = null
 let videoDecoder: VideoDecoder | null = null
 let audioDecoder: AudioDecoder | null = null
 let waitingForKeyframe = true
-let normalizerOffset: number | null = null
+let clockNormalizer: ClockNormalizer | null = null
 let theDecoderConfig: VideoDecoderConfig | null = null
 let frameTimeoutId: ReturnType<typeof setTimeout> | null = null
 const FRAME_TIMEOUT_MS = 300 // Clear canvas if no frames for 00ms
 
-self.onmessage = (e) => {
-  const { type, canvas, offset, payload, extentions, decoderConfig } = e.data
+self.onmessage = async (e) => {
+  const { type, canvas, payload, extentions, decoderConfig } = e.data
 
   if (type === 'init') {
     ctx = canvas?.getContext?.('2d') ?? null
-    normalizerOffset = offset
     theDecoderConfig = decoderConfig || null
+
+    // Create ClockNormalizer instance for this worker
+    try {
+      clockNormalizer = await ClockNormalizer.create()
+    } catch (error) {
+      console.error('Failed to create clock normalizer in worker:', error)
+      clockNormalizer = null
+    }
     return
   }
 
@@ -100,9 +108,10 @@ self.onmessage = (e) => {
       console.error('Error decoding video chunk:', decodeError)
     }
 
-    if (normalizerOffset !== null && timestamp !== 0) {
-      const arrivalTime = Math.round(performance.timeOrigin + performance.now() + normalizerOffset)
-      self.postMessage({ type: 'video-latency', value: arrivalTime - timestamp })
+    if (clockNormalizer !== null && timestamp !== 0) {
+      const arrivalTime = Math.round(Date.now())
+      const captureTimeLocal = Math.round(timestamp)
+      self.postMessage({ type: 'video-latency', value: arrivalTime - captureTimeLocal })
     }
 
     self.postMessage({ type: 'video-throughput', value: moqtObj.payload.length })
@@ -138,19 +147,16 @@ self.onmessage = (e) => {
     })
     audioDecoder.decode(chunk)
 
-    if (normalizerOffset !== null && timestamp !== 0) {
-      const arrivalTime = Math.round(performance.timeOrigin + performance.now() + normalizerOffset)
-      self.postMessage({ type: 'audio-latency', value: arrivalTime - timestamp })
+    if (clockNormalizer !== null && timestamp !== 0) {
+      // Use local time for arrival, server time (timestamp) for capture
+      // This gives us the actual network + processing latency
+      const arrivalTime = Math.round(Date.now())
+      const captureTimeLocal = Math.round(timestamp)
+      self.postMessage({ type: 'audio-latency', value: arrivalTime - captureTimeLocal })
     }
 
     // Send throughput data for audio (payload size)
     self.postMessage({ type: 'audio-throughput', value: moqtObj.payload.length })
-  }
-
-  if (type === 'update-offset') {
-    normalizerOffset = offset
-    console.log('Updated normalizer offset in worker:', offset)
-    return
   }
 
   function handleFrame(frame: VideoFrame) {
