@@ -9,15 +9,9 @@ import {
   Send,
   Users,
   MessageSquare,
-  Info,
-  X,
   Smile,
-  Activity,
-  Expand,
-  Minimize,
   RotateCcw,
 } from 'lucide-react'
-
 import { useSession } from '../contexts/SessionContext'
 import {
   RoomUser,
@@ -25,35 +19,30 @@ import {
   TrackUpdateResponse,
   ToggleResponse,
   UserDisconnectedMessage,
+  TrackType,
   UpdateTrackRequest,
-  RoomTimeoutMessage,
 } from '../types/types'
 import { useSocket } from '../sockets/SocketContext'
-import {
-  FullTrackName,
-  ObjectForwardingPreference,
-  Tuple,
-  GroupOrder,
-  FetchType,
-  Location,
-  FetchError,
-} from '../../../../libs/moqtail-ts/src/model'
+import { FullTrackName, ObjectForwardingPreference, Tuple } from '../../../../libs/moqtail-ts/src/model'
 import {
   announceNamespaces,
   initializeChatMessageSender,
   initializeVideoEncoder,
-  connectToRelay,
+  sendClientSetup,
   setupTracks,
   startAudioEncoder,
+  startVideoEncoder,
   subscribeToChatTrack,
+  useVideoPublisher,
   useVideoSubscriber,
-  cleanupClockNormalizer,
+  getRewindBuffer,
+  clearRewindBuffer,
+  clearAllRewindBuffers,
 } from '../composables/useVideoPipeline'
 import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client'
+import { AkamaiOffset } from '../../../../libs/moqtail-ts/src/util/get_akamai_offset'
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
-import { ClockNormalizer } from '../../../../libs/moqtail-ts/src/util/clock_normalizer'
 import { RewindPlayer } from './RewindPlayer'
-import { BufferedMoqtObject } from '../composables/rewindBuffer'
 
 function SessionPage() {
   // initialize the MOQTail client
@@ -61,7 +50,6 @@ function SessionPage() {
   const [moqClient, setMoqClient] = useState<MoqtailClient | undefined>(undefined)
 
   // initialize the variables
-  const [maximizedUserId, setMaximizedUserId] = useState<string | null>(null)
   const { userId, username, roomState, setSession, clearSession } = useSession()
   const [isMicOn, setIsMicOn] = useState(false)
   const [isCamOn, setisCamOn] = useState(false)
@@ -72,13 +60,8 @@ function SessionPage() {
   const [users, setUsers] = useState<{ [K: string]: RoomUser }>({})
   const [remoteCanvasRefs, setRemoteCanvasRefs] = useState<{ [id: string]: React.RefObject<HTMLCanvasElement> }>({})
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
-  const [telemetryData, setTelemetryData] = useState<{
-    [userId: string]: { latency: number; videoBitrate: number; audioBitrate: number }
-  }>({})
-  const telemetryInstances = useRef<{ [userId: string]: { video: NetworkTelemetry; audio: NetworkTelemetry } }>({})
-  const [latencyHistory, setLatencyHistory] = useState<{ [userId: string]: number[] }>({})
-  const [videoBitrateHistory, setVideoBitrateHistory] = useState<{ [userId: string]: number[] }>({})
-  const [audioBitrateHistory, setAudioBitrateHistory] = useState<{ [userId: string]: number[] }>({})
+  const [telemetryData, setTelemetryData] = useState<{ [userId: string]: { latency: number; throughput: number } }>({})
+  const telemetryInstances = useRef<{ [userId: string]: NetworkTelemetry }>({})
   const [timeRemaining, setTimeRemaining] = useState<string>('--:--')
   const [timeRemainingColor, setTimeRemainingColor] = useState<string>('text-green-400')
   const selfVideoRef = useRef<HTMLVideoElement>(null)
@@ -87,24 +70,8 @@ function SessionPage() {
   const moqtailClientInitStarted = useRef<boolean>(false)
   const videoEncoderObjRef = useRef<any>(null)
   const chatSenderRef = useRef<{ send: (msg: string) => void } | null>(null)
-  const offsetRef = useRef<number>(0)
+  const akamaiOffsetRef = useRef<number>(0)
   const [mediaReady, setMediaReady] = useState(false)
-  const [showInfoCards, setShowInfoCards] = useState<{ [userId: string]: boolean }>({})
-  const [infoPanelType, setInfoPanelType] = useState<{ [userId: string]: 'network' | 'codec' }>({})
-  const [codecData, setCodecData] = useState<{
-    [userId: string]: {
-      videoCodec: string
-      audioCodec: string
-      frameRate: number
-      sampleRate: number
-      resolution: string
-      syncDrift: number
-      videoBitrate?: number
-      audioBitrate?: number
-      numberOfChannels?: number
-    }
-  }>({})
-
   const chatMessagesRef = useRef<HTMLDivElement>(null)
   const emojiPickerRef = useRef<HTMLDivElement>(null)
   const chatInputRef = useRef<HTMLInputElement>(null)
@@ -115,10 +82,6 @@ function SessionPage() {
   // Rewind player state
   const [isRewindPlayerOpen, setIsRewindPlayerOpen] = useState(false)
   const [selectedRewindUserId, setSelectedRewindUserId] = useState<string>('')
-  const [fetchedRewindData, setFetchedRewindData] = useState<{
-    [userId: string]: { video: BufferedMoqtObject[]; audio: BufferedMoqtObject[] }
-  }>({})
-  const [isFetching, setIsFetching] = useState(false)
   const isRewindCleaningUp = useRef<boolean>(false)
 
   const emojiCategories = {
@@ -211,7 +174,7 @@ function SessionPage() {
           timestamp: formattedTime,
         },
       ])
-      setChatMessage('')
+      setChatMessage('') // Clear the input field after sending
     }
   }
 
@@ -223,163 +186,11 @@ function SessionPage() {
     })
   }
 
-  // Rewind functionality
-  const handleOpenRewindPlayer = async (userId: string) => {
-    if (isFetching) {
-      console.log('Already fetching rewind data, please wait...')
-      return
-    }
-
-    console.log('Fetching rewind data for user:', userId)
-    setIsFetching(true)
-
-    try {
-      if (!moqClient || !roomState) {
-        console.error('MOQ client or room state not available')
-        return
-      }
-
-      const videoObjects: BufferedMoqtObject[] = []
-      const audioObjects: BufferedMoqtObject[] = []
-
-      // Fetch video track
-      const videoTrackName = getTrackname(roomState.name, userId, 'video')
-      console.log('Fetching video track:', videoTrackName.toString())
-
-      const videoResult = await moqClient.fetch({
-        priority: 0,
-        groupOrder: GroupOrder.Original,
-        typeAndProps: {
-          type: FetchType.StandAlone,
-          props: {
-            fullTrackName: videoTrackName,
-            startLocation: new Location(0n, 0n),
-            endLocation: new Location(60n, 0n),
-          },
-        },
-      })
-
-      if (!(videoResult instanceof FetchError)) {
-        const reader = videoResult.stream.getReader()
-        console.log('Reading video objects from fetch stream...')
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-
-            if (value && value.payload) {
-              videoObjects.push({
-                object: value,
-                timestamp: Date.now(),
-                type: 'video',
-              })
-              console.log('Fetched video object:', {
-                group: value.location.group.toString(),
-                object: value.location.object.toString(),
-                payloadSize: value.payload.length,
-              })
-            }
-          }
-        } finally {
-          reader.releaseLock()
-        }
-      } else {
-        console.warn('Video fetch failed or returned error:', videoResult)
-      }
-
-      // Fetch audio track
-      const audioTrackName = getTrackname(roomState.name, userId, 'audio')
-      console.log('Fetching audio track:', audioTrackName.toString())
-
-      const audioResult = await moqClient.fetch({
-        priority: 0,
-        groupOrder: GroupOrder.Original,
-        typeAndProps: {
-          type: FetchType.StandAlone,
-          props: {
-            fullTrackName: audioTrackName,
-            startLocation: new Location(0n, 0n),
-            endLocation: new Location(60n, 0n),
-          },
-        },
-      })
-
-      if (!(audioResult instanceof FetchError)) {
-        const reader = audioResult.stream.getReader()
-        console.log('Reading audio objects from fetch stream...')
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-
-            if (value && value.payload) {
-              audioObjects.push({
-                object: value,
-                timestamp: Date.now(),
-                type: 'audio',
-              })
-              console.log('Fetched audio object:', {
-                group: value.location.group.toString(),
-                object: value.location.object.toString(),
-                payloadSize: value.payload.length,
-              })
-            }
-          }
-        } finally {
-          reader.releaseLock()
-        }
-      } else {
-        console.warn('Audio fetch failed or returned error:', audioResult)
-      }
-
-      console.log(
-        `Fetch complete for user ${userId}: ${videoObjects.length} video, ${audioObjects.length} audio objects`,
-      )
-
-      // Store the fetched data
-      setFetchedRewindData((prev) => ({
-        ...prev,
-        [userId]: { video: videoObjects, audio: audioObjects },
-      }))
-
-      // Open the rewind player if we have any data
-      if (videoObjects.length > 0 || audioObjects.length > 0) {
-        setSelectedRewindUserId(userId)
-        setIsRewindPlayerOpen(true)
-      } else {
-        console.warn('No rewind data available for user:', userId)
-      }
-    } catch (error) {
-      console.error('Error fetching rewind data:', error)
-    } finally {
-      setIsFetching(false)
-    }
-  }
-
-  const handleCloseRewindPlayer = () => {
-    console.log('SessionPage: Closing rewind player')
-    isRewindCleaningUp.current = true
-
-    // Clear the fetched rewind data for the selected user
-    if (selectedRewindUserId) {
-      setFetchedRewindData((prev) => {
-        const updated = { ...prev }
-        delete updated[selectedRewindUserId]
-        console.log(`Cleared fetched rewind data for user: ${selectedRewindUserId}`)
-        return updated
-      })
-    }
-
-    setIsRewindPlayerOpen(false)
-    setSelectedRewindUserId('')
-
-    // Add a delay to ensure rewind player cleanup is complete
-    setTimeout(() => {
-      console.log('SessionPage: Rewind player cleanup complete')
-      isRewindCleaningUp.current = false
-    }, 500)
+  const createCanvasRef = (userId: string): void => {
+    setRemoteCanvasRefs((prev) => ({
+      ...prev,
+      [userId]: React.createRef<HTMLCanvasElement>(),
+    }))
   }
 
   const isSelf = (id: string): boolean => {
@@ -388,50 +199,28 @@ function SessionPage() {
 
   const getUserInitials = (name: string): string => {
     const words = name.trim().split(/\s+/)
-
     if (words.length === 1) {
       return words[0].substring(0, 2).toUpperCase()
     } else {
       return words
-
         .slice(0, 2)
-
         .map((word) => word.charAt(0))
-
         .join('')
-
         .toUpperCase()
     }
   }
 
   const availableColors = [
     { bgClass: 'bg-blue-500', hexColor: '#3b82f6' },
-
     { bgClass: 'bg-green-500', hexColor: '#22c55e' },
-
     { bgClass: 'bg-purple-500', hexColor: '#a855f7' },
-
     { bgClass: 'bg-red-500', hexColor: '#ff0000' },
-
     { bgClass: 'bg-orange-500', hexColor: '#f97316' },
-
     { bgClass: 'bg-teal-500', hexColor: '#14b8a6' },
   ]
 
   const getUserColor = (userId: string): string => {
     return userColors[userId]?.bgClass || 'bg-gray-500'
-  }
-
-  const toggleInfoCard = (userId: string, panelType: 'network' | 'codec' = 'network') => {
-    setShowInfoCards((prev) => ({
-      ...prev,
-      [userId]: !prev[userId] || infoPanelType[userId] !== panelType ? true : false,
-    }))
-
-    setInfoPanelType((prev) => ({
-      ...prev,
-      [userId]: panelType,
-    }))
   }
 
   const getUserColorHex = (userId: string): string => {
@@ -440,108 +229,95 @@ function SessionPage() {
 
   const getSenderUserId = (senderName: string): string => {
     const user = Object.values(users).find((u) => u.name === senderName)
-
     return user?.id || ''
   }
 
+  // Toggle mic handler
   const handleToggle = (kind: 'mic' | 'cam') => {
     // Don't allow toggles while rewind player is cleaning up
     if (isRewindCleaningUp.current) {
-      console.log('Rewind player is cleaning up, ignoring toggle request')
+      console.log('SessionPage: Ignoring toggle request while rewind player is cleaning up')
       return
     }
 
     // If trying to toggle camera while screen sharing, stop screen sharing first
-
     if (kind === 'cam' && isScreenSharing) {
       handleToggleScreenShare() // This will stop screen sharing
-
       // After screen sharing stops, toggle the camera
-
       setTimeout(() => {
         const setter = setisCamOn
-
         setter((prev) => {
           const newValue = !prev
-
           setUsers((users) => {
             const u = users[userId]
-
             users[userId] = { ...u, hasVideo: newValue }
-
             // Video track switching logic for camera
-
             const audioTrack = selfMediaStream.current?.getAudioTracks()[0]
-
             let newStream
-
             if (newValue) {
-              navigator.mediaDevices.getUserMedia({ video: { aspectRatio: 16 / 9 } }).then((videoStream) => {
-                const realVideoTrack = videoStream.getVideoTracks()[0]
-
-                const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
-
-                if (oldVideoTrack) {
-                  oldVideoTrack.stop()
-
-                  selfMediaStream.current?.removeTrack(oldVideoTrack)
-                }
-
-                newStream = new MediaStream()
-
-                if (audioTrack) newStream.addTrack(audioTrack)
-
-                newStream.addTrack(realVideoTrack)
-
-                selfMediaStream.current = newStream
-
-                if (videoEncoderObjRef.current) {
-                  videoEncoderObjRef.current.offset = offsetRef.current
-
-                  videoEncoderObjRef.current.start(selfMediaStream.current)
-                }
-
-                if (selfVideoRef.current) {
-                  selfVideoRef.current.srcObject = newStream
-
-                  selfVideoRef.current.muted = true
-                }
-              })
+              navigator.mediaDevices
+                .getUserMedia({ video: { aspectRatio: 16 / 9 } })
+                .then((videoStream) => {
+                  const realVideoTrack = videoStream.getVideoTracks()[0]
+                  const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
+                  if (oldVideoTrack) {
+                    oldVideoTrack.stop()
+                    selfMediaStream.current?.removeTrack(oldVideoTrack)
+                  }
+                  newStream = new MediaStream()
+                  if (audioTrack) newStream.addTrack(audioTrack)
+                  newStream.addTrack(realVideoTrack)
+                  selfMediaStream.current = newStream
+                  if (videoEncoderObjRef.current) {
+                    console.log('SessionPage: Starting video encoder with new stream')
+                    videoEncoderObjRef.current.offset = akamaiOffsetRef.current
+                    videoEncoderObjRef.current.start(selfMediaStream.current)
+                  } else {
+                    console.error('SessionPage: videoEncoderObjRef.current is null!')
+                  }
+                  if (selfVideoRef.current) {
+                    console.log('SessionPage: Setting new video stream to video element')
+                    selfVideoRef.current.srcObject = newStream
+                    selfVideoRef.current.muted = true
+                  } else {
+                    console.error('SessionPage: selfVideoRef.current is null!')
+                  }
+                })
+                .catch((error) => {
+                  console.error('SessionPage: Error getting user media for camera:', error)
+                })
             } else {
+              console.log('SessionPage: Turning camera OFF')
               const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
-
               if (oldVideoTrack) {
+                console.log('SessionPage: Stopping old video track')
                 oldVideoTrack.stop()
-
                 selfMediaStream.current?.removeTrack(oldVideoTrack)
               }
-
               newStream = new MediaStream()
-
               if (audioTrack) newStream.addTrack(audioTrack)
-
               selfMediaStream.current = newStream
-
-              if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream
-
+              if (selfVideoRef.current) {
+                console.log('SessionPage: Setting audio-only stream to video element')
+                selfVideoRef.current.srcObject = newStream
+              }
               selfVideoRef.current!.muted = true
-
               if (videoEncoderObjRef.current) {
+                console.log('SessionPage: Stopping video encoder')
                 videoEncoderObjRef.current.stop()
+              } else {
+                console.warn('SessionPage: videoEncoderObjRef.current is null when trying to stop')
               }
             }
-
             return users
           })
-
           contextSocket?.emit('toggle-button', { kind, value: newValue })
-
           return newValue
         })
       }, 100) // Small delay to ensure screen sharing stops first
-
       return
     }
+
     const setter = kind === 'mic' ? setIsMicOn : setisCamOn
     setter((prev) => {
       const newValue = !prev
@@ -551,12 +327,15 @@ function SessionPage() {
           users[userId] = { ...u, hasAudio: newValue }
           toggleMediaStreamAudio(newValue)
         } else if (kind === 'cam') {
+          console.log('SessionPage: Toggling camera to:', newValue)
           users[userId] = { ...u, hasVideo: newValue }
           // --- Video track switching logic ---
           const audioTrack = selfMediaStream.current?.getAudioTracks()[0]
           let newStream
           if (newValue) {
+            console.log('SessionPage: Turning camera ON')
             navigator.mediaDevices.getUserMedia({ video: { aspectRatio: 16 / 9 } }).then((videoStream) => {
+              console.log('SessionPage: Got new video stream')
               const realVideoTrack = videoStream.getVideoTracks()[0]
               const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
               if (oldVideoTrack) {
@@ -568,7 +347,7 @@ function SessionPage() {
               newStream.addTrack(realVideoTrack)
               selfMediaStream.current = newStream
               if (videoEncoderObjRef.current) {
-                videoEncoderObjRef.current.offset = offsetRef.current
+                videoEncoderObjRef.current.offset = akamaiOffsetRef.current
                 videoEncoderObjRef.current.start(selfMediaStream.current)
               }
               if (selfVideoRef.current) {
@@ -587,6 +366,7 @@ function SessionPage() {
             selfMediaStream.current = newStream
             if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream
             selfVideoRef.current!.muted = true
+
             if (videoEncoderObjRef.current) {
               videoEncoderObjRef.current.stop()
             }
@@ -607,6 +387,7 @@ function SessionPage() {
     }
   }
 
+  // Toggle video handler
   const handleToggleCam = () => {
     handleToggle('cam')
   }
@@ -621,6 +402,7 @@ function SessionPage() {
         alert('Only one person can share their screen at a time.')
         return
       }
+
       const oldVideoTrack = selfMediaStream.current?.getVideoTracks()[0]
       if (oldVideoTrack) {
         oldVideoTrack.stop()
@@ -638,7 +420,7 @@ function SessionPage() {
         if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream
         if (selfVideoRef.current) selfVideoRef.current.muted = true // Ensure muted
         if (videoEncoderObjRef.current) {
-          videoEncoderObjRef.current.offset = offsetRef.current
+          videoEncoderObjRef.current.offset = akamaiOffsetRef.current
           videoEncoderObjRef.current.start(selfMediaStream.current)
         }
         setIsScreenSharing(true)
@@ -681,6 +463,7 @@ function SessionPage() {
     const audioTrack = selfMediaStream.current?.getAudioTracks()[0]
     const newStream = new MediaStream()
     if (audioTrack) newStream.addTrack(audioTrack)
+
     // Always turn off video when screen share ends
     selfMediaStream.current = newStream
     if (selfVideoRef.current) selfVideoRef.current.srcObject = newStream
@@ -706,7 +489,6 @@ function SessionPage() {
         selfMediaStream.current = await navigator.mediaDevices.getUserMedia({ audio: true })
         const audioTracks = selfMediaStream.current.getAudioTracks()
         audioTracks.forEach((track) => (track.enabled = false))
-
         //console.log('Got user media:', selfMediaStream.current);
         setMediaReady(true)
 
@@ -753,12 +535,8 @@ function SessionPage() {
           return
         }
 
-        const normalizer = await ClockNormalizer.create(
-          window.appSettings.clockNormalizationConfig.timeServerUrl,
-          window.appSettings.clockNormalizationConfig.numberOfSamples,
-        )
-        const offset = normalizer.getSkew()
-        offsetRef.current = offset
+        const offset = await AkamaiOffset.getClockSkew()
+        akamaiOffsetRef.current = offset
         announceNamespaces(moqClient!, videoFullTrackName.namespace)
         let tracks = setupTracks(
           moqClient!,
@@ -777,15 +555,15 @@ function SessionPage() {
           offset,
           objectForwardingPreference: ObjectForwardingPreference.Subgroup,
         })
+
         // Only start video encoder if we have video tracks
-
         const hasVideoTrack = selfMediaStream.current.getVideoTracks().length > 0
-
         let videoPromise: Promise<any> = Promise.resolve()
 
         if (hasVideoTrack) {
           videoPromise = videoEncoderObjRef.current.start(selfMediaStream.current)
         }
+
         const audioPromise = startAudioEncoder({
           stream: selfMediaStream.current,
           audioFullTrackName,
@@ -847,14 +625,14 @@ function SessionPage() {
       moqtailClientInitStarted.current = true
 
       const initClient = async () => {
-        const client = await connectToRelay(relayUrl + '/' + username)
+        const client = await sendClientSetup(relayUrl + '/' + username)
         setMoqClient(client)
         //console.log('initClient', client)
         if (roomState && Object.values(users).length === 0) {
           const otherUsers = Object.keys(roomState.users).filter((uId) => uId != userId)
           setUsers(roomState.users)
-
-          Object.keys(roomState.users).forEach((uId) => initializeTelemetryForUser(uId))
+          // Initialize telemetry for all existing users
+          otherUsers.forEach((uId) => initializeTelemetryForUser(uId))
           const canvasRefs = Object.fromEntries(otherUsers.map((uId) => [uId, React.createRef<HTMLCanvasElement>()]))
           setRemoteCanvasRefs(canvasRefs)
         }
@@ -926,59 +704,34 @@ function SessionPage() {
         delete users[msg.userId]
         return users
       })
-
       const canvasRef = remoteCanvasRefs[msg.userId]
-
       if (canvasRef && canvasRef.current) {
         canvasRef.current.remove()
       }
-
       setRemoteCanvasRefs((prev) => {
         const newRefs = { ...prev }
         delete newRefs[msg.userId]
         return newRefs
       })
-
+      // Clean up telemetry
       delete telemetryInstances.current[msg.userId]
-      delete previousValues.current[msg.userId]
       setTelemetryData((prev) => {
         const newData = { ...prev }
         delete newData[msg.userId]
         return newData
       })
-      setCodecData((prev) => {
-        const newData = { ...prev }
-        delete newData[msg.userId]
-        return newData
-      })
-      setLatencyHistory((prev) => {
-        const newHistory = { ...prev }
-        delete newHistory[msg.userId]
-        return newHistory
-      })
-      setVideoBitrateHistory((prev) => {
-        const newHistory = { ...prev }
-        delete newHistory[msg.userId]
-        return newHistory
-      })
-      setAudioBitrateHistory((prev) => {
-        const newHistory = { ...prev }
-        delete newHistory[msg.userId]
-        return newHistory
-      })
       // Clean up user color
-
       setUserColors((prev) => {
         const newColors = { ...prev }
-
         delete newColors[msg.userId]
-
         return newColors
       })
+      // Clean up rewind buffer for this user
+      clearRewindBuffer(msg.userId)
       // TODO: unsubscribe
     })
 
-    socket.on('room-timeout', (msg: RoomTimeoutMessage) => {
+    socket.on('room-timeout', (msg: { message: string }) => {
       console.info('Room timeout:', msg.message)
       alert(`${msg.message}\n\nYou will be redirected to the home page.`)
 
@@ -1018,108 +771,25 @@ function SessionPage() {
     assignColors()
   }, [users])
 
+  // Initialize telemetry instances for new users
   const initializeTelemetryForUser = (userId: string) => {
     if (!telemetryInstances.current[userId]) {
-      telemetryInstances.current[userId] = {
-        video: new NetworkTelemetry(1000), // 1 second window
-        audio: new NetworkTelemetry(1000), // 1 second window
-      }
-
-      setCodecData((prev) => ({
-        ...prev,
-        [userId]: isSelf(userId) ? getSelfCodecData() : getOtherParticipantCodecData(),
-      }))
+      telemetryInstances.current[userId] = new NetworkTelemetry(1000) // 1 second window
     }
   }
 
-  const getSelfCodecData = () => {
-    const videoConfig = window.appSettings.videoEncoderConfig
-    const audioConfig = window.appSettings.audioEncoderConfig
-
-    return {
-      videoCodec: videoConfig.codec,
-      audioCodec: audioConfig.codec,
-      frameRate: videoConfig.framerate,
-      sampleRate: audioConfig.sampleRate,
-      resolution: `${videoConfig.width}x${videoConfig.height}`,
-      syncDrift: 0, // TODO
-      videoBitrate: videoConfig.bitrate,
-      audioBitrate: audioConfig.bitrate,
-      numberOfChannels: audioConfig.numberOfChannels,
-    }
-  }
-
-  const getOtherParticipantCodecData = () => {
-    // TODO: this should be dynamic based on actual participant data
-    const videoConfig = window.appSettings.videoEncoderConfig
-    const audioConfig = window.appSettings.audioEncoderConfig
-
-    return {
-      videoCodec: videoConfig.codec,
-      audioCodec: audioConfig.codec,
-      frameRate: videoConfig.framerate,
-      sampleRate: audioConfig.sampleRate,
-      resolution: `${videoConfig.width}x${videoConfig.height}`,
-      syncDrift: 0, // TODO
-      videoBitrate: videoConfig.bitrate,
-      audioBitrate: audioConfig.bitrate,
-      numberOfChannels: audioConfig.numberOfChannels,
-    }
-  }
-
-  const previousValues = useRef<{ [userId: string]: { latency: number; videoBitrate: number; audioBitrate: number } }>(
-    {},
-  )
-
-  // Update every 100ms
+  // Update telemetry data every 100ms
   useEffect(() => {
     const interval = setInterval(() => {
-      const newTelemetryData: { [userId: string]: { latency: number; videoBitrate: number; audioBitrate: number } } = {}
+      const newTelemetryData: { [userId: string]: { latency: number; throughput: number } } = {}
 
       Object.keys(telemetryInstances.current).forEach((userId) => {
         const telemetry = telemetryInstances.current[userId]
         if (telemetry) {
-          const videoLatency = isSelf(userId) ? 0 : Math.round(telemetry.video.latency)
-          const videoBitrate = (telemetry.video.throughput * 8) / 1000 // bytes/s to Kbps
-          const audioBitrate = (telemetry.audio.throughput * 8) / 1000 // bytes/s to Kbps
-
           newTelemetryData[userId] = {
-            latency: videoLatency,
-            videoBitrate: Math.max(0, videoBitrate),
-            audioBitrate: Math.max(0, audioBitrate),
+            latency: Math.round(telemetry.latency),
+            throughput: Math.round(telemetry.throughput / 1024), // Convert to KB/s
           }
-
-          // Latency history (last 30 points)
-          if (!isSelf(userId)) {
-            setLatencyHistory((prevLatency) => {
-              const userHistory = prevLatency[userId] || []
-              const newHistory = [...userHistory, videoLatency].slice(-30)
-              return {
-                ...prevLatency,
-                [userId]: newHistory,
-              }
-            })
-          }
-
-          // Video bitrate history (last 30 points)
-          setVideoBitrateHistory((prevVideoBitrate) => {
-            const userHistory = prevVideoBitrate[userId] || []
-            const newHistory = [...userHistory, videoBitrate].slice(-30)
-            return {
-              ...prevVideoBitrate,
-              [userId]: newHistory,
-            }
-          })
-
-          // Audio bitrate history (last 30 points)
-          setAudioBitrateHistory((prevAudioBitrate) => {
-            const userHistory = prevAudioBitrate[userId] || []
-            const newHistory = [...userHistory, audioBitrate].slice(-30)
-            return {
-              ...prevAudioBitrate,
-              [userId]: newHistory,
-            }
-          })
         }
       })
 
@@ -1224,8 +894,17 @@ function SessionPage() {
     const audioTrackAlias = parseInt(canvasRef.current.dataset.audiotrackalias || '-1')
     const chatTrackAlias = parseInt(canvasRef.current.dataset.chattrackalias || '-1')
     const announced = parseInt(canvasRef.current.dataset.announced || '0')
-    //console.log('handleRemoteVideo', canvasRef.current.id, moqClient, roomName, videoTrackAlias, audioTrackAlias, announced)
-    if (announced > 0 && videoTrackAlias > 0 && audioTrackAlias > 0 && chatTrackAlias > 0)
+    console.log(
+      'handleRemoteVideo',
+      canvasRef.current.id,
+      moqClient,
+      roomName,
+      videoTrackAlias,
+      audioTrackAlias,
+      chatTrackAlias,
+      announced,
+    )
+    if (announced > 0 && videoTrackAlias > 0 && audioTrackAlias > 0)
       setTimeout(async () => {
         await subscribeToTrack(roomName, userId, videoTrackAlias, audioTrackAlias, chatTrackAlias, canvasRef)
       }, 500)
@@ -1253,19 +932,19 @@ function SessionPage() {
         canvasRef.current!.dataset.status = 'pending'
         // Initialize telemetry for this user if not already done
         initializeTelemetryForUser(userId)
-        const userTelemetry = telemetryInstances.current[userId]
 
         //console.log("subscribeToTrack - Use video subscriber called", videoTrackAlias, audioTrackAlias, videoFullTrackName, audioFullTrackName)
+
         // Subscribe to video and audio
         const videoResult = await useVideoSubscriber(
           the_client,
           canvasRef,
           videoTrackAlias,
           audioTrackAlias,
-          videoFullTrackName,
           audioFullTrackName,
-          userTelemetry.video,
-          userTelemetry.audio,
+          videoFullTrackName,
+          telemetryInstances.current[userId],
+          userId,
         )()
 
         // Subscribe to chat if we have a valid chat track alias
@@ -1361,14 +1040,19 @@ function SessionPage() {
     if (contextSocket && contextSocket.connected) {
       contextSocket.disconnect()
     }
-    moqClient?.disconnect()
 
-    cleanupClockNormalizer()
+    // Clean up all rewind buffers
+    clearAllRewindBuffers()
+
+    moqClient?.disconnect()
+    //console.log('Disconnected from socket and MoQtail client', moqClient);
 
     clearSession()
 
-    window.location.href = '/'
+    window.location.href = '/' //should force page refresh
   }
+
+  const userCount = getUserCount()
 
   useEffect(() => {
     if (chatMessagesRef.current && !isUserScrolling) {
@@ -1384,34 +1068,29 @@ function SessionPage() {
     }
   }
 
-  const userCount = getUserCount()
-
-  const usersPerPage = 3
-  const [pageIndex, setPageIndex] = useState(0)
-
-  const userList = Object.entries(users)
-    .sort((a, b) => (isSelf(b[0]) ? 1 : 0) - (isSelf(a[0]) ? 1 : 0))
-    .map((item) => item[1])
-    .slice(0, 6)
-
-  useEffect(() => {
-    if (pageIndex > 0 && userCount <= 3) {
-      setPageIndex(0)
+  const handleOpenRewindPlayer = (userId: string) => {
+    const rewindBuffer = getRewindBuffer(userId)
+    if (rewindBuffer.getCount() === 0) {
+      console.warn('No rewind data available for user:', userId)
+      return
     }
-  }, [userCount, pageIndex])
+    setSelectedRewindUserId(userId)
+    setIsRewindPlayerOpen(true)
+  }
 
-  const [isSmallScreen, setIsSmallScreen] = useState(false)
+  const handleCloseRewindPlayer = () => {
+    console.log('SessionPage: Closing rewind player')
+    isRewindCleaningUp.current = true
+    setIsRewindPlayerOpen(false)
+    setSelectedRewindUserId('')
 
-  useEffect(() => {
-    function handleResize() {
-      setIsSmallScreen(window.innerWidth < 768)
-    }
-    handleResize()
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
-
-  const usersToRender = isSmallScreen ? (pageIndex === 0 ? userList.slice(0, 3) : userList.slice(3, 6)) : userList
+    // Add a delay to ensure rewind player cleanup is complete
+    // before allowing other operations
+    setTimeout(() => {
+      console.log('SessionPage: Rewind player cleanup complete')
+      isRewindCleaningUp.current = false
+    }, 300)
+  }
 
   return (
     <div className="h-screen bg-gray-900 flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
@@ -1435,434 +1114,107 @@ function SessionPage() {
       <div className="flex-1 flex min-h-0">
         {/* Video Grid Area */}
         <div className={`flex-1 p-4 ${isChatOpen ? 'pr-2' : 'pr-4'} min-h-0`}>
-          <div className="grid gap-3 h-full grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
-            {usersToRender.map((user) => (
-              <div
-                key={user.id}
-                className={`bg-gray-800 rounded-lg overflow-hidden group aspect-video transition-all duration-300 ${
-                  maximizedUserId === user.id
-                    ? 'absolute inset-0 w-full h-full z-20'
-                    : maximizedUserId
-                      ? 'hidden'
-                      : 'relative'
-                }`}
-              >
-                {isSelf(user.id) ? (
-                  <>
-                    {/* Self participant video and canvas refs */}
-                    <video
-                      ref={selfVideoRef}
-                      autoPlay
-                      muted
-                      style={{
-                        transform: isScreenSharing ? 'none' : 'scaleX(-1)',
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                      }}
-                    />
-                    {/* Show initials when video is off */}
-                    {!user.hasVideo && !isScreenSharing && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
-                        <div
-                          className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.id)}`}
-                        >
-                          <div className="text-white text-2xl font-bold">{getUserInitials(user.name)}</div>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <canvas
-                      ref={remoteCanvasRefs[user.id]}
-                      id={user.id}
-                      data-videotrackalias={user?.publishedTracks?.video?.alias}
-                      data-audiotrackalias={user?.publishedTracks?.audio?.alias}
-                      data-chattrackalias={user?.publishedTracks?.chat?.alias}
-                      data-announced={user?.publishedTracks?.video?.announced}
-                      className="w-full h-full object-cover"
-                    />
-                    {/* Show initials when remote video is off */}
-                    {!user.hasVideo && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
-                        <div
-                          className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.id)}`}
-                        >
-                          <div className="text-white text-2xl font-bold">{getUserInitials(user.name)}</div>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-                {/* Participant Info Overlay */}
-                <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center">
-                  <div className="bg-black bg-opacity-60 px-2 py-1 rounded text-white text-sm font-medium">
-                    <div>
-                      {user.name} {isSelf(user.id) && '(You)'}
-                    </div>
-                    {telemetryData[user.id] &&
-                      !isSelf(user.id) && ( // TODO: Calculate throughputs for self user
-                        <div className="hidden md:block text-xs text-gray-300 mt-1">
-                          {telemetryData[user.id].latency}ms | {telemetryData[user.id].videoBitrate.toFixed(0)}Kbit/s |{' '}
-                          {telemetryData[user.id].audioBitrate.toFixed(0)}Kbit/s
+          <div className={`grid gap-3 h-full grid-cols-3 grid-rows-2`}>
+            {Object.entries(users)
+              .sort((a, b) => (isSelf(b[0]) ? 1 : 0) - (isSelf(a[0]) ? 1 : 0)) // self card first
+              .map((item) => item[1])
+              .map((user) => (
+                <div key={user.id} className="relative bg-gray-800 rounded-lg overflow-hidden group aspect-video">
+                  {isSelf(user.id) ? (
+                    <>
+                      {/* Self participant video and canvas refs */}
+                      <video
+                        ref={selfVideoRef}
+                        autoPlay
+                        muted
+                        style={{
+                          transform: isScreenSharing ? 'none' : 'scaleX(-1)',
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                        }}
+                      />
+                      {/* Show initials when video is off */}
+                      {!user.hasVideo && !isScreenSharing && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
+                          <div
+                            className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.id)}`}
+                          >
+                            <div className="text-white text-2xl font-bold">{getUserInitials(user.name)}</div>
+                          </div>
                         </div>
                       )}
-                  </div>
-                  <div className="flex space-x-1">
-                    {/* Rewind button for remote users */}
-                    {!isSelf(user.id) && (
-                      <button
-                        onClick={() => handleOpenRewindPlayer(user.id)}
-                        disabled={isFetching}
-                        className={`p-1 rounded transition-colors ${
-                          isFetching ? 'bg-gray-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-                        }`}
-                        title={isFetching ? 'Fetching rewind data...' : 'Rewind video'}
-                      >
-                        <RotateCcw className="w-3 h-3 text-white" />
-                      </button>
-                    )}
-                    <div className={user.hasAudio ? 'bg-gray-700 p-1 rounded' : 'bg-red-600 p-1 rounded'}>
-                      {user.hasAudio ? (
-                        <Mic className="w-3 h-3 text-white" />
-                      ) : (
-                        <MicOff className="w-3 h-3 text-white" />
+                    </>
+                  ) : (
+                    <>
+                      <canvas
+                        ref={remoteCanvasRefs[user.id]}
+                        id={user.id}
+                        data-videotrackalias={user?.publishedTracks?.video?.alias}
+                        data-audiotrackalias={user?.publishedTracks?.audio?.alias}
+                        data-chattrackalias={user?.publishedTracks?.chat?.alias}
+                        data-announced={user?.publishedTracks?.video?.announced}
+                        className="w-full h-full object-cover"
+                      />
+                      {/* Show initials when remote video is off */}
+                      {!user.hasVideo && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
+                          <div
+                            className={`w-20 h-20 rounded-full flex items-center justify-center ${getUserColor(user.id)}`}
+                          >
+                            <div className="text-white text-2xl font-bold">{getUserInitials(user.name)}</div>
+                          </div>
+                        </div>
                       )}
-                    </div>
-                    <div className={user.hasVideo ? 'bg-gray-700 p-1 rounded' : 'bg-red-600 p-1 rounded'}>
-                      {user.hasVideo ? (
-                        <Video className="w-3 h-3 text-white" />
-                      ) : (
-                        <VideoOff className="w-3 h-3 text-white" />
-                      )}
-                    </div>
-                  </div>
-                </div>
-                {/* Screen sharing indicator (local only for now) */}
-                {user.hasScreenshare && (
-                  <div className="absolute top-3 left-3 bg-green-600 px-2 py-1 rounded text-white text-xs font-medium">
-                    Sharing Screen
-                  </div>
-                )}
-                {/* Info card toggle buttons */}
-                <div className="absolute top-3 right-3 flex space-x-1">
-                  {/* Network Stats Button */}
-                  {!isSelf(user.id) && ( // TODO: Calculate throughputs for self user
-                    <button
-                      onClick={() => toggleInfoCard(user.id, 'network')}
-                      className={`p-1 rounded-full transition-all duration-200 ${
-                        showInfoCards[user.id] && infoPanelType[user.id] === 'network'
-                          ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                          : 'bg-gray-700 hover:bg-blue-600 text-white'
-                      }`}
-                      title="Network Statistics"
-                    >
-                      <Activity className="w-4 h-4" />
-                    </button>
+                    </>
                   )}
-                  {/* Media Info Button */}
-                  <button
-                    onClick={() => toggleInfoCard(user.id, 'codec')}
-                    className={`p-1 rounded-full transition-all duration-200 ${
-                      showInfoCards[user.id] && infoPanelType[user.id] === 'codec'
-                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                        : 'bg-gray-700 hover:bg-purple-600 text-white'
-                    }`}
-                    title="Media Information"
-                  >
-                    <Info className="w-4 h-4" />
-                  </button>
-                  {/* Maximize / Minimize Button — shown for all users */}
-                  <button
-                    onClick={() => setMaximizedUserId(maximizedUserId === user.id ? null : user.id)}
-                    className="p-1 rounded-full bg-gray-700 hover:bg-gray-600 text-white"
-                    title={maximizedUserId === user.id ? 'Minimize View' : 'Maximize View'}
-                  >
-                    {maximizedUserId === user.id ? <Minimize className="w-4 h-4" /> : <Expand className="w-4 h-4" />}
-                  </button>
-                </div>
-
-                {/* Info card overlay */}
-                {showInfoCards[user.id] && (
-                  <div className="absolute inset-0 bg-white flex flex-col p-3 rounded-lg overflow-hidden">
-                    {/* Close button */}
-                    <div className="absolute top-3 right-3 z-10">
-                      <button
-                        onClick={() => toggleInfoCard(user.id, infoPanelType[user.id] || 'network')}
-                        className="p-1 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-600 transition-all duration-200"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-
-                    <div className="w-full h-full flex flex-col min-h-0">
-                      {/* Conditional rendering based on panel type */}
-                      {!infoPanelType[user.id] || infoPanelType[user.id] === 'network' ? (
-                        <>
-                          {/* Network Stats Panel */}
-                          {/* Header */}
-                          <div className="mb-2 flex-shrink-0">
-                            <h3 className="text-lg font-bold text-black leading-tight">Network Stats</h3>
-                          </div>
-
-                          {/* Legend */}
-                          <div className="grid grid-cols-3 gap-1 mb-2 flex-shrink-0">
-                            <div className="flex items-center space-x-1">
-                              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                              <span className="text-xs font-medium text-gray-700">VIDEO</span>
-                            </div>
-                            <div className="flex items-center space-x-1">
-                              <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
-                              <span className="text-xs font-medium text-gray-700">AUDIO</span>
-                            </div>
-                            <div className="flex items-center space-x-1">
-                              <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                              <span className="text-xs font-medium text-gray-700">LATENCY</span>
-                            </div>
-                          </div>
-
-                          {/* Values with smooth transitions */}
-                          <div className="grid grid-cols-3 gap-1 mb-3 flex-shrink-0">
-                            <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
-                              {telemetryData[user.id]
-                                ? `${telemetryData[user.id].videoBitrate.toFixed(0)} Kbit/s`
-                                : 'N/A'}
-                            </span>
-                            <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
-                              {telemetryData[user.id]
-                                ? `${telemetryData[user.id].audioBitrate.toFixed(0)} Kbit/s`
-                                : 'N/A'}
-                            </span>
-                            <span className="text-xs font-bold text-black transition-all duration-200 ease-in-out">
-                              {!isSelf(user.id) && telemetryData[user.id]
-                                ? `${telemetryData[user.id].latency}ms`
-                                : 'N/A'}
-                            </span>
-                          </div>
-
-                          {/* Network Stats Graph */}
-                          <div className="flex-1 relative min-h-0">
-                            {/* Graph container */}
-                            <div className="h-full bg-gray-50 rounded relative overflow-hidden border border-gray-200 min-h-16">
-                              {/* Left Y-axis labels (Bitrate) */}
-                              <div className="absolute left-1 top-1 text-xs text-gray-500 leading-none">500K</div>
-                              <div className="absolute left-1 top-1/2 text-xs text-gray-500 leading-none">250K</div>
-                              <div className="absolute left-1 bottom-1 text-xs text-gray-500 leading-none">0</div>
-
-                              {/* Right Y-axis labels (Latency) */}
-                              <div className="absolute right-1 top-1 text-xs text-red-500 leading-none">200ms</div>
-                              <div className="absolute right-1 top-1/2 text-xs text-red-500 leading-none">100ms</div>
-                              <div className="absolute right-1 bottom-1 text-xs text-red-500 leading-none">0ms</div>
-
-                              {/* Grid lines */}
-                              <div className="absolute inset-0 flex flex-col justify-between p-1">
-                                {[...Array(3)].map((_, i) => (
-                                  <div key={i} className="border-t border-gray-300 opacity-30"></div>
-                                ))}
-                              </div>
-
-                              {/* Video bitrate line */}
-                              <div className="absolute inset-0 p-2">
-                                <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
-                                  <polyline
-                                    fill="none"
-                                    stroke="#3b82f6"
-                                    strokeWidth="1.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    points={
-                                      videoBitrateHistory[user.id] && videoBitrateHistory[user.id].length > 0
-                                        ? videoBitrateHistory[user.id]
-                                            .map((videoBitrate, index) => {
-                                              const x =
-                                                (index / Math.max(videoBitrateHistory[user.id].length - 1, 1)) * 300
-                                              const y = 100 - Math.min((videoBitrate / 500) * 100, 100)
-                                              return `${x},${y}`
-                                            })
-                                            .join(' ')
-                                        : ''
-                                    }
-                                  />
-                                </svg>
-                              </div>
-
-                              {/* Audio bitrate line */}
-                              <div className="absolute inset-0 p-2">
-                                <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
-                                  <polyline
-                                    fill="none"
-                                    stroke="#6b7280"
-                                    strokeWidth="1.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    points={
-                                      audioBitrateHistory[user.id] && audioBitrateHistory[user.id].length > 0
-                                        ? audioBitrateHistory[user.id]
-                                            .map((audioBitrate, index) => {
-                                              const x =
-                                                (index / Math.max(audioBitrateHistory[user.id].length - 1, 1)) * 300
-                                              const y = 100 - Math.min((audioBitrate / 500) * 100, 100)
-                                              return `${x},${y}`
-                                            })
-                                            .join(' ')
-                                        : ''
-                                    }
-                                  />
-                                </svg>
-                              </div>
-
-                              {/* Latency line */}
-                              <div className="absolute inset-0 p-2">
-                                <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
-                                  <polyline
-                                    fill="none"
-                                    stroke="#ef4444"
-                                    strokeWidth="1.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    points={
-                                      !isSelf(user.id) && latencyHistory[user.id] && latencyHistory[user.id].length > 0
-                                        ? latencyHistory[user.id]
-                                            .map((latency: number, index: number) => {
-                                              const x = (index / Math.max(latencyHistory[user.id].length - 1, 1)) * 300
-                                              const y = 100 - Math.min((latency / 200) * 100, 100)
-                                              return `${x},${y}`
-                                            })
-                                            .join(' ')
-                                        : isSelf(user.id)
-                                          ? '' // No line for self user
-                                          : ''
-                                    }
-                                  />
-                                </svg>
-                              </div>
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          {/* Media Info Panel */}
-                          {/* Header */}
-                          <div className="mb-2 flex-shrink-0">
-                            <h3 className="text-lg font-bold text-black leading-tight">Media Info</h3>
-                          </div>
-
-                          {/* Media Information Grid*/}
-                          <div className="space-y-1 flex-1 text-xs overflow-y-auto">
-                            {/* Video & Audio*/}
-                            <div className="bg-gray-50 rounded p-1">
-                              <div className="grid grid-cols-2 gap-2">
-                                {/* Video */}
-                                <div>
-                                  <div className="font-semibold text-blue-600 mb-1 flex items-center text-xs">
-                                    <Video className="w-3 h-3 mr-1" />
-                                    Video
-                                  </div>
-                                  <div className="space-y-0.5">
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Codec:</span>
-                                      <span className="font-medium text-black">
-                                        {codecData[user.id]?.videoCodec || 'N/A'}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Resolution:</span>
-                                      <span className="font-medium text-black">
-                                        {codecData[user.id]?.resolution || 'N/A'}
-                                      </span>
-                                    </div>
-
-                                    {codecData[user.id]?.videoBitrate && (
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-600">Bitrate:</span>
-                                        <span className="font-medium text-black">
-                                          {(codecData[user.id].videoBitrate! / 1000).toFixed(0)}kbps
-                                        </span>
-                                      </div>
-                                    )}
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">FPS:</span>
-                                      <span className="font-medium text-black">
-                                        {codecData[user.id]?.frameRate || 'N/A'}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Audio */}
-                                <div>
-                                  <div className="font-semibold text-green-600 mb-1 flex items-center text-xs">
-                                    <Mic className="w-3 h-3 mr-1" />
-                                    Audio
-                                  </div>
-                                  <div className="space-y-0.5">
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Codec:</span>
-                                      <span className="font-medium text-black">
-                                        {codecData[user.id]?.audioCodec || 'N/A'}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Sample Rate:</span>
-                                      <span className="font-medium text-black">
-                                        {codecData[user.id]?.sampleRate
-                                          ? (codecData[user.id].sampleRate / 1000).toFixed(0) + 'k'
-                                          : '48k'}
-                                      </span>
-                                    </div>
-                                    {codecData[user.id]?.audioBitrate && (
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-600">Bitrate:</span>
-                                        <span className="font-medium text-black">
-                                          {(codecData[user.id].audioBitrate! / 1000).toFixed(0)}kbps
-                                        </span>
-                                      </div>
-                                    )}
-                                    {codecData[user.id]?.numberOfChannels && (
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-600">Channels:</span>
-                                        <span className="font-medium text-black">
-                                          {codecData[user.id].numberOfChannels}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Sync Information */}
-                            <div className="bg-gray-50 rounded p-1">
-                              <div className="font-semibold text-purple-600 mb-1 flex items-center text-xs">
-                                <Activity className="w-3 h-3 mr-1" />
-                                Sync & Buffer
-                              </div>
-                              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-                                <div className="flex justify-between">
-                                  <span className="text-gray-600">A/V Drift: </span>
-                                  <span className="font-semibold text-green-600">N/A</span>
-                                  {/* <span className={`font-semibold ${Math.abs(codecData[user.id]?.syncDrift || 0) > 10 ? 'text-red-600' : 'text-green-600'}`}> */}
-                                  {/* {codecData[user.id]?.syncDrift !== undefined */}
-                                  {/* ? `${codecData[user.id].syncDrift > 0 ? '+' : ''}${codecData[user.id].syncDrift}ms` */}
-                                  {/* : '0ms' */}
-                                  {/* } */}
-                                  {/* </span> */}
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-gray-600">Buffer duration:</span>
-                                  <span className="font-semibold text-green-600">N/A</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </>
+                  {/* Participant Info Overlay */}
+                  <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center">
+                    <div className="bg-black bg-opacity-60 px-2 py-1 rounded text-white text-sm font-medium">
+                      <div>
+                        {user.name} {isSelf(user.id) && '(You)'}
+                      </div>
+                      {!isSelf(user.id) && telemetryData[user.id] && (
+                        <div className="text-xs text-gray-300 mt-1">
+                          {telemetryData[user.id].latency}ms | {telemetryData[user.id].throughput}KB/s
+                        </div>
                       )}
                     </div>
+                    <div className="flex space-x-1">
+                      {/* Rewind button for remote users */}
+                      {!isSelf(user.id) && (
+                        <button
+                          onClick={() => handleOpenRewindPlayer(user.id)}
+                          className="bg-blue-600 hover:bg-blue-700 p-1 rounded transition-colors"
+                          title="Rewind video"
+                        >
+                          <RotateCcw className="w-3 h-3 text-white" />
+                        </button>
+                      )}
+                      <div className={user.hasAudio ? 'bg-gray-700 p-1 rounded' : 'bg-red-600 p-1 rounded'}>
+                        {user.hasAudio ? (
+                          <Mic className="w-3 h-3 text-white" />
+                        ) : (
+                          <MicOff className="w-3 h-3 text-white" />
+                        )}
+                      </div>
+                      <div className={user.hasVideo ? 'bg-gray-700 p-1 rounded' : 'bg-red-600 p-1 rounded'}>
+                        {user.hasVideo ? (
+                          <Video className="w-3 h-3 text-white" />
+                        ) : (
+                          <VideoOff className="w-3 h-3 text-white" />
+                        )}
+                      </div>
+                    </div>
                   </div>
-                )}
-              </div>
-            ))}
+                  {/* Screen sharing indicator (local only for now) */}
+                  {user.hasScreenshare && (
+                    <div className="absolute top-3 left-3 bg-green-600 px-2 py-1 rounded text-white text-xs font-medium">
+                      Sharing Screen
+                    </div>
+                  )}
+                </div>
+              ))}
           </div>
         </div>
         {/* Chat Panel */}
@@ -1872,7 +1224,7 @@ function SessionPage() {
             <div className="p-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
               <div className="flex items-center space-x-2">
                 <MessageSquare className="w-5 h-5 text-gray-600" />
-                <h3 className="font-semibold text-gray-900">MOQtail Chat</h3>
+                <h3 className="font-semibold text-gray-900">Chat</h3>
               </div>
               <button
                 onClick={() => setIsChatOpen(false)}
@@ -2034,25 +1386,6 @@ function SessionPage() {
         >
           <MonitorUp className="w-5 h-5" />
         </button>
-        {/* Pagination Buttons */}
-        {userCount > usersPerPage && isSmallScreen && (
-          <>
-            <button
-              onClick={() => setPageIndex(0)}
-              disabled={pageIndex === 0}
-              className="px-3 py-1 bg-gray-700 rounded text-white disabled:opacity-50"
-            >
-              1
-            </button>
-            <button
-              onClick={() => setPageIndex(1)}
-              disabled={pageIndex === 1}
-              className="px-3 py-1 bg-gray-700 rounded text-white disabled:opacity-50"
-            >
-              2
-            </button>
-          </>
-        )}
         {/* End Call Button */}
         <button
           onClick={leaveRoom}
@@ -2076,8 +1409,8 @@ function SessionPage() {
         <RewindPlayer
           isOpen={isRewindPlayerOpen}
           onClose={handleCloseRewindPlayer}
-          videoObjects={fetchedRewindData[selectedRewindUserId]?.video || []}
-          audioObjects={fetchedRewindData[selectedRewindUserId]?.audio || []}
+          videoObjects={getRewindBuffer(selectedRewindUserId).getVideoObjects()}
+          audioObjects={getRewindBuffer(selectedRewindUserId).getAudioObjects()}
           userName={users[selectedRewindUserId]?.name || 'Unknown User'}
           userColor={getUserColorHex(selectedRewindUserId)}
         />
