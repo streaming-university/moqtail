@@ -10,6 +10,9 @@ export interface BufferedObject {
   object: MoqtObject
   createdAt: number
 }
+export interface Clock {
+  now(): number
+}
 
 /**
  * A playout buffer that manages timed delivery of MoQT objects.
@@ -43,7 +46,7 @@ export class PlayoutBuffer {
   #isRunning: boolean = true
   #targetLatencyMs: number
   #maxLatencyMs: number
-  #clockNormalizer: ClockNormalizer | undefined
+  #clockNormalizer: Clock | undefined
 
   onObject: ((obj: MoqtObject | null) => void) | null = null
 

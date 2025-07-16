@@ -152,6 +152,9 @@ function closeRoom(roomName: string) {
 
 io.on('connection', (socket) => {
   console.debug('new connection', socket.id)
+  socket.on('time', () => {
+    socket.emit('time', { serverTime: Date.now() })
+  })
   socket.on('join-room', (request: JoinRequest) => {
     console.debug('join-room', request, socket.id)
 
