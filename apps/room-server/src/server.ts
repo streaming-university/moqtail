@@ -53,6 +53,13 @@ const MAX_ROOM_CAPACITY = 6
 const MAX_ROOM_COUNT = 100
 const ROOM_TIMEOUT_MS = 10 * 60 * 1000 // 10 mins (ms)
 
+function sanitizeInput(input: string): string {
+  return input
+    .replace(/[<>\"'&]/g, '') // HTML or script injection
+    .replace(/\s+/g, ' ') // Normalize multiple spaces to a single one
+    .trim()
+}
+
 function newRoom(roomName: string) {
   const room: RoomState = {
     id: roomCounter++,
@@ -155,20 +162,8 @@ io.on('connection', (socket) => {
   socket.on('join-room', (request: JoinRequest) => {
     console.debug('join-room', request, socket.id)
 
-    const username = request.username.trim()
-    const roomName = request.roomName.trim()
-
-    if (rooms.has(roomName)) {
-      const existingRoom = rooms.get(roomName)!
-      for (const user of existingRoom.users.values()) {
-        if (user.name === username) {
-          const errorText = `Username "${username}" already exists in room "${roomName}".`
-          console.warn(errorText, socket.id)
-          socket.emit('error', newError('join-room', ErrorCode.InvalidUsername, errorText))
-          return
-        }
-      }
-    }
+    const username = sanitizeInput(request.username.trim())
+    const roomName = sanitizeInput(request.roomName.trim())
 
     if (!username || !roomName) {
       const errorText = 'Username and room name are required.'
@@ -191,9 +186,21 @@ io.on('connection', (socket) => {
       return
     }
 
+    if (rooms.has(roomName)) {
+      const existingRoom = rooms.get(roomName)!
+      for (const user of existingRoom.users.values()) {
+        if (user.name === username) {
+          const errorText = `Username "${username}" already exists in room "${roomName}".`
+          console.warn(errorText, socket.id)
+          socket.emit('error', newError('join-room', ErrorCode.InvalidUsername, errorText))
+          return
+        }
+      }
+    }
+
     let room = rooms.get(roomName)
     if (!room) {
-      if (roomCounter >= MAX_ROOM_COUNT) {
+      if (rooms.size >= MAX_ROOM_COUNT) {
         const errorText = `Maximum room count (${MAX_ROOM_COUNT}) is reached. Room: ${roomName}`
         console.warn(errorText, socket.id)
         socket.emit('error', newError('join-room', ErrorCode.MaxRoomReached, errorText))
@@ -201,6 +208,10 @@ io.on('connection', (socket) => {
       }
       room = newRoom(roomName)
       rooms.set(roomName, room)
+      const existingRoom = rooms.get(roomName)
+      if (existingRoom && existingRoom !== room) {
+        room = existingRoom
+      }
     }
 
     if (room?.users.size >= MAX_ROOM_CAPACITY) {
@@ -214,6 +225,7 @@ io.on('connection', (socket) => {
     socket.join(roomName)
 
     const user = newUser(userId, username)
+
     room!.users.set(userId, user)
     userRoomMapping.set(userId, roomName)
 
@@ -239,6 +251,11 @@ io.on('connection', (socket) => {
   })
 
   socket.on('screen-share-toggled', ({ userId, hasScreenshare }) => {
+    if (typeof userId !== 'string' || typeof hasScreenshare !== 'boolean') {
+      console.warn('Invalid screen share toggle request format', socket.id)
+      return
+    }
+
     const roomName = userRoomMapping.get(socket.id)
     if (!roomName) return
     const room = rooms.get(roomName)
@@ -248,13 +265,34 @@ io.on('connection', (socket) => {
 
     user.hasScreenshare = hasScreenshare
 
-    // Broadcast to all users in the room (including the sender)
-    io.to(roomName).emit('screen-share-toggled', { userId, hasScreenshare })
+    socket.broadcast.to(roomName).emit('screen-share-toggled', { userId, hasScreenshare })
   })
   // This is called after the publisher gets AnnounceOk or
   // it starts transmitting data to the relay (this is not implemented yet)
   socket.on('update-track', (request: UpdateTrackRequest) => {
     console.debug('update-track', request, socket.id)
+
+    if (!request || typeof request.trackType !== 'string' || typeof request.event !== 'string') {
+      const errorText = 'Invalid update track request format.'
+      console.warn(errorText, socket.id)
+      socket.emit('error', newError('update-track', ErrorCode.InvalidRequest, errorText))
+      return
+    }
+
+    if (!['video', 'audio', 'chat'].includes(request.trackType)) {
+      const errorText = `Invalid track type: ${request.trackType}`
+      console.warn(errorText, socket.id)
+      socket.emit('error', newError('update-track', ErrorCode.InvalidRequest, errorText))
+      return
+    }
+
+    if (!['publish', 'announce'].includes(request.event)) {
+      const errorText = `Invalid track event: ${request.event}`
+      console.warn(errorText, socket.id)
+      socket.emit('error', newError('update-track', ErrorCode.InvalidRequest, errorText))
+      return
+    }
+
     const roomName = userRoomMapping.get(socket.id)
 
     if (!roomName) {
@@ -300,10 +338,25 @@ io.on('connection', (socket) => {
 
   socket.on('toggle-button', (request: ToggleRequest) => {
     console.debug('toggle-button', request, socket.id)
+
+    if (!request || typeof request.kind !== 'string' || typeof request.value !== 'boolean') {
+      const errorText = 'Invalid toggle request format.'
+      console.warn(errorText, socket.id)
+      socket.emit('error', newError('toggle-button', ErrorCode.InvalidRequest, errorText))
+      return
+    }
+
+    if (!['cam', 'mic', 'screenshare'].includes(request.kind)) {
+      const errorText = `Invalid toggle kind: ${request.kind}`
+      console.warn(errorText, socket.id)
+      socket.emit('error', newError('toggle-button', ErrorCode.InvalidRequest, errorText))
+      return
+    }
+
     const roomName = userRoomMapping.get(socket.id)
 
     if (!roomName) {
-      const errorText = `Room (${roomName}) not found in userRoomMapping.`
+      const errorText = `Room not found in userRoomMapping.`
       console.warn(errorText, socket.id)
       socket.emit('error', newError('toggle-button', ErrorCode.RoomNotFound, errorText))
       return
@@ -350,9 +403,7 @@ io.on('connection', (socket) => {
     const roomName = userRoomMapping.get(socket.id)
 
     if (!roomName) {
-      const errorText = `Room not found in userRoomMapping.`
-      console.warn(errorText, socket.id)
-      socket.emit('error', newError('update-track', ErrorCode.RoomNotFound, errorText))
+      console.warn('Room not found in userRoomMapping during disconnect', socket.id)
       return
     }
 
@@ -362,9 +413,7 @@ io.on('connection', (socket) => {
     // update my state
     const room = rooms.get(roomName)
     if (!room) {
-      const errorText = `Room (${roomName}) not found.`
-      console.warn(errorText, socket.id)
-      socket.emit('error', newError('update-track', ErrorCode.RoomNotFound, errorText))
+      console.warn(`Room (${roomName}) not found during disconnect`, socket.id)
       return
     }
 
