@@ -107,7 +107,7 @@ export class DatagramStatus {
     return new DatagramStatus(
       msgType,
       trackAlias,
-      Location.from(groupId, objectId),
+      new Location(groupId, objectId),
       publisherPriority,
       extensionHeaders,
       objectStatus,

@@ -35,7 +35,7 @@ export class FetchObject {
     objectStatus: ObjectStatus,
   ): FetchObject {
     return new FetchObject(
-      Location.from(groupId, objectId),
+      new Location(groupId, objectId),
       subgroupId,
       publisherPriority,
       extensionHeaders,
@@ -53,7 +53,7 @@ export class FetchObject {
     payload: Uint8Array,
   ): FetchObject {
     return new FetchObject(
-      Location.from(groupId, objectId),
+      new Location(groupId, objectId),
       subgroupId,
       publisherPriority,
       extensionHeaders,
@@ -108,7 +108,7 @@ export class FetchObject {
       payload = buf.getBytes(payloadLen)
     }
     return new FetchObject(
-      Location.from(groupId, objectId),
+      new Location(groupId, objectId),
       subgroupId,
       publisherPriority,
       extensionHeaders,

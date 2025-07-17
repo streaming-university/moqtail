@@ -72,7 +72,7 @@ if (import.meta.vitest) {
     test('roundtrip', () => {
       const requestId = 241421n
       const statusCode = TrackStatusCode.Finished
-      const largestLocation = Location.from(1n, 1n)
+      const largestLocation = new Location(1n, 1n)
       const parameters = [
         KeyValuePair.tryNewVarInt(0, 10),
         KeyValuePair.tryNewBytes(1, new TextEncoder().encode('Finito?!')),
@@ -94,7 +94,7 @@ if (import.meta.vitest) {
     test('excess roundtrip', () => {
       const requestId = 241421n
       const statusCode = TrackStatusCode.Finished
-      const largestLocation = Location.from(1n, 1n)
+      const largestLocation = new Location(1n, 1n)
       const parameters = [
         KeyValuePair.tryNewVarInt(0, 10),
         KeyValuePair.tryNewBytes(1, new TextEncoder().encode('Finito?!')),
@@ -121,7 +121,7 @@ if (import.meta.vitest) {
     test('partial message', () => {
       const requestId = 241421n
       const statusCode = TrackStatusCode.Finished
-      const largestLocation = Location.from(1n, 1n)
+      const largestLocation = new Location(1n, 1n)
       const parameters = [
         KeyValuePair.tryNewVarInt(0, 10),
         KeyValuePair.tryNewBytes(1, new TextEncoder().encode('Finito?!')),
