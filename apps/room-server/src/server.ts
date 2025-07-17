@@ -49,8 +49,8 @@ let roomCounter = 0
 let lastTrackAlias = 1
 
 // constants
-const MAX_ROOM_CAPACITY = 6
-const MAX_ROOM_COUNT = 100
+const MAX_ROOM_CAPACITY = 3
+const MAX_ROOM_COUNT = 5
 const ROOM_TIMEOUT_MS = 10 * 60 * 1000 // 10 mins (ms)
 
 function newRoom(roomName: string) {

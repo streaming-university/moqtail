@@ -9,7 +9,7 @@ let audioDecoder: AudioDecoder | null = null
 let waitingForKeyframe = true
 let theDecoderConfig: VideoDecoderConfig | null = null
 let frameTimeoutId: ReturnType<typeof setTimeout> | null = null
-const FRAME_TIMEOUT_MS = 300 // Clear canvas if no frames for 300ms
+const FRAME_TIMEOUT_MS = window.appSettings.frame_timeout_ms
 
 // Diagnostic counters
 let videoFrameCount = 0

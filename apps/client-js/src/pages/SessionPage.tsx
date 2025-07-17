@@ -5,7 +5,7 @@ import {
   Video,
   VideoOff,
   MonitorUp,
-  Phone,
+  PhoneOff,
   Send,
   Users,
   MessageSquare,
@@ -1868,7 +1868,7 @@ function SessionPage() {
           onClick={leaveRoom}
           className="p-3 rounded-full bg-red-600 hover:bg-red-700 text-white transition-all duration-200 ml-8"
         >
-          <Phone className="w-5 h-5 transform rotate-135" />
+          <PhoneOff className="w-5 h-5 transform rotate-135" />
         </button>
         {/* Chat Toggle Button (when chat is closed) */}
         {!isChatOpen && (

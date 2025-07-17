@@ -17,4 +17,5 @@ export interface AppSettings {
     targetLatencyMs: number
     maxLatencyMs: number
   }
+  frame_timeout_ms: number
 }
