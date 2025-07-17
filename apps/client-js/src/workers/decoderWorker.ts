@@ -9,7 +9,12 @@ let audioDecoder: AudioDecoder | null = null
 let waitingForKeyframe = true
 let theDecoderConfig: VideoDecoderConfig | null = null
 let frameTimeoutId: ReturnType<typeof setTimeout> | null = null
-const FRAME_TIMEOUT_MS = 300 // Clear canvas if no frames for 00ms
+const FRAME_TIMEOUT_MS = 300 // Clear canvas if no frames for 300ms
+
+// Diagnostic counters
+let videoFrameCount = 0
+let audioFrameCount = 0
+let lastLogTime = performance.now()
 
 self.onmessage = async (e) => {
   const { type, canvas, payload, extentions, decoderConfig, serverTimestamp } = e.data
@@ -24,6 +29,7 @@ self.onmessage = async (e) => {
   }
 
   if (type === 'reset') {
+    console.log('[DECODER] Resetting decoders at', new Date().toISOString())
     waitingForKeyframe = true
     if (frameTimeoutId) {
       clearTimeout(frameTimeoutId)
@@ -34,14 +40,14 @@ self.onmessage = async (e) => {
       try {
         videoDecoder.reset()
       } catch (e) {
-        // ignore reset errors
+        console.error('[DECODER] Error resetting video decoder:', e)
       }
     }
     if (audioDecoder) {
       try {
         audioDecoder.reset()
       } catch (e) {
-        // ignore reset errors
+        console.error('[DECODER] Error resetting audio decoder:', e)
       }
     }
     return
@@ -66,9 +72,12 @@ self.onmessage = async (e) => {
     }, FRAME_TIMEOUT_MS)
 
     if ((configHeader || isKey) && !videoDecoder && theDecoderConfig) {
+      console.log('[DECODER] Creating new video decoder at', new Date().toISOString())
       videoDecoder = new VideoDecoder({
         output: handleFrame,
-        error: console.error,
+        error: (error) => {
+          console.error('[DECODER] Video decoder error:', error, 'at', new Date().toISOString())
+        },
       })
 
       const videoDecoderConfig = theDecoderConfig
@@ -79,10 +88,13 @@ self.onmessage = async (e) => {
       videoDecoder.configure(videoDecoderConfig)
     }
 
-    if (!videoDecoder || videoDecoder.state !== 'configured') return
+    if (!videoDecoder || videoDecoder.state !== 'configured') {
+      console.warn('[DECODER] Video decoder not ready, state:', videoDecoder?.state, 'at', new Date().toISOString())
+      return
+    }
 
     if (waitingForKeyframe && !isKey) {
-      console.warn('Waiting for key frame, skipping delta frame')
+      console.warn('[DECODER] Waiting for keyframe, skipping delta frame at', new Date().toISOString())
       return
     }
 
@@ -99,8 +111,17 @@ self.onmessage = async (e) => {
 
     try {
       videoDecoder.decode(chunk)
+      videoFrameCount++
+
+      const now = performance.now()
+      if (now - lastLogTime > 10000) {
+        console.log(
+          `[DECODER] Video health check: ${videoFrameCount} frames processed, queue size: ${videoDecoder.decodeQueueSize}, state: ${videoDecoder.state}`,
+        )
+        lastLogTime = now
+      }
     } catch (decodeError) {
-      console.error('Error decoding video chunk:', decodeError)
+      console.error('[DECODER] Video decode error:', decodeError, 'at', new Date().toISOString())
     }
 
     const end = performance.now()
@@ -123,6 +144,7 @@ self.onmessage = async (e) => {
     const timestamp = Number(headers.find((h) => ExtensionHeader.isCaptureTimestamp(h))?.timestamp ?? 0n)
 
     if (!audioDecoder) {
+      console.log('[DECODER] Creating new audio decoder at', new Date().toISOString())
       audioDecoder = new AudioDecoder({
         output: (frame) => {
           const pcm = new Float32Array(frame.numberOfFrames * frame.numberOfChannels)
@@ -134,7 +156,9 @@ self.onmessage = async (e) => {
           })
           frame.close()
         },
-        error: console.error,
+        error: (error) => {
+          console.error('[DECODER] Audio decoder error:', error, 'at', new Date().toISOString())
+        },
       })
       audioDecoder.configure({ codec: 'opus', sampleRate: 48000, numberOfChannels: 1 })
     }
@@ -144,7 +168,20 @@ self.onmessage = async (e) => {
       type: 'key', // or 'delta' if you can distinguish
       data: new Uint8Array(moqtObj.payload),
     })
-    audioDecoder.decode(chunk)
+
+    try {
+      audioDecoder.decode(chunk)
+      audioFrameCount++
+
+      // Log audio health less frequently (every 1000 frames)
+      if (audioFrameCount % 1000 === 0) {
+        console.log(
+          `[DECODER] Audio health: ${audioFrameCount} frames, queue: ${audioDecoder.decodeQueueSize}, state: ${audioDecoder.state}`,
+        )
+      }
+    } catch (decodeError) {
+      console.error('[DECODER] Audio decode error:', decodeError, 'at', new Date().toISOString())
+    }
 
     const end = performance.now()
     const decodingTime = end - start
