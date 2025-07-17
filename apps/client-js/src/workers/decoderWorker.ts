@@ -106,12 +106,13 @@ self.onmessage = async (e) => {
     const end = performance.now()
     const decodingTime = end - start
 
-    if (serverTimestamp) {
-      const glassLatency = serverTimestamp + decodingTime - timestamp
-      self.postMessage({ type: 'video-latency', value: glassLatency })
-    }
-
-    self.postMessage({ type: 'video-throughput', value: moqtObj.payload.length })
+    // Send consolidated video telemetry
+    const glassLatency = serverTimestamp ? serverTimestamp + decodingTime - timestamp : 0
+    self.postMessage({
+      type: 'video-telemetry',
+      latency: glassLatency,
+      throughput: moqtObj.payload.length,
+    })
   }
 
   if (type === 'moq-audio') {
@@ -148,13 +149,13 @@ self.onmessage = async (e) => {
     const end = performance.now()
     const decodingTime = end - start
 
-    if (serverTimestamp) {
-      const glassLatency = serverTimestamp + decodingTime - timestamp
-      self.postMessage({ type: 'audio-latency', value: glassLatency })
-    }
-
-    // Send throughput data for audio (payload size)
-    self.postMessage({ type: 'audio-throughput', value: moqtObj.payload.length })
+    // Send consolidated audio telemetry
+    const glassLatency = serverTimestamp ? serverTimestamp + decodingTime - timestamp : 0
+    self.postMessage({
+      type: 'audio-telemetry',
+      latency: glassLatency,
+      throughput: moqtObj.payload.length,
+    })
   }
 
   function handleFrame(frame: VideoFrame) {

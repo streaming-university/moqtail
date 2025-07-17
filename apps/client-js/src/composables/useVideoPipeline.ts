@@ -665,20 +665,20 @@ function handleWorkerMessages(
       // console.log('Received audio data from worker:', event.data);
       audioNode.port.postMessage(new Float32Array(event.data.samples))
     }
-    if (event.data.type === 'video-latency') {
+    if (event.data.type === 'video-telemetry') {
       if (videoTelemetry) {
-        videoTelemetry.push({ latency: Math.abs(event.data.value), size: 0 })
+        videoTelemetry.push({
+          latency: Math.abs(event.data.latency),
+          size: event.data.throughput,
+        })
       }
     }
-
-    if (event.data.type === 'video-throughput') {
-      if (videoTelemetry) {
-        videoTelemetry.push({ latency: 0, size: event.data.value })
-      }
-    }
-    if (event.data.type === 'audio-throughput') {
+    if (event.data.type === 'audio-telemetry') {
       if (audioTelemetry) {
-        audioTelemetry.push({ latency: 0, size: event.data.value })
+        audioTelemetry.push({
+          latency: Math.abs(event.data.latency),
+          size: event.data.throughput,
+        })
       }
     }
   }
