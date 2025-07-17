@@ -15,6 +15,7 @@ const FRAME_TIMEOUT_MS = 300 // Clear canvas if no frames for 300ms
 let videoFrameCount = 0
 let audioFrameCount = 0
 let lastLogTime = performance.now()
+let moqObjectCount = 0
 
 self.onmessage = async (e) => {
   const { type, canvas, payload, extentions, decoderConfig, serverTimestamp } = e.data
@@ -56,6 +57,11 @@ self.onmessage = async (e) => {
   if (type === 'moq') {
     const moqtObj = payload
     const extensionHeaders = extentions
+
+    moqObjectCount++
+    if (moqObjectCount % 50 === 0) {
+      console.log(`[WORKER] Received ${moqObjectCount} MoQ objects`)
+    }
 
     //console.debug('[WORKER]Received the payload:', moqtObj)
     //console.debug('[WORKER]Received the extension headers:', extensionHeaders)
