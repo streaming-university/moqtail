@@ -668,6 +668,9 @@ function SessionPage() {
       const initClient = async () => {
         const client = await connectToRelay(relayUrl + '/' + username)
         setMoqClient(client)
+        client.onDataReceived = (data) => {
+          console.warn('Data received:', data)
+        }
         //console.log('initClient', client)
         if (roomState && Object.values(users).length === 0) {
           const otherUsers = Object.keys(roomState.users).filter((uId) => uId != userId)
