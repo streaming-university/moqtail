@@ -9,30 +9,19 @@ import { Location } from '../../../../libs/moqtail-ts/src/model/common/location'
 import { PlayoutBuffer } from '../../../../libs/moqtail-ts/src/util/playout_buffer'
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
 import { RefObject } from 'react'
-import { ClockNormalizer } from '../../../../libs/moqtail-ts/src/util/clock_normalizer'
 import { SubscribeOptions } from '../../../../libs/moqtail-ts/src/client/types'
+import { SocketClock } from '../util/socketClock'
 
-let clockNormal: ClockNormalizer
-let recalibrationInterval: NodeJS.Timeout | null = null
-
-async function setupClockNormalizer() {
-  clockNormal = await ClockNormalizer.create(
-    window.appSettings.clockNormalizationConfig.timeServerUrl,
-    window.appSettings.clockNormalizationConfig.numberOfSamples,
-  )
+let clock: SocketClock
+export function setClock(c: SocketClock) {
+  clock = c
 }
-
-function cleanupClockNormalizer() {
-  if (recalibrationInterval) {
-    clearInterval(recalibrationInterval)
-    recalibrationInterval = null
-  }
-}
-
-export { cleanupClockNormalizer }
-
-setupClockNormalizer()
-
+setInterval(() => {
+  const localTime = Date.now()
+  const serverTime = clock.now()
+  const diff = localTime - serverTime
+  console.log(`Local Time:${localTime} | Estimated Server Time:${serverTime}\nDifference:${diff}`)
+}, 2000)
 export async function connectToRelay(url: string) {
   return await MoqtailClient.new({ url, supportedVersions: [0xff00000b] })
 }
@@ -134,7 +123,7 @@ export function initializeChatMessageSender({
       new Location(BigInt(initialChatGroupId++), BigInt(initialChatObjectId)),
       publisherPriority,
       objectForwardingPreference,
-      BigInt(Math.round(clockNormal.now())),
+      BigInt(Math.round(clock.now())),
       null,
       payload,
     )
@@ -187,7 +176,7 @@ export async function startAudioEncoder({
         const payload = new Uint8Array(chunk.byteLength)
         chunk.copyTo(payload)
 
-        const captureTime = Math.round(clockNormal.now())
+        const captureTime = Math.round(clock!.now())
         const locHeaders = new ExtensionHeaders().addCaptureTimestamp(captureTime)
 
         // console.log('AudioEncoder output chunk:', chunk);
@@ -196,7 +185,7 @@ export async function startAudioEncoder({
           new Location(BigInt(currentAudioGroupId), BigInt(audioObjectId++)),
           publisherPriority,
           objectForwardingPreference,
-          BigInt(Math.round(clockNormal.now())),
+          BigInt(Math.round(clock!.now())),
           locHeaders.build(),
           payload,
         )
@@ -302,7 +291,7 @@ export function initializeVideoEncoder({
         let captureTime = pendingVideoTimestamps.shift()
         if (captureTime === undefined) {
           console.warn('No capture time available for video frame, skipping')
-          captureTime = Math.round(clockNormal.now())
+          captureTime = Math.round(clock!.now())
         }
 
         const locHeaders = new ExtensionHeaders()
@@ -399,7 +388,7 @@ export function initializeVideoEncoder({
             const result = await reader.read()
             if (result.done) break
 
-            const captureTime = Math.round(clockNormal.now())
+            const captureTime = Math.round(clock!.now())
             pendingVideoTimestamps.push(captureTime)
 
             try {
@@ -485,7 +474,7 @@ export async function startVideoEncoder({
         let captureTime = pendingVideoTimestamps.shift()
         if (captureTime === undefined) {
           console.warn('No capture time available for video frame, skipping')
-          captureTime = Math.round(clockNormal.now())
+          captureTime = Math.round(clock!.now())
         }
 
         const locHeaders = new ExtensionHeaders()
@@ -542,7 +531,7 @@ export async function startVideoEncoder({
         const result = await reader.read()
         if (result.done) break
 
-        const captureTime = Math.round(clockNormal.now())
+        const captureTime = Math.round(clock!.now())
         pendingVideoTimestamps.push(captureTime)
 
         // Our video is 25 fps. Each 2s, we can send a new keyframe.
@@ -624,7 +613,7 @@ function subscribeAndPipeToWorker(
       const buffer = new PlayoutBuffer(stream, {
         targetLatencyMs: window.appSettings.playoutBufferConfig.targetLatencyMs,
         maxLatencyMs: window.appSettings.playoutBufferConfig.maxLatencyMs,
-        clockNormalizer: clockNormal,
+        clock,
       })
       buffer.onObject = (obj) => {
         if (!obj) {
@@ -639,7 +628,9 @@ function subscribeAndPipeToWorker(
           return
         }
         // Send to worker
-        worker.postMessage({ type, extentions: obj.extensionHeaders, payload: obj }, [obj.payload.buffer])
+        worker.postMessage({ type, extentions: obj.extensionHeaders, payload: obj, serverTimestamp: clock!.now() }, [
+          obj.payload.buffer,
+        ])
       }
 
       /* If you want to use without any buffering, you may use the following...
@@ -705,12 +696,6 @@ export function useVideoPublisher(
   audioFullTrackName: FullTrackName,
 ) {
   const setup = async () => {
-    const normalizer = await ClockNormalizer.create(
-      window.appSettings.clockNormalizationConfig.timeServerUrl,
-      window.appSettings.clockNormalizationConfig.numberOfSamples,
-    )
-    // Update the global clockNormal instance
-    clockNormal = normalizer
     const video = videoRef.current
     if (!video) {
       console.error('Video element is not available')
@@ -767,12 +752,6 @@ export function useVideoSubscriber(
   audioTelemetry?: NetworkTelemetry,
 ) {
   const setup = async () => {
-    const normalizer = await ClockNormalizer.create(
-      window.appSettings.clockNormalizationConfig.timeServerUrl,
-      window.appSettings.clockNormalizationConfig.numberOfSamples,
-    )
-    // Update the global clockNormal instance
-    clockNormal = normalizer
     const canvas = canvasRef.current
     console.log('Now will check for canvas ref')
     if (!canvas) return

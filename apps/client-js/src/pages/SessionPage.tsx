@@ -38,7 +38,6 @@ import {
   startAudioEncoder,
   subscribeToChatTrack,
   useVideoSubscriber,
-  cleanupClockNormalizer,
 } from '../composables/useVideoPipeline'
 import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client'
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
@@ -593,7 +592,6 @@ function SessionPage() {
           videoFullTrackName,
           videoStreamController: tracks.getVideoStreamController(),
           publisherPriority: 1,
-          offset,
           objectForwardingPreference: ObjectForwardingPreference.Subgroup,
         })
         // Only start video encoder if we have video tracks
@@ -611,7 +609,6 @@ function SessionPage() {
           audioStreamController: tracks.getAudioStreamController(),
           publisherPriority: 1,
           audioGroupId: 0,
-          offset,
           objectForwardingPreference: ObjectForwardingPreference.Subgroup,
         }).then((audioEncoderResult) => {
           audioEncoderObjRef.current = audioEncoderResult
@@ -623,7 +620,6 @@ function SessionPage() {
           chatStreamController: tracks.getChatStreamController(),
           publisherPriority: 1,
           objectForwardingPreference: ObjectForwardingPreference.Subgroup,
-          offset,
         })
 
         await Promise.all([videoPromise, audioPromise])
@@ -688,7 +684,6 @@ function SessionPage() {
 
     if (!contextSocket) return
     const socket = contextSocket
-
     socket.on('user-joined', (user: RoomUser) => {
       console.info(`User joined: ${user.name} (${user.id})`)
       addUser(user)
@@ -1189,8 +1184,6 @@ function SessionPage() {
       contextSocket.disconnect()
     }
     moqClient?.disconnect()
-
-    cleanupClockNormalizer()
 
     clearSession()
 

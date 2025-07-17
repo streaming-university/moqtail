@@ -2,31 +2,24 @@ import {
   ExtensionHeader,
   ExtensionHeaders,
 } from '../../../../libs/moqtail-ts/src/model/extension_header/extension_header'
-import { ClockNormalizer } from '../../../../libs/moqtail-ts/src/util/clock_normalizer'
 
 let ctx: OffscreenCanvasRenderingContext2D | null = null
 let videoDecoder: VideoDecoder | null = null
 let audioDecoder: AudioDecoder | null = null
 let waitingForKeyframe = true
-let clockNormalizer: ClockNormalizer | null = null
 let theDecoderConfig: VideoDecoderConfig | null = null
 let frameTimeoutId: ReturnType<typeof setTimeout> | null = null
 const FRAME_TIMEOUT_MS = 300 // Clear canvas if no frames for 00ms
 
 self.onmessage = async (e) => {
-  const { type, canvas, payload, extentions, decoderConfig } = e.data
+  const { type, canvas, payload, extentions, decoderConfig, serverTimestamp } = e.data
 
   if (type === 'init') {
     ctx = canvas?.getContext?.('2d') ?? null
     theDecoderConfig = decoderConfig || null
 
     // Create ClockNormalizer instance for this worker
-    try {
-      clockNormalizer = await ClockNormalizer.create()
-    } catch (error) {
-      console.error('Failed to create clock normalizer in worker:', error)
-      clockNormalizer = null
-    }
+
     return
   }
 
@@ -96,6 +89,8 @@ self.onmessage = async (e) => {
     if (isKey) {
       waitingForKeyframe = false
     }
+
+    const start = performance.now()
     const chunk = new EncodedVideoChunk({
       timestamp,
       type: isKey ? 'key' : 'delta',
@@ -108,10 +103,12 @@ self.onmessage = async (e) => {
       console.error('Error decoding video chunk:', decodeError)
     }
 
-    if (clockNormalizer !== null && timestamp !== 0) {
-      const arrivalTime = Math.round(Date.now())
-      const captureTimeLocal = Math.round(timestamp)
-      self.postMessage({ type: 'video-latency', value: arrivalTime - captureTimeLocal })
+    const end = performance.now()
+    const decodingTime = end - start
+
+    if (serverTimestamp) {
+      const glassLatency = serverTimestamp + decodingTime - timestamp
+      self.postMessage({ type: 'video-latency', value: glassLatency })
     }
 
     self.postMessage({ type: 'video-throughput', value: moqtObj.payload.length })
@@ -140,6 +137,7 @@ self.onmessage = async (e) => {
       })
       audioDecoder.configure({ codec: 'opus', sampleRate: 48000, numberOfChannels: 1 })
     }
+    const start = performance.now()
     const chunk = new EncodedAudioChunk({
       timestamp: 0 /* extract from headers or set to 0 */,
       type: 'key', // or 'delta' if you can distinguish
@@ -147,12 +145,12 @@ self.onmessage = async (e) => {
     })
     audioDecoder.decode(chunk)
 
-    if (clockNormalizer !== null && timestamp !== 0) {
-      // Use local time for arrival, server time (timestamp) for capture
-      // This gives us the actual network + processing latency
-      const arrivalTime = Math.round(Date.now())
-      const captureTimeLocal = Math.round(timestamp)
-      self.postMessage({ type: 'audio-latency', value: arrivalTime - captureTimeLocal })
+    const end = performance.now()
+    const decodingTime = end - start
+
+    if (serverTimestamp) {
+      const glassLatency = serverTimestamp + decodingTime - timestamp
+      self.postMessage({ type: 'audio-latency', value: glassLatency })
     }
 
     // Send throughput data for audio (payload size)
