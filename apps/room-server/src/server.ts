@@ -146,6 +146,7 @@ function closeRoom(roomName: string) {
   }
 
   rooms.delete(roomName)
+  roomCounter--
 
   console.info(`Room ${roomName} successfully closed and cleaned up`)
 }
@@ -375,12 +376,7 @@ io.on('connection', (socket) => {
     console.debug(`User removed from room ${roomName}`, socket.id)
 
     if (room.users.size === 0) {
-      const timer = roomTimers.get(roomName)
-      if (timer) {
-        clearTimeout(timer)
-        roomTimers.delete(roomName)
-      }
-      rooms.delete(roomName)
+      closeRoom(roomName)
       console.info(`Empty room ${roomName} cleaned up`)
     } else {
       const response: UserDisconnectedMessage = {
