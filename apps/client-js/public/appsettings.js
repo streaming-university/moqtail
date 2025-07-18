@@ -39,5 +39,5 @@ window.appSettings = {
     targetLatencyMs: 100,
     maxLatencyMs: 1000,
   },
-  frame_timeout_ms: 1000,
+  frameTimeoutMs: 1000,
 }

@@ -628,9 +628,16 @@ function subscribeAndPipeToWorker(
           return
         }
         // Send to worker
-        worker.postMessage({ type, extentions: obj.extensionHeaders, payload: obj, serverTimestamp: clock!.now() }, [
-          obj.payload.buffer,
-        ])
+        worker.postMessage(
+          {
+            type,
+            extentions: obj.extensionHeaders,
+            payload: obj,
+            serverTimestamp: clock!.now(),
+            frameTimeoutMs: window.appSettings.frameTimeoutMs,
+          },
+          [obj.payload.buffer],
+        )
       }
 
       /* If you want to use without any buffering, you may use the following...

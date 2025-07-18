@@ -9,7 +9,6 @@ let audioDecoder: AudioDecoder | null = null
 let waitingForKeyframe = true
 let theDecoderConfig: VideoDecoderConfig | null = null
 let frameTimeoutId: ReturnType<typeof setTimeout> | null = null
-const FRAME_TIMEOUT_MS = window.appSettings.frame_timeout_ms
 
 // Diagnostic counters
 let videoFrameCount = 0
@@ -18,7 +17,7 @@ let lastLogTime = performance.now()
 let moqObjectCount = 0
 
 self.onmessage = async (e) => {
-  const { type, canvas, payload, extentions, decoderConfig, serverTimestamp } = e.data
+  const { type, canvas, payload, extentions, decoderConfig, serverTimestamp, frameTimeoutMs } = e.data
 
   if (type === 'init') {
     ctx = canvas?.getContext?.('2d') ?? null
@@ -75,7 +74,7 @@ self.onmessage = async (e) => {
     }
     frameTimeoutId = setTimeout(() => {
       clearCanvas()
-    }, FRAME_TIMEOUT_MS)
+    }, frameTimeoutMs)
 
     if ((configHeader || isKey) && !videoDecoder && theDecoderConfig) {
       console.log('[DECODER] Creating new video decoder at', new Date().toISOString())
