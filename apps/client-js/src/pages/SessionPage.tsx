@@ -1243,18 +1243,34 @@ function SessionPage() {
   return (
     <div className="h-screen bg-gray-900 flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
       {/* Header */}
-      <div className="bg-gray-800 px-6 py-3 flex justify-between items-center border-b border-gray-700 flex-shrink-0">
-        <div className="flex items-center space-x-4">
-          <h1 className="text-white text-xl font-semibold">MOQtail Demo - Room: {roomState?.name}</h1>
+      <div className="bg-gray-800 px-6 py-3 flex items-center border-b border-gray-700 flex-shrink-0">
+        {/* Left: Room name */}
+        <div className="flex-1">
+          <h1 className="text-white text-xl font-semibold">
+            <span className="hidden sm:inline">MOQtail Demo - </span>
+            Room: {roomState?.name}
+          </h1>
+        </div>
+
+        {/* Center: Participant count */}
+        <div className="flex-1 flex justify-center">
           <div className="flex items-center space-x-2 text-gray-300">
             <Users className="w-4 h-4" />
             <span className="text-sm">
-              {getUserCount()} participant{userCount > 1 ? 's' : ''}
+              {getUserCount()}
+              <span className="hidden sm:inline"> participant{userCount > 1 ? 's' : ''}</span>
             </span>
           </div>
         </div>
-        <div className={`flex items-center space-x-2 ${timeRemainingColor}`}>
-          <span className="text-base font-semibold">⏱️ Remaining Time: {timeRemaining}</span>
+
+        {/* Right: Remaining time */}
+        <div className={`flex-1 flex justify-end items-center space-x-2 ${timeRemainingColor}`}>
+          <span className="text-base font-semibold sm:hidden">⏱️ {timeRemaining}</span>
+
+          <span className="hidden sm:flex items-center space-x-1 text-base font-semibold">
+            <span>⏱️ Remaining Time:</span>
+            <span style={{ minWidth: '50px' }}>{timeRemaining}</span>
+          </span>
         </div>
       </div>
 
