@@ -1,0 +1,11 @@
+# Exclude compiled/generated files
+dist/
+
+# Exclude HTML files
+*.html
+
+# Exclude Markdown files
+*.md
+
+# Exclude package-lock.json (auto-generated)
+package-lock.json 

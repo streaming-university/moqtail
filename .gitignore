@@ -242,3 +242,6 @@ Cargo.lock
 
 ### Relay Logs ###
 relay.log.*
+
+### Room Server dist files ###
+apps/room-server/dist

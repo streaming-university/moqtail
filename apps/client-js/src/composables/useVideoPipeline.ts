@@ -9,43 +9,19 @@ import { Location } from '../../../../libs/moqtail-ts/src/model/common/location'
 import { PlayoutBuffer } from '../../../../libs/moqtail-ts/src/util/playout_buffer'
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
 import { RefObject } from 'react'
-import { ClockNormalizer } from '../../../../libs/moqtail-ts/src/util/clock_normalizer'
 import { SubscribeOptions } from '../../../../libs/moqtail-ts/src/client/types'
+import { SocketClock } from '../util/socketClock'
 
-let clockNormal: ClockNormalizer
-let recalibrationInterval: NodeJS.Timeout | null = null
-
-async function setupClockNormalizer() {
-  clockNormal = await ClockNormalizer.create(
-    window.appSettings.clockNormalizationConfig.timeServerUrl,
-    window.appSettings.clockNormalizationConfig.numberOfSamples,
-  )
-
-  // Recalibrate every 10 seconds
-  if (recalibrationInterval) {
-    clearInterval(recalibrationInterval)
-  }
-
-  recalibrationInterval = setInterval(async () => {
-    try {
-      await clockNormal.recalibrate()
-    } catch (error) {
-      console.warn('Failed to recalibrate clock normalizer:', error)
-    }
-  }, 10 * 1000)
+let clock: SocketClock
+export function setClock(c: SocketClock) {
+  clock = c
 }
-
-function cleanupClockNormalizer() {
-  if (recalibrationInterval) {
-    clearInterval(recalibrationInterval)
-    recalibrationInterval = null
-  }
-}
-
-export { cleanupClockNormalizer }
-
-setupClockNormalizer()
-
+setInterval(() => {
+  const localTime = Date.now()
+  const serverTime = clock.now()
+  const diff = localTime - serverTime
+  console.log(`Local Time:${localTime} | Estimated Server Time:${serverTime}\nDifference:${diff}`)
+}, 2000)
 export async function connectToRelay(url: string) {
   return await MoqtailClient.new({ url, supportedVersions: [0xff00000b] })
 }
@@ -129,7 +105,6 @@ export function initializeChatMessageSender({
   chatStreamController,
   publisherPriority = 1,
   objectForwardingPreference,
-  offset = 0,
   initialChatGroupId = 10001,
   initialChatObjectId = 0,
 }: {
@@ -137,7 +112,6 @@ export function initializeChatMessageSender({
   chatStreamController: ReadableStreamDefaultController<any> | null
   publisherPriority?: number
   objectForwardingPreference: any
-  offset?: number
   initialChatGroupId?: number
   initialChatObjectId?: number
 }) {
@@ -149,7 +123,7 @@ export function initializeChatMessageSender({
       new Location(BigInt(initialChatGroupId++), BigInt(initialChatObjectId)),
       publisherPriority,
       objectForwardingPreference,
-      BigInt(Math.round(performance.timeOrigin + performance.now() + offset)),
+      BigInt(Math.round(clock.now())),
       null,
       payload,
     )
@@ -166,7 +140,6 @@ export async function startAudioEncoder({
   audioStreamController,
   publisherPriority,
   audioGroupId,
-  offset,
   objectForwardingPreference,
 }: {
   stream: MediaStream
@@ -174,7 +147,6 @@ export async function startAudioEncoder({
   audioStreamController: ReadableStreamDefaultController<MoqtObject> | null
   publisherPriority: number
   audioGroupId: number
-  offset: number
   objectForwardingPreference: ObjectForwardingPreference
 }) {
   console.log('Starting audio encoder with group ID:', audioGroupId)
@@ -204,7 +176,7 @@ export async function startAudioEncoder({
         const payload = new Uint8Array(chunk.byteLength)
         chunk.copyTo(payload)
 
-        const captureTime = Math.round(performance.timeOrigin + performance.now() + offset)
+        const captureTime = Math.round(clock!.now())
         const locHeaders = new ExtensionHeaders().addCaptureTimestamp(captureTime)
 
         // console.log('AudioEncoder output chunk:', chunk);
@@ -213,7 +185,7 @@ export async function startAudioEncoder({
           new Location(BigInt(currentAudioGroupId), BigInt(audioObjectId++)),
           publisherPriority,
           objectForwardingPreference,
-          BigInt(Math.round(performance.timeOrigin + performance.now() + offset)),
+          BigInt(Math.round(clock!.now())),
           locHeaders.build(),
           payload,
         )
@@ -284,13 +256,11 @@ export function initializeVideoEncoder({
   videoFullTrackName,
   videoStreamController,
   publisherPriority,
-  offset,
   objectForwardingPreference,
 }: {
   videoFullTrackName: FullTrackName
   videoStreamController: ReadableStreamDefaultController<MoqtObject> | null
   publisherPriority: number
-  offset: number
   objectForwardingPreference: ObjectForwardingPreference
 }) {
   let videoEncoder: VideoEncoder | null = null
@@ -321,7 +291,7 @@ export function initializeVideoEncoder({
         let captureTime = pendingVideoTimestamps.shift()
         if (captureTime === undefined) {
           console.warn('No capture time available for video frame, skipping')
-          captureTime = Math.round(performance.timeOrigin + performance.now() + offset)
+          captureTime = Math.round(clock!.now())
         }
 
         const locHeaders = new ExtensionHeaders()
@@ -389,7 +359,6 @@ export function initializeVideoEncoder({
     encoderActive,
     pendingVideoTimestamps,
     frameCounter,
-    offset,
     start: async (stream: MediaStream) => {
       // Stop previous encoder and reset state
       if (videoEncoder && encoderActive) {
@@ -419,8 +388,7 @@ export function initializeVideoEncoder({
             const result = await reader.read()
             if (result.done) break
 
-            // Use 0 timestamp for fake tracks, normal timing for real tracks
-            const captureTime = Math.round(performance.timeOrigin + performance.now() + offset)
+            const captureTime = Math.round(clock!.now())
             pendingVideoTimestamps.push(captureTime)
 
             try {
@@ -465,14 +433,12 @@ export async function startVideoEncoder({
   videoFullTrackName,
   videoStreamController,
   publisherPriority,
-  offset,
   objectForwardingPreference,
 }: {
   stream: MediaStream
   videoFullTrackName: FullTrackName
   videoStreamController: ReadableStreamDefaultController<MoqtObject> | null
   publisherPriority: number
-  offset: number
   objectForwardingPreference: ObjectForwardingPreference
 }) {
   if (!stream) {
@@ -508,11 +474,11 @@ export async function startVideoEncoder({
         let captureTime = pendingVideoTimestamps.shift()
         if (captureTime === undefined) {
           console.warn('No capture time available for video frame, skipping')
-          captureTime = Math.round(performance.timeOrigin + performance.now() + offset)
+          captureTime = Math.round(clock!.now())
         }
 
         const locHeaders = new ExtensionHeaders()
-          .addCaptureTimestamp(clockNormal.now())
+          .addCaptureTimestamp(captureTime)
           .addVideoFrameMarking(chunk.type === 'key' ? 1 : 0)
 
         const desc = meta?.decoderConfig?.description
@@ -555,8 +521,6 @@ export async function startVideoEncoder({
     return { stop: async () => {} }
   }
 
-  const isFake = (videoTrack as any).isFake === true
-
   videoReader = new (window as any).MediaStreamTrackProcessor({
     track: videoTrack,
   }).readable.getReader()
@@ -567,7 +531,7 @@ export async function startVideoEncoder({
         const result = await reader.read()
         if (result.done) break
 
-        const captureTime = Math.round(performance.timeOrigin + performance.now() + offset)
+        const captureTime = Math.round(clock!.now())
         pendingVideoTimestamps.push(captureTime)
 
         // Our video is 25 fps. Each 2s, we can send a new keyframe.
@@ -620,13 +584,12 @@ export async function startVideoEncoder({
   return { videoEncoder, videoReader, stop }
 }
 
-function initWorkerAndCanvas(canvas: HTMLCanvasElement, offset: number) {
+function initWorkerAndCanvas(canvas: HTMLCanvasElement) {
   const worker = new Worker(new URL('@app/workers/decoderWorker.ts', import.meta.url), { type: 'module' })
   const offscreen = canvas.transferControlToOffscreen()
-  worker.postMessage(
-    { type: 'init', canvas: offscreen, offset, decoderConfig: window.appSettings.videoDecoderConfig },
-    [offscreen],
-  )
+  worker.postMessage({ type: 'init', canvas: offscreen, decoderConfig: window.appSettings.videoDecoderConfig }, [
+    offscreen,
+  ])
   return worker
 }
 
@@ -650,7 +613,7 @@ function subscribeAndPipeToWorker(
       const buffer = new PlayoutBuffer(stream, {
         targetLatencyMs: window.appSettings.playoutBufferConfig.targetLatencyMs,
         maxLatencyMs: window.appSettings.playoutBufferConfig.maxLatencyMs,
-        clockNormalizer: clockNormal,
+        clock,
       })
       buffer.onObject = (obj) => {
         if (!obj) {
@@ -665,7 +628,16 @@ function subscribeAndPipeToWorker(
           return
         }
         // Send to worker
-        worker.postMessage({ type, extentions: obj.extensionHeaders, payload: obj }, [obj.payload.buffer])
+        worker.postMessage(
+          {
+            type,
+            extentions: obj.extensionHeaders,
+            payload: obj,
+            serverTimestamp: clock!.now(),
+            frameTimeoutMs: window.appSettings.frameTimeoutMs,
+          },
+          [obj.payload.buffer],
+        )
       }
 
       /* If you want to use without any buffering, you may use the following...
@@ -700,20 +672,20 @@ function handleWorkerMessages(
       // console.log('Received audio data from worker:', event.data);
       audioNode.port.postMessage(new Float32Array(event.data.samples))
     }
-    if (event.data.type === 'video-latency') {
+    if (event.data.type === 'video-telemetry') {
       if (videoTelemetry) {
-        videoTelemetry.push({ latency: Math.abs(event.data.value), size: 0 })
+        videoTelemetry.push({
+          latency: Math.abs(event.data.latency),
+          size: event.data.throughput,
+        })
       }
     }
-
-    if (event.data.type === 'video-throughput') {
-      if (videoTelemetry) {
-        videoTelemetry.push({ latency: 0, size: event.data.value })
-      }
-    }
-    if (event.data.type === 'audio-throughput') {
+    if (event.data.type === 'audio-telemetry') {
       if (audioTelemetry) {
-        audioTelemetry.push({ latency: 0, size: event.data.value })
+        audioTelemetry.push({
+          latency: Math.abs(event.data.latency),
+          size: event.data.throughput,
+        })
       }
     }
   }
@@ -731,11 +703,6 @@ export function useVideoPublisher(
   audioFullTrackName: FullTrackName,
 ) {
   const setup = async () => {
-    const normalizer = await ClockNormalizer.create(
-      window.appSettings.clockNormalizationConfig.timeServerUrl,
-      window.appSettings.clockNormalizationConfig.numberOfSamples,
-    )
-    let offset = normalizer.getSkew()
     const video = videoRef.current
     if (!video) {
       console.error('Video element is not available')
@@ -757,24 +724,11 @@ export function useVideoPublisher(
     // TODO: Add chat track
     let tracks = setupTracks(moqClient, audioFullTrackName, videoFullTrackName)
 
-    // Set up periodic recalibration for publisher
-    const publisherRecalibrationInterval = setInterval(async () => {
-      try {
-        const newOffset = await normalizer.recalibrate()
-        offset = newOffset
-        // Note: The offset is used in encoder functions, but they capture it at creation time
-        // For real-time updates, we'd need to modify the encoder functions to accept dynamic offsets
-      } catch (error) {
-        console.warn('Failed to recalibrate publisher clock normalizer:', error)
-      }
-    }, 10 * 1000)
-
     const videoPromise = startVideoEncoder({
       stream,
       videoFullTrackName,
       videoStreamController: tracks.getVideoStreamController(),
       publisherPriority: 1,
-      offset,
       objectForwardingPreference: ObjectForwardingPreference.Subgroup,
     })
 
@@ -784,15 +738,12 @@ export function useVideoPublisher(
       audioStreamController: tracks.getAudioStreamController(),
       publisherPriority: 1,
       audioGroupId: 0,
-      offset,
       objectForwardingPreference: ObjectForwardingPreference.Subgroup,
     })
 
-    const [videoEncoderResult, audioEncoderResult] = await Promise.all([videoPromise, audioPromise])
+    await Promise.all([videoPromise, audioPromise])
 
-    return () => {
-      clearInterval(publisherRecalibrationInterval)
-    }
+    return () => {}
   }
   return setup
 }
@@ -808,28 +759,13 @@ export function useVideoSubscriber(
   audioTelemetry?: NetworkTelemetry,
 ) {
   const setup = async () => {
-    const normalizer = await ClockNormalizer.create(
-      window.appSettings.clockNormalizationConfig.timeServerUrl,
-      window.appSettings.clockNormalizationConfig.numberOfSamples,
-    )
-    const offset = normalizer.getSkew()
     const canvas = canvasRef.current
     console.log('Now will check for canvas ref')
     if (!canvas) return
     console.log('Worker and audio node is going to be initialized')
-    const worker = initWorkerAndCanvas(canvas, offset)
+    const worker = initWorkerAndCanvas(canvas)
     const audioNode = await setupAudioPlayback(new AudioContext({ sampleRate: 48000 }))
     console.log('Worker and audio node initialized')
-
-    const subscriberRecalibrationInterval = setInterval(async () => {
-      try {
-        const newOffset = await normalizer.recalibrate()
-        // Update the worker with the new offset
-        worker.postMessage({ type: 'update-offset', offset: newOffset })
-      } catch (error) {
-        console.warn('Failed to recalibrate subscriber clock normalizer:', error)
-      }
-    }, 10 * 1000)
 
     handleWorkerMessages(worker, audioNode, videoTelemetry, audioTelemetry)
 
@@ -866,7 +802,6 @@ export function useVideoSubscriber(
     )
 
     return () => {
-      clearInterval(subscriberRecalibrationInterval)
       worker.terminate()
     }
   }

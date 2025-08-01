@@ -64,6 +64,7 @@ export interface UserDisconnectedMessage {
 
 export interface RoomTimeoutMessage {
   message: string
+  reason?: 'timeout' | 'admin'
 }
 
 export interface ToggleRequest {

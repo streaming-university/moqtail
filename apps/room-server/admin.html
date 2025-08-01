@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOQtail Room Management</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f5f5f7;
+            color: #1d1d1f;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        h1 {
+            color: #1d1d1f;
+            font-size: 2.5rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #86868b;
+            font-size: 1.1rem;
+        }
+        
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .refresh-btn {
+            background: #007aff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        
+        .refresh-btn:hover {
+            background: #0056cc;
+        }
+        
+        .stats {
+            color: #86868b;
+            font-size: 14px;
+        }
+        
+        .rooms-grid {
+            display: grid;
+            gap: 20px;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+        }
+        
+        .room-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+            border: 1px solid #e5e5e7;
+        }
+        
+        .room-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+        
+        .room-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: #1d1d1f;
+            margin-bottom: 4px;
+        }
+        
+        .room-id {
+            font-size: 0.9rem;
+            color: #86868b;
+        }
+        
+        .end-btn {
+            background: #ff3b30;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        
+        .end-btn:hover {
+            background: #d70015;
+        }
+        
+        .room-meta {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .meta-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .meta-label {
+            font-size: 0.85rem;
+            color: #86868b;
+            margin-bottom: 2px;
+        }
+        
+        .meta-value {
+            font-size: 1rem;
+            font-weight: 500;
+            color: #1d1d1f;
+        }
+        
+        .users-section {
+            border-top: 1px solid #e5e5e7;
+            padding-top: 16px;
+        }
+        
+        .users-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #1d1d1f;
+            margin-bottom: 12px;
+        }
+        
+        .users-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .user-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #f5f5f7;
+            border-radius: 8px;
+        }
+        
+        .user-name {
+            font-weight: 500;
+            color: #1d1d1f;
+        }
+        
+        .user-status {
+            display: flex;
+            gap: 6px;
+        }
+        
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #86868b;
+        }
+        
+        .status-indicator.active {
+            background: #30d158;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #86868b;
+        }
+        
+        .empty-state h3 {
+            font-size: 1.5rem;
+            margin-bottom: 8px;
+        }
+        
+        .time-left {
+            color: #ff9500;
+            font-weight: 600;
+        }
+        
+        .time-left.critical {
+            color: #ff3b30;
+        }
+
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>MOQtail Room Management</h1>
+            <p class="subtitle">Monitor and manage active video chat rooms</p>
+        </header>
+        
+
+        
+        <div class="controls">
+            <button class="refresh-btn" onclick="loadRooms()">
+                Refresh
+            </button>
+            <div class="stats" id="stats">
+                Loading...
+            </div>
+        </div>
+        
+        <div id="rooms-container">
+            <div class="empty-state">
+                <h3>Loading rooms...</h3>
+                <p>Please wait while we fetch the active rooms.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+
+        function formatTime(timestamp) {
+            return new Date(timestamp).toLocaleString();
+        }
+        
+        function formatTimeLeft(milliseconds) {
+            const minutes = Math.floor(milliseconds / (1000 * 60));
+            const seconds = Math.floor((milliseconds % (1000 * 60)) / 1000);
+            return `${minutes}m ${seconds}s`;
+        }
+        
+        function renderUserStatus(user) {
+            const indicators = [];
+            if (user.hasVideo) indicators.push('<div class="status-indicator active" title="Video on"></div>');
+            if (user.hasAudio) indicators.push('<div class="status-indicator active" title="Audio on"></div>');
+            if (user.hasScreenshare) indicators.push('<div class="status-indicator active" title="Screen sharing"></div>');
+            
+            return indicators.length > 0 ? indicators.join('') : '<div class="status-indicator" title="No media"></div>';
+        }
+        
+        function renderRooms(rooms) {
+            const container = document.getElementById('rooms-container');
+            
+            if (rooms.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No Active Rooms</h3>
+                        <p>There are currently no active rooms on the server.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = `
+                <div class="rooms-grid">
+                    ${rooms.map(room => `
+                        <div class="room-card">
+                            <div class="room-header">
+                                <div>
+                                    <div class="room-title">${room.name}</div>
+                                    <div class="room-id">Room ID: ${room.id}</div>
+                                </div>
+                                <button class="end-btn" onclick="closeRoom('${room.name}')">
+                                    End
+                                </button>
+                            </div>
+                            
+                            <div class="room-meta">
+                                <div class="meta-item">
+                                    <div class="meta-label">Users</div>
+                                    <div class="meta-value">${room.userCount}</div>
+                                </div>
+                                <div class="meta-item">
+                                    <div class="meta-label">Time Left</div>
+                                    <div class="meta-value time-left ${room.timeLeft < 120000 ? 'critical' : ''}">${formatTimeLeft(room.timeLeft)}</div>
+                                </div>
+                                <div class="meta-item">
+                                    <div class="meta-label">Created</div>
+                                    <div class="meta-value">${formatTime(room.created)}</div>
+                                </div>
+                                <div class="meta-item">
+                                    <div class="meta-label">Duration</div>
+                                    <div class="meta-value">${formatTimeLeft(Date.now() - room.created)}</div>
+                                </div>
+                            </div>
+                            
+                            ${room.users.length > 0 ? `
+                                <div class="users-section">
+                                    <div class="users-title">Users (${room.users.length})</div>
+                                    <div class="users-list">
+                                        ${room.users.map(user => `
+                                            <div class="user-item">
+                                                <span class="user-name">${user.name}</span>
+                                                <div class="user-status">
+                                                    ${renderUserStatus(user)}
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        
+        async function loadRooms() {
+            try {
+                const response = await fetch('/api/rooms');
+                const rooms = await response.json();
+                
+                document.getElementById('stats').textContent = 
+                    `${rooms.length} active room${rooms.length !== 1 ? 's' : ''} • ${rooms.reduce((sum, room) => sum + room.userCount, 0)} total users`;
+                
+                renderRooms(rooms);
+            } catch (error) {
+                console.error('Failed to load rooms:', error);
+                document.getElementById('rooms-container').innerHTML = `
+                    <div class="empty-state">
+                        <h3>Error Loading Rooms</h3>
+                        <p>Failed to fetch room data. Please try refreshing the page.</p>
+                    </div>
+                `;
+            }
+        }
+        
+        async function closeRoom(roomName) {
+            if (!confirm(`Are you sure you want to close room "${roomName}"? This will disconnect all users.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/close`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    alert(result.message || `Room "${roomName}" closed successfully`);
+                    // Refresh the room list
+                    await loadRooms();
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to close room: ${error.error}`);
+                }
+            } catch (error) {
+                console.error('Failed to close room:', error);
+                alert('Failed to close room. Please try again.');
+            }
+        }
+        
+        // Load rooms on page load
+        loadRooms();
+        
+        // Auto-refresh every 5 seconds
+        setInterval(loadRooms, 5000);
+    </script>
+</body>
+</html> 

@@ -1,59 +1,23 @@
-use crate::server::config::AppConfig;
-
-use super::{client::MOQTClient, client_manager::ClientManager, track::Track, utils};
 use anyhow::Result;
-use bytes::Bytes;
 use moqtail::model::{
-  common::reason_phrase::ReasonPhrase,
-  control::{
-    announce_ok::AnnounceOk, constant, control_message::ControlMessage, server_setup::ServerSetup,
-  },
+  control::{constant, control_message::ControlMessage, server_setup::ServerSetup},
   error::TerminationCode,
 };
 use moqtail::transport::{
   control_stream_handler::ControlStreamHandler,
-  data_stream_handler::{HeaderInfo, RecvDataStream, SubscribeRequest},
+  data_stream_handler::{HeaderInfo, RecvDataStream},
 };
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::{Instrument, debug, error, info, info_span, warn};
-use wtransport::{Connection, RecvStream, SendStream, endpoint::IncomingSession};
-pub struct SessionContext {
-  pub(self) client_manager: Arc<RwLock<ClientManager>>,
-  pub(self) tracks: Arc<RwLock<BTreeMap<u64, Track>>>, // the tracks the relay is subscribed to, key is the track alias
-  pub(self) connection_id: usize,
-  pub(self) client: Arc<RwLock<Option<Arc<RwLock<MOQTClient>>>>>, // the client that is connected to this session
-  pub(self) connection: Connection,
-  pub(self) server_config: &'static AppConfig,
-}
+use wtransport::{RecvStream, SendStream, endpoint::IncomingSession};
 
-impl SessionContext {
-  pub fn new(
-    server_config: &'static AppConfig,
-    client_manager: Arc<RwLock<ClientManager>>,
-    tracks: Arc<RwLock<BTreeMap<u64, Track>>>,
-    connection: Connection,
-  ) -> Self {
-    Self {
-      client_manager,
-      tracks,
-      connection_id: connection.stable_id(),
-      client: Arc::new(RwLock::new(None)), // initially no client is set
-      connection,
-      server_config,
-    }
-  }
+use super::{
+  client::MOQTClient, client_manager::ClientManager, config::AppConfig, message_handlers,
+  session_context::SessionContext, track::Track, utils,
+};
+use bytes::Bytes;
 
-  pub async fn set_client(&self, client: Arc<RwLock<MOQTClient>>) {
-    let mut c = self.client.write().await;
-    *c = Some(client);
-  }
-
-  pub async fn get_client(&self) -> Arc<RwLock<MOQTClient>> {
-    let c = self.client.read().await;
-    c.as_ref().unwrap().clone()
-  }
-}
 pub struct Session {}
 
 impl Session {
@@ -92,12 +56,26 @@ impl Session {
         let session_context = context.clone();
         let connection_id = session_context.connection_id;
         tokio::spawn(async move {
-          Self::handle_control_messages(session_context, send_stream, recv_stream)
-            .instrument(info_span!("handle_control_messages", connection_id))
-            .await
-            .unwrap_or_else(|e| {
-              error!("Error processing control messages: {:?}", e);
-            });
+          if let Err(e) =
+            Self::handle_control_messages(session_context.clone(), send_stream, recv_stream)
+              .instrument(info_span!("handle_control_messages", connection_id))
+              .await
+          {
+            match e {
+              TerminationCode::NoError => {
+                info!(
+                  "Control stream ended due to client disconnect (connection_id: {})",
+                  connection_id
+                );
+                // Client has already disconnected, no need to close connection
+                *session_context.is_connection_closed.write().await = true;
+              }
+              _ => {
+                error!("Error processing control messages: {:?}", e);
+                Self::close_session(context.clone(), e, "Error in control stream handler");
+              }
+            }
+          }
         });
         Ok(())
       }
@@ -111,6 +89,153 @@ impl Session {
         Err(e.into())
       }
     }
+  }
+
+  async fn handle_control_messages(
+    context: Arc<SessionContext>,
+    send_stream: SendStream,
+    recv_stream: RecvStream,
+  ) -> core::result::Result<(), TerminationCode> {
+    info!("new control message stream");
+    let mut control_stream_handler = ControlStreamHandler::new(send_stream, recv_stream);
+
+    // the server's Request ID starts at 1 and are odd
+    // The Request ID increments by 2 with ANNOUNCE, FETCH,
+    // SUBSCRIBE, SUBSCRIBE_ANNOUNCES or TRACK_STATUS request.
+    let relay_next_request_id = Arc::new(RwLock::new(1u64));
+
+    // Client-server negotiation
+    let client = match Self::negotiate(context.clone(), &mut control_stream_handler)
+      .instrument(info_span!("negotiate", context.connection_id))
+      .await
+    {
+      Ok(client) => client,
+      Err(_) => {
+        context.connection.close(0u32.into(), b"Negotiation failed");
+        return Err(TerminationCode::VersionNegotiationFailed);
+      }
+    };
+
+    // Set the client in the context
+    context.set_client(client.clone()).await;
+
+    // start waiting for unistreams
+    let session_context = context.clone();
+    tokio::spawn(async move {
+      let _ = Self::wait_for_streams(session_context).await;
+    });
+
+    // Message loop
+    loop {
+      // see if we have a message to receive from the client
+      let msg: ControlMessage;
+      let c = client.read().await; // this is the client that is connected to this session
+      {
+        tokio::select! {
+          m = control_stream_handler.next_message() => {
+            msg = match m {
+              Ok(m) => {
+                info!("received control message: {:?}", m);
+                m
+              },
+              Err(TerminationCode::NoError) => {
+                info!("Client disconnected, ending control message loop");
+                // Client has already disconnected, no need to close connection
+                return Err(TerminationCode::NoError);
+              }
+              Err(e) => {
+                error!("failed to deserialize message: {:?}", e);
+                return Err(e);
+              }
+            };
+          },
+          m = c.wait_for_next_message() => {
+            msg = m;
+            info!("new message for client: {:?}", msg);
+            control_stream_handler.send(&msg).await.unwrap();
+            continue;
+          },
+          else => {
+            info!("no message received");
+            continue;
+          },
+        } // end of tokio::select!
+      }
+
+      match &msg {
+        ControlMessage::Announce(_m) => {
+          if let Err(termination_code) =
+            message_handlers::handle_announce::handle_announce_messages(
+              client.clone(),
+              &mut control_stream_handler,
+              msg,
+              context.clone(),
+              relay_next_request_id.clone(),
+            )
+            .await
+          {
+            error!("Error handling Announce message: {:?}", termination_code);
+            Self::close_session(
+              context.clone(),
+              termination_code,
+              "Error handling Announce message",
+            );
+            return Err(termination_code);
+          }
+        }
+        ControlMessage::Subscribe(_)
+        | ControlMessage::SubscribeOk(_)
+        | ControlMessage::Unsubscribe(_) => {
+          if let Err(termination_code) =
+            message_handlers::handle_subscribe::handle_subscribe_messages(
+              client.clone(),
+              &mut control_stream_handler,
+              msg,
+              context.clone(),
+              relay_next_request_id.clone(),
+            )
+            .await
+          {
+            error!(
+              "Error handling Subscribe/Unsubscribe message: {:?}",
+              termination_code
+            );
+            Self::close_session(
+              context.clone(),
+              termination_code,
+              "Error handling Subscribe/Unsubscribe message",
+            );
+            return Err(termination_code);
+          }
+        }
+        ControlMessage::Fetch(_) | ControlMessage::FetchOk(_) => {
+          if let Err(termination_code) = message_handlers::handle_fetch::handle_fetch_messages(
+            client.clone(),
+            &mut control_stream_handler,
+            msg,
+            context.clone(),
+            relay_next_request_id.clone(),
+          )
+          .await
+          {
+            error!("Error handling Fetch message: {:?}", termination_code);
+            Self::close_session(
+              context.clone(),
+              termination_code,
+              "Error handling Fetch message",
+            );
+            return Err(termination_code);
+          }
+        }
+
+        m => {
+          info!("some message received");
+          let a = m.serialize().unwrap();
+          let buf = Bytes::from_iter(a);
+          utils::print_bytes(&buf);
+        }
+      } // end of match &msg
+    } // end of loop
   }
 
   fn close_session(context: Arc<SessionContext>, error_code: TerminationCode, msg: &str) {
@@ -127,14 +252,20 @@ impl Session {
     );
     loop {
       let session_context = context.clone();
+      if *session_context.is_connection_closed.read().await {
+        info!(
+          "Connection closed, stopping stream acceptance for connection {}",
+          session_context.connection_id
+        );
+        return Ok(());
+      }
       tokio::select! {
         _ = context.connection.accept_bi()  => {
-          error!("One bi-directional stream is allowed per connection");
+          error!("One bi-directional stream is allowed per connection | connection id: {}", context.connection_id);
           Self::close_session(context.clone(), TerminationCode::ProtocolViolation, "One bi-directional stream is allowed per connection");
-          return Err(anyhow::Error::msg(
-            TerminationCode::ProtocolViolation.to_json(),
-          ));
+          return Ok(());
         }
+
         stream = context.connection.accept_uni() => {
           tokio::spawn(async move {
             let stream = match stream {
@@ -176,18 +307,86 @@ impl Session {
       context.connection_id
     );
     context.connection.closed().await;
+
+    // set the connection closed flag
+    {
+      *context.is_connection_closed.write().await = true;
+    }
+
     info!(
       "handle_connection_close | connection closed ({})",
       context.connection_id
     );
+
+    // Check if the disconnecting client is a publisher and handle track cleanup
+    let mut tracks_to_remove = Vec::new();
+    {
+      let tracks = tracks_cleanup.read().await;
+      let client = context.get_client().await;
+      if let Some(client) = client {
+        let client = client.read().await;
+        let published_tracks = client.get_published_tracks().await;
+        for track_alias in published_tracks {
+          info!(
+            "Track {} belongs to disconnected publisher {}, notifying subscribers",
+            track_alias, context.connection_id
+          );
+
+          match tracks.get(&track_alias) {
+            Some(track) => {
+              if track.publisher_connection_id == context.connection_id {
+                // check if the track belongs to the disconnected publisher
+                // even though, this comes from the client's published tracks
+                if track.publisher_connection_id == context.connection_id {
+                  info!(
+                    "Track {} belongs to disconnected publisher {}, notifying subscribers",
+                    track_alias, context.connection_id
+                  );
+                }
+
+                // Notify all subscribers that the publisher disconnected
+                if let Err(e) = track.notify_publisher_disconnected().await {
+                  error!(
+                    "Failed to notify subscribers for track {}: {:?}",
+                    track_alias, e
+                  );
+                }
+
+                tracks_to_remove.push(track_alias);
+              }
+            }
+            None => {
+              warn!(
+                "Track {} not found in removing tracks as the client {} disconnected",
+                track_alias, context.connection_id
+              );
+            }
+          }
+        }
+      }
+    }
+
+    // Remove tracks that belonged to the disconnected publisher
+    if !tracks_to_remove.is_empty() {
+      let mut tracks = tracks_cleanup.write().await;
+      for track_alias in tracks_to_remove {
+        tracks.remove(&track_alias);
+        info!(
+          "Removed track {} after publisher {} disconnect",
+          track_alias, context.connection_id
+        );
+      }
+    }
+
     // Remove client from client_manager
     let mut cm = client_manager_cleanup.write().await;
     cm.remove(context.connection_id).await;
-    // Remove client from all tracks
+
+    // Remove client from all remaining tracks (as a subscriber)
     for (_, track) in tracks_cleanup.write().await.iter_mut() {
       track.remove_subscription(context.connection_id).await;
     }
-    // TODO: subscribe_cancel if every client is removed from the track
+
     debug!(
       "handle_connection_close | cleanup done ({})",
       context.connection_id
@@ -198,6 +397,11 @@ impl Session {
   async fn handle_uni_stream(context: Arc<SessionContext>, stream: RecvStream) -> Result<()> {
     debug!("accepted unidirectional stream");
     let client = context.get_client().await;
+    let client = match client {
+      Some(c) => c,
+      None => return Err(TerminationCode::InternalError.into()),
+    };
+
     let client = client.read().await;
 
     debug!("client is {}", client.connection_id);
@@ -206,7 +410,7 @@ impl Session {
 
     let mut first_object = true;
     let mut track_alias = 0u64;
-    let mut header_id = String::new();
+    let mut stream_id = String::new();
     let mut current_track: Option<Track> = None;
 
     let mut object_count = 0;
@@ -265,10 +469,10 @@ impl Session {
               .unwrap()
               .new_header(&header_info)
               .await;
-            header_id = utils::build_header_id(&header_info);
+            stream_id = utils::build_stream_id(track_alias, &header_info);
           }
           let track = current_track.as_ref().unwrap();
-          let _ = track.new_object(header_id.clone(), &object).await;
+          let _ = track.new_object(stream_id.clone(), &object).await;
 
           object_count += 1;
           first_object = false; // reset the first object flag after processing the header
@@ -276,12 +480,12 @@ impl Session {
         (_, None) => {
           // error!("Failed to receive object: {:?}", e);
           debug!(
-            "no more objects in the stream track: {}, header_id: {}, objects: {}",
-            track_alias, header_id, object_count
+            "no more objects in the stream track: {}, stream_id: {}, objects: {}",
+            track_alias, stream_id, object_count
           );
           // Close the stream for all subscribers
           if let Some(track) = &current_track {
-            return track.stream_closed(header_id.clone()).await;
+            return track.stream_closed(stream_id.clone()).await;
           }
           break;
         }
@@ -291,307 +495,7 @@ impl Session {
     Ok(())
   }
 
-  async fn handle_control_messages(
-    context: Arc<SessionContext>,
-    send_stream: SendStream,
-    recv_stream: RecvStream,
-  ) -> Result<()> {
-    info!("new control message stream");
-    let mut control_stream_handler = ControlStreamHandler::new(send_stream, recv_stream);
-
-    // the server's Request ID starts at 1 and are odd
-    // The Request ID increments by 2 with ANNOUNCE, FETCH,
-    // SUBSCRIBE, SUBSCRIBE_ANNOUNCES or TRACK_STATUS request.
-    let relay_next_request_id = Arc::new(RwLock::new(1u64));
-
-    // Client-server negotiation
-    let client = match Self::negotiate(context.clone(), &mut control_stream_handler)
-      .instrument(info_span!("negotiate", context.connection_id))
-      .await
-    {
-      Ok(client) => client,
-      Err(err) => {
-        context.connection.close(0u32.into(), b"Negotiation failed");
-        return Err(err);
-      }
-    };
-
-    // Set the client in the context
-    context.set_client(client.clone()).await;
-
-    // start waiting for unistreams
-    let session_context = context.clone();
-    tokio::spawn(async move {
-      let _ = Self::wait_for_streams(session_context).await;
-    });
-
-    // Message loop
-    loop {
-      // see if we have a message to receive from the client
-      let msg: ControlMessage;
-      let c = client.read().await; // this is the client that is connected to this session
-      {
-        tokio::select! {
-          m = control_stream_handler.next_message() => {
-            msg = match m {
-              Ok(m) => {
-                info!("received control message: {:?}", m);
-                m
-              },
-              Err(e) => {
-                error!("failed to deserialize message: {:?}", e);
-                return Err::<(), anyhow::Error>(anyhow::Error::msg(TerminationCode::InternalError.to_json()));
-              }
-            };
-          },
-          m = c.wait_for_next_message() => {
-            msg = m;
-            info!("received message from client: {:?}", msg);
-            control_stream_handler.send(&msg).await.unwrap();
-            continue;
-          },
-          else => {
-            info!("no message received");
-            continue;
-          },
-        }
-      }
-
-      match msg {
-        ControlMessage::Announce(m) => {
-          // TODO: the namespace is already announced, return error
-          info!("received Announce message");
-          // this is a publisher, add it to the client manager
-          // send announce_ok
-          client
-            .read()
-            .await
-            .add_announced_track_namespace(m.track_namespace.clone())
-            .await;
-          let announce_ok = Box::new(AnnounceOk {
-            request_id: m.request_id,
-          });
-          control_stream_handler
-            .send(&ControlMessage::AnnounceOk(announce_ok))
-            .await
-            .unwrap()
-        }
-        ControlMessage::Subscribe(m) => {
-          info!("received Subscribe message: {:?}", m);
-          let sub = *m;
-          let track_namespace = sub.track_namespace.clone();
-          let client = context.get_client().await;
-
-          // find who is the publisher
-          let publisher = {
-            debug!("trying to get the publisher");
-            let m = context.client_manager.read().await;
-            debug!(
-              "client manager obtained, current client id: {}",
-              context.connection_id
-            );
-            m.get_publisher_by_announced_track_namespace(&track_namespace)
-              .await
-          };
-
-          let publisher = if let Some(publisher) = publisher {
-            publisher.clone()
-          } else {
-            error!(
-              "no publisher found for track namespace: {:?}",
-              track_namespace
-            );
-            // send SubscribeError
-            let subscribe_error = moqtail::model::control::subscribe_error::SubscribeError::new(
-              sub.request_id,
-              moqtail::model::control::constant::SubscribeErrorCode::TrackDoesNotExist,
-              ReasonPhrase::try_new("Unknown track namespace".to_string()).unwrap(),
-              sub.track_alias,
-            );
-            control_stream_handler
-              .send_impl(&subscribe_error)
-              .await
-              .unwrap();
-            continue;
-          };
-
-          {
-            publisher
-              .read()
-              .await
-              .add_subscriber(context.connection_id)
-              .await;
-          }
-          info!(
-            "Subscriber ({}) added to the publisher ({})",
-            context.connection_id,
-            publisher.read().await.connection_id
-          );
-
-          if !context.tracks.read().await.contains_key(&sub.track_alias) {
-            info!("Track not found, creating new track: {:?}", sub.track_alias);
-            // subscribed_tracks.insert(sub.track_alias, Track::new(sub.track_alias, track_namespace.clone(), sub.track_name.clone()));
-            let mut track = Track::new(
-              sub.track_alias,
-              sub.track_namespace.clone(),
-              sub.track_name.clone(),
-              context.server_config.cache_size.into(),
-            );
-            {
-              context
-                .tracks
-                .write()
-                .await
-                .insert(sub.track_alias, track.clone());
-            }
-            let _ = track.add_subscription(client.clone(), sub.clone()).await;
-
-            // send the subscribe message to the publisher
-            let mut new_sub = sub.clone();
-            let original_request_id = sub.request_id;
-            new_sub.request_id =
-              Self::get_next_relay_request_id(relay_next_request_id.clone()).await;
-
-            let publisher = publisher.read().await;
-            publisher
-              .queue_message(ControlMessage::Subscribe(Box::new(new_sub.clone())))
-              .await;
-
-            // insert this request id into the requests to the publisher
-            // We'll need it when we get the response from the publisher
-            // TODO: we need to add a timeout here or another loop to control expired requests
-            let req =
-              SubscribeRequest::new(original_request_id, context.connection_id, new_sub.clone());
-            let mut requests = publisher.subscribe_requests.write().await;
-            requests.insert(new_sub.request_id, req.clone());
-            debug!(
-              "inserted request into publisher's subscribe requests: {:?}",
-              req
-            );
-          } else {
-            info!("track already exists, sending SubscribeOk");
-            let mut tracks = context.tracks.write().await;
-            let track = tracks.get_mut(&sub.track_alias).unwrap();
-            let _ = track.add_subscription(client.clone(), sub.clone()).await;
-            drop(tracks);
-            // TODO: Send the first sub_ok message to the subscriber
-            // for now, just sending some default values
-            let subscribe_ok =
-              moqtail::model::control::subscribe_ok::SubscribeOk::new_ascending_with_content(
-                sub.request_id,
-                0,
-                None,
-                None,
-              );
-
-            control_stream_handler
-              .send_impl(&subscribe_ok)
-              .await
-              .unwrap();
-          }
-        }
-        ControlMessage::SubscribeOk(m) => {
-          info!("received SubscribeOk message: {:?}", m);
-          let msg = *m;
-          let client = context.get_client().await;
-          let client = client.read().await;
-          // this comes from the publisher
-          // it should be sent to the subscriber
-          let request_id = msg.request_id;
-
-          /* TODO: requests are keyed with track_id, not request_id
-                    That's a problem. Different requests can have the same track_id but
-                    from different subscribers.
-          */
-          let mut sub_request = {
-            let requests = client.subscribe_requests.read().await;
-            // print out every request
-            debug!("current requests: {:?}", requests);
-            match requests.get(&request_id) {
-              Some(m) => {
-                info!("request id is verified: {:?}", request_id);
-                m.clone()
-              }
-              None => {
-                warn!("request id is not verified: {:?}", request_id);
-                continue;
-              }
-            }
-          };
-
-          // replace the request id with the original request id
-          sub_request.subscribe_request.request_id = sub_request.original_request_id;
-
-          // TODO: honor the values in the subscribe_ok message like
-          // expires, group_order, content_exists, largest_location
-
-          // now we're ready to send the subscribe_ok message to the subscriber
-          let subscribe_ok =
-            moqtail::model::control::subscribe_ok::SubscribeOk::new_ascending_with_content(
-              sub_request.original_request_id,
-              msg.expires,
-              msg.largest_location,
-              None,
-            );
-          // send the subscribe_ok message to the subscriber
-          let subscriber = {
-            let mngr = context.client_manager.read().await;
-            mngr.get(sub_request.requested_by).await
-          };
-
-          if subscriber.is_none() {
-            warn!("subscriber not found");
-            continue;
-          }
-
-          debug!("subscriber found: {:?}", sub_request.requested_by);
-          let subscriber = subscriber.unwrap();
-
-          info!(
-            "sending SubscribeOk to subscriber: {:?}, msg: {:?}",
-            sub_request.requested_by, &subscribe_ok
-          );
-
-          subscriber
-            .read()
-            .await
-            .queue_message(ControlMessage::SubscribeOk(Box::new(subscribe_ok)))
-            .await;
-          drop(subscriber);
-
-          /*
-          TODO: do we need to update the subscription with the incoming subscribe_ok message?
-          */
-
-          // remove the request from the publisher
-          debug!("removing request from publisher: {:?}", request_id);
-
-          // don't get confused, client is the publisher here
-          // TODO: the following line panics...
-          client.subscribe_requests.write().await.remove(&request_id);
-
-          // add the track to the subscribed tracks
-          info!(
-            "adding track to subscribed tracks: {:?}",
-            sub_request.subscribe_request.track_alias
-          );
-        }
-        ControlMessage::Unsubscribe(m) => {
-          info!("received Unsubscribe message: {:?}", m);
-          // TODO: implement
-          // let msg = *m;
-        }
-        m => {
-          info!("some message received");
-          let a = m.serialize().unwrap();
-          let buf = Bytes::from_iter(a);
-          utils::print_bytes(&buf);
-        }
-      }
-    }
-  }
-
-  async fn get_next_relay_request_id(relay_next_request_id: Arc<RwLock<u64>>) -> u64 {
+  pub(crate) async fn get_next_relay_request_id(relay_next_request_id: Arc<RwLock<u64>>) -> u64 {
     let current_request_id = *relay_next_request_id.read().await;
     // increment by 2 for the next request
     *relay_next_request_id.write().await = current_request_id + 2;
@@ -611,9 +515,13 @@ impl Session {
           TerminationCode::ProtocolViolation.to_json(),
         ));
       }
+      Err(TerminationCode::NoError) => {
+        info!("Client disconnected during negotiation");
+        return Err(anyhow::Error::msg("Client disconnected during negotiation"));
+      }
       Err(e) => {
         error!("Failed to deserialize message: {:?}", e);
-        return Err(anyhow::Error::msg(TerminationCode::InternalError.to_json()));
+        return Err(anyhow::Error::msg(e.to_json()));
       }
     };
 
