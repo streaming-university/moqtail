@@ -1,0 +1,95 @@
+# Nginx configuration example for MOQtail Room Server
+# This file shows how to configure nginx to proxy all room server endpoints
+
+# Replace 127.0.0.1:9445 with your actual room server address and port
+# Set MOQTAIL_WS_PORT=9445 and MOQTAIL_BEHIND_PROXY=true in your environment
+
+server {
+    listen 80;
+    server_name your-domain.com;  # Replace with your domain
+
+    # WebSocket connections for Socket.IO
+    location /ws/ {
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+
+        # Forward to your Socket.IO server
+        proxy_pass http://127.0.0.1:9445;
+
+        # Required headers for WebSocket
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Additional settings for better Socket.IO performance
+        proxy_buffering off;
+        proxy_cache off;
+
+        # Socket.IO may have long-running connections
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Admin interface
+    location /admin {
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Forward to room server
+        proxy_pass http://127.0.0.1:9445;
+
+        # Standard proxy settings
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_cache off;
+
+        # Timeouts
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+    }
+
+    # Room management API
+    location /api/rooms {
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Forward to room server
+        proxy_pass http://127.0.0.1:9445;
+
+        # Standard proxy settings
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_cache off;
+
+        # Timeouts
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+    }
+
+    # Optional: Serve static files directly (if you have any)
+    # location /static/ {
+    #     alias /path/to/your/static/files/;
+    # }
+
+    # Optional: Default location for other routes
+    # location / {
+    #     return 404;
+    # }
+}
+
+# HTTPS configuration (recommended for production)
+# server {
+#     listen 443 ssl http2;
+#     server_name your-domain.com;
+#
+#     ssl_certificate /path/to/your/cert.pem;
+#     ssl_certificate_key /path/to/your/key.pem;
+#
+#     # Include the same location blocks as above
+#     # ...
+# } 

@@ -1,6 +1,7 @@
 use bytes::{Buf, BufMut, BytesMut};
 use tokio::time::{Duration, Instant, sleep_until};
 use tracing::{error, info, warn};
+use wtransport::error::StreamReadError;
 use wtransport::{RecvStream, SendStream};
 
 use crate::model::control::control_message::{ControlMessage, ControlMessageTrait};
@@ -15,7 +16,7 @@ pub struct ControlStreamHandler {
   recv: RecvStream,
   recv_bytes: BytesMut,
   recv_buf: Box<[u8; MTU_SIZE]>,
-  partial_message_timeout: Option<Instant>,
+  partial_message_deadline: Option<Instant>,
 }
 
 impl ControlStreamHandler {
@@ -25,7 +26,7 @@ impl ControlStreamHandler {
       recv,
       recv_bytes: BytesMut::new(),
       recv_buf: Box::new([0; MTU_SIZE]),
-      partial_message_timeout: None,
+      partial_message_deadline: None,
     }
   }
 
@@ -66,7 +67,7 @@ impl ControlStreamHandler {
             let consumed = original_remaining - bytes.remaining();
             self.recv_bytes.advance(consumed);
 
-            self.partial_message_timeout = None;
+            self.partial_message_deadline = None;
 
             return Ok(msg);
           }
@@ -75,77 +76,91 @@ impl ControlStreamHandler {
           }
 
           Err(ParseError::NotEnoughBytes { .. }) => {
-            if self.partial_message_timeout.is_none() {
-              self.partial_message_timeout = Some(Instant::now() + CONTROL_MESSAGE_TIMEOUT);
+            if self.partial_message_deadline.is_none() {
+              self.partial_message_deadline = Some(Instant::now() + CONTROL_MESSAGE_TIMEOUT);
             }
           }
           _ => {}
         }
       }
 
-      // Check if we've timed out on a partial message
-      if let Some(timeout) = self.partial_message_timeout {
-        if Instant::now() >= timeout {
-          self.partial_message_timeout = None;
+      // Read more data, either with or without deadline
+      self.read_more_data().await?;
+    }
+  }
+
+  /// Read more data from the stream, handling deadlines if set
+  async fn read_more_data(&mut self) -> Result<(), TerminationCode> {
+    // Check if we've timed out on a partial message
+    if let Some(deadline) = self.partial_message_deadline {
+      if Instant::now() >= deadline {
+        self.partial_message_deadline = None;
+        self.recv_bytes.clear();
+        return Err(TerminationCode::ControlMessageTimeout);
+      }
+
+      tokio::select! {
+        biased;
+
+        _ = sleep_until(deadline) => {
+          info!("Control message timeout reached");
+          self.partial_message_deadline = None;
           self.recv_bytes.clear();
-          return Err(TerminationCode::ControlMessageTimeout);
+          Err(TerminationCode::ControlMessageTimeout)
         }
 
-        tokio::select! {
-          biased;
-
-          _ = sleep_until(timeout) => {
-            info!("Control message timeout reached");
-            self.partial_message_timeout = None;
-            self.recv_bytes.clear();
-            return Err(TerminationCode::ControlMessageTimeout);
-          }
-
-          res = self.recv.read(&mut self.recv_buf[..]) => {
-            match res {
-              Ok(Some(n)) => {
-                if n > 0 {
-                  // Successfully read some new data. Append it and loop back to try parsing again.
-                  self.recv_bytes.put_slice(&self.recv_buf[..n]);
-                } else { // n == 0
-                  // Reading 0 bytes might indicate a stream state change, but often
-                  // it's benign. We simply loop back and try parsing/reading again.
-                  // If the stream *was* closed, the next read attempt should yield Ok(None) or Err.
-                }
-              }
-              Ok(None) => {
-                info!("Stream closed cleanly while waiting for partial message");
-                // The stream was closed cleanly by the peer while we were expecting data.
-                return Err(TerminationCode::InternalError); // Or potentially a more specific code?
-              }
-              Err(e) => {
-                info!("Error reading from stream: {:?}", e);
-                return Err(TerminationCode::InternalError);
-              }
-            }
-          }
+        res = self.recv.read(&mut self.recv_buf[..]) => {
+          self.handle_read_result(res, true)
         }
-      } else {
-        // No partial message timeout is set, so just wait for any data.
-        match self.recv.read(&mut self.recv_buf[..]).await {
-          Ok(Some(n)) => {
-            if n > 0 {
-              // Got data, append it and loop back to try parsing.
-              self.recv_bytes.put_slice(&self.recv_buf[..n]);
-            } else { // n == 0
-              // Reading 0 bytes might indicate a stream state change, but often
-              // it's benign. We simply loop back and try parsing/reading again.
-              // If the stream *was* closed, the next read attempt should yield Ok(None) or Err.
+      }
+    } else {
+      // No partial message deadline is set, so just wait for any data.
+      let res = self.recv.read(&mut self.recv_buf[..]).await;
+      self.handle_read_result(res, false)
+    }
+  }
+
+  /// Handle the result of a stream read operation
+  fn handle_read_result(
+    &mut self,
+    res: Result<Option<usize>, wtransport::error::StreamReadError>,
+    is_partial_message: bool,
+  ) -> Result<(), TerminationCode> {
+    match res {
+      Ok(Some(n)) => {
+        if n > 0 {
+          // Successfully read some new data. Append it and loop back to try parsing again.
+          self.recv_bytes.put_slice(&self.recv_buf[..n]);
+        }
+        // If n == 0, reading 0 bytes might indicate a stream state change, but often
+        // it's benign. We simply loop back and try parsing/reading again.
+        // If the stream *was* closed, the next read attempt should yield Ok(None) or Err.
+        Ok(())
+      }
+      Ok(None) => {
+        if is_partial_message {
+          info!("Stream closed cleanly while waiting for partial message");
+        } else {
+          warn!("Stream closed cleanly while waiting for data");
+        }
+        // The stream was closed cleanly by the peer.
+        Err(TerminationCode::InternalError)
+      }
+      Err(e) => {
+        match e {
+          StreamReadError::NotConnected => {
+            info!("Client disconnected while reading control stream");
+            // Client has disconnected - this is not an error, return NoError
+            // so the caller knows not to try closing the connection
+            Err(TerminationCode::NoError)
+          }
+          _ => {
+            if is_partial_message {
+              info!("Error reading from stream: {:?}", e);
+            } else {
+              error!("Error reading from stream: {:?}", e);
             }
-          }
-          Ok(None) => {
-            warn!("Stream closed cleanly while waiting for data");
-            // Stream closed cleanly before any message or partial message started.
-            return Err(TerminationCode::InternalError); // Or potentially a more specific code?
-          }
-          Err(e) => {
-            error!("Error reading from stream: {:?}", e);
-            return Err(TerminationCode::InternalError);
+            Err(TerminationCode::InternalError)
           }
         }
       }

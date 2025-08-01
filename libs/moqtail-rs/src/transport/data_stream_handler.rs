@@ -7,6 +7,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Notify, RwLock};
 use tokio::task::yield_now;
 use tokio::time::{Instant, sleep_until};
+use wtransport::error::StreamReadError;
 use wtransport::{RecvStream, SendStream};
 
 use crate::model::control::fetch::Fetch;
@@ -189,6 +190,12 @@ impl SendDataStream {
   }
 }
 
+#[derive(Debug)]
+pub enum RecvDataStreamReadError {
+  ParseError(ParseError),
+  StreamClosed,
+}
+
 /// # Pseudocode
 /// ```rust
 /// accept-uni
@@ -238,7 +245,7 @@ impl RecvDataStream {
     pending_fetchs: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
     objects: Arc<RwLock<VecDeque<Object>>>,
     notify: Arc<Notify>,
-  ) -> Result<(), ParseError> {
+  ) -> Result<(), RecvDataStreamReadError> {
     let mut header_info = None;
     let mut recv_buf = Box::new([0u8; MTU_SIZE]);
     let mut recv_bytes = BytesMut::new();
@@ -257,7 +264,7 @@ impl RecvDataStream {
         .await
         .map_err(|e| {
           error!("Failed to parse header: {:?}", e);
-          e
+          RecvDataStreamReadError::ParseError(e)
         })?;
         let consumed = if let Some((consumed, _)) = header_info.clone() {
           consumed
@@ -282,7 +289,7 @@ impl RecvDataStream {
           .await
           .map_err(|e| {
             error!("Failed to parse object: {:?}", e);
-            e
+            RecvDataStreamReadError::ParseError(e)
           })?;
           notify.notify_waiters();
           recv_bytes.advance(consumed);
@@ -311,7 +318,7 @@ impl RecvDataStream {
           _ = sleep_until(timeout_at) => {
             info!("Timeout while waiting for data");
             *is_closed.write().await = true;
-            return Err(ParseError::Timeout { context: "RecvDataStream::new(header_read)" });
+            return Err(RecvDataStreamReadError::ParseError(ParseError::Timeout { context: "RecvDataStream::new(header_read)" }));
           }
 
           read_result = stream.read(&mut recv_buf[..]) => {
@@ -335,7 +342,10 @@ impl RecvDataStream {
               Err(e) => {
                 debug!("RecvDataStream::read() Read error: {:?}", e);
                 *is_closed.write().await = true;
-                return Err(ParseError::Other { context: "RecvDataStream::new(header_read)", msg:e.to_string() });
+                if e == StreamReadError::NotConnected {
+                  return Err(RecvDataStreamReadError::StreamClosed);
+                }
+                return Err(RecvDataStreamReadError::ParseError(ParseError::Other { context: "RecvDataStream::new(header_read)", msg:e.to_string() }));
               }
             }
           }
@@ -514,7 +524,12 @@ impl RecvDataStream {
           Ok(_) => debug!("RecvDataStream read task completed successfully"),
           Err(e) => {
             error!("RecvDataStream read task encountered an error: {:?}", e);
-            // TODO: Handle the error, e.g., close the stream or log it
+            // if not connected error, do nothing and return, let the caller handle it
+            if matches!(e, RecvDataStreamReadError::StreamClosed) {
+              debug!("Stream is closed, returning EOF");
+            } else {
+              error!("RecvDataStream read task encountered an error: {:?}", e);
+            }
           }
         }
       });

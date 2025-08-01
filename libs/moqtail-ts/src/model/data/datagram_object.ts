@@ -36,7 +36,7 @@ export class DatagramObject {
     return new DatagramObject(
       ObjectDatagramType.WithExtensions,
       trackAlias,
-      Location.from(groupId, objectId),
+      new Location(groupId, objectId),
       publisherPriority,
       extensionHeaders,
       payload,
@@ -53,7 +53,7 @@ export class DatagramObject {
     return new DatagramObject(
       ObjectDatagramType.WithoutExtensions,
       trackAlias,
-      Location.from(groupId, objectId),
+      new Location(groupId, objectId),
       publisherPriority,
       null,
       payload,
@@ -107,7 +107,7 @@ export class DatagramObject {
     return new DatagramObject(
       msgType,
       trackAlias,
-      Location.from(groupId, objectId),
+      new Location(groupId, objectId),
       publisherPriority,
       extensionHeaders,
       payload,

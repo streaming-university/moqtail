@@ -96,7 +96,7 @@ if (import.meta.vitest) {
     test('roundtrip', () => {
       const requestId = 271828n
       const endOfTrack = true
-      const endLocation = Location.from(17n, 57n)
+      const endLocation = new Location(17n, 57n)
       const subscribeParameters = [
         KeyValuePair.tryNewVarInt(4444, 12321),
         KeyValuePair.tryNewBytes(1, new TextEncoder().encode('fetch me ok')),
@@ -119,7 +119,7 @@ if (import.meta.vitest) {
     test('excess roundtrip', () => {
       const requestId = 271828n
       const endOfTrack = true
-      const endLocation = Location.from(17n, 57n)
+      const endLocation = new Location(17n, 57n)
       const subscribeParameters = [
         KeyValuePair.tryNewVarInt(4444, 12321),
         KeyValuePair.tryNewBytes(1, new TextEncoder().encode('fetch me ok')),
@@ -146,7 +146,7 @@ if (import.meta.vitest) {
     test('partial message', () => {
       const requestId = 271828n
       const endOfTrack = true
-      const endLocation = Location.from(17n, 57n)
+      const endLocation = new Location(17n, 57n)
       const subscribeParameters = [
         KeyValuePair.tryNewVarInt(4444, 12321),
         KeyValuePair.tryNewBytes(1, new TextEncoder().encode('fetch me ok')),

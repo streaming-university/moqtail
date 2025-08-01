@@ -1,4 +1,7 @@
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+use std::fmt::Display;
+use thiserror::Error;
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Error)]
 pub enum TerminationCode {
   NoError = 0x0,
   InternalError = 0x1,
@@ -25,5 +28,11 @@ impl TerminationCode {
 
   pub fn to_u32(&self) -> u32 {
     *self as u32
+  }
+}
+
+impl Display for TerminationCode {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{self:?}")
   }
 }

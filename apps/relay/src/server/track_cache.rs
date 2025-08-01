@@ -1,10 +1,13 @@
-use moqtail::model::data::object::Object;
+use moqtail::model::{common::location::Location, data::object::Object};
 use moqtail::transport::data_stream_handler::HeaderInfo;
 use std::{
   collections::{BTreeMap, VecDeque},
   sync::Arc,
 };
-use tokio::sync::RwLock;
+use tokio::sync::{
+  RwLock,
+  mpsc::{Receiver, channel},
+};
 use tracing::debug;
 
 use crate::server::utils;
@@ -14,7 +17,8 @@ pub struct TrackCache {
   #[allow(dead_code)]
   pub track_alias: u64,
   headers: Arc<RwLock<BTreeMap<String, HeaderInfo>>>,
-  objects: Arc<RwLock<BTreeMap<String, Vec<Object>>>>,
+  #[allow(dead_code)]
+  objects: Arc<RwLock<BTreeMap<u64, Vec<Object>>>>,
   // Ring buffer implementation: keep track of header IDs in order of insertion
   header_queue: Arc<RwLock<VecDeque<String>>>,
   #[allow(dead_code)]
@@ -34,25 +38,26 @@ impl TrackCache {
 
   #[allow(dead_code)]
   pub async fn add_header(&self, header: HeaderInfo) -> Option<HeaderInfo> {
-    let header_id = utils::build_header_id(&header);
+    let stream_id = utils::build_stream_id(self.track_alias, &header);
 
     debug!(
-      "add_header | track: {} header: {}",
-      self.track_alias, header_id
+      "add_header | track: {} stream_id: {}",
+      self.track_alias, stream_id
     );
 
     // Check if we need to evict the oldest header
-    self.ensure_capacity(&header_id).await;
+    // self.ensure_capacity(&header_id).await;
 
     // Add new header to queue
     let mut header_queue = self.header_queue.write().await;
-    header_queue.push_back(header_id.clone());
+    header_queue.push_back(stream_id.clone());
 
     // Store the header
     let mut headers = self.headers.write().await;
-    headers.insert(header_id, header)
+    headers.insert(stream_id, header)
   }
 
+  /*
   // Ensure we don't exceed capacity by removing oldest elements if needed
   async fn ensure_capacity(&self, new_header_id: &String) {
     let mut header_queue = self.header_queue.write().await;
@@ -83,31 +88,47 @@ impl TrackCache {
       }
     }
   }
+  */
 
-  pub async fn add_object(&self, header_id: String, object: Object) {
+  #[allow(dead_code)]
+  pub async fn add_object(&self, object: Object) {
     // Only add object if the header exists (is in our ring buffer)
-    if self.headers.read().await.contains_key(&header_id) {
+    if self
+      .objects
+      .read()
+      .await
+      .contains_key(&object.location.group)
+    {
       let mut map = self.objects.write().await;
-      match map.get_mut(&header_id) {
+      match map.get_mut(&object.location.group) {
         Some(objects) => {
           objects.push(object);
         }
         None => {
-          map.insert(header_id, vec![object]);
+          map.insert(object.location.group, vec![object]);
         }
       }
     }
   }
 
-  // Add helper methods to retrieve data from the cache
   #[allow(dead_code)]
-  pub async fn get_header(&self, header_id: &str) -> Option<HeaderInfo> {
-    self.headers.read().await.get(header_id).cloned()
-  }
+  pub async fn read_objects(&self, start: Location, end: Location) -> Receiver<Object> {
+    let (tx, rx) = channel(32); // Smaller buffer for memory efficiency
+    let objects = self.objects.clone();
 
-  #[allow(dead_code)]
-  pub async fn get_objects(&self, header_id: &str) -> Option<Vec<Object>> {
-    self.objects.read().await.get(header_id).cloned()
+    tokio::spawn(async move {
+      let guard = objects.read().await;
+      for (key, objects) in guard.iter() {
+        if *key >= start.group && *key <= end.group {
+          for object in objects {
+            if tx.send(object.clone()).await.is_err() {
+              break; // Client disconnected
+            }
+          }
+        }
+      }
+    });
+    rx
   }
 
   // Get all headers in order from newest to oldest

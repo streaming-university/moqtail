@@ -147,6 +147,7 @@ export class MoqtailClient {
   }
 
   async disconnect(reason?: unknown) {
+    console.log('disconnect', reason)
     if (this.#isDestroyed) return
     this.#isDestroyed = true
     // TODO: Session cleanup?
@@ -549,8 +550,9 @@ export class MoqtailClient {
         this.#handleRecvStreams(uniStream)
       }
     } catch (error) {
-      this.disconnect()
-      throw error
+      //this.disconnect()
+      // throw error
+      console.log('acceptIncomingUniStreams error', error)
     }
   }
   // TODO: Handle request cancellation. Cancel streams are expected to receive some on-fly objects.
@@ -672,7 +674,7 @@ export class MoqtailClient {
         throw new ProtocolViolationError('MoqtailClient', 'No subscription for received track alias')
       }
     } catch (error) {
-      this.disconnect()
+      //this.disconnect()
       throw error
     }
   }

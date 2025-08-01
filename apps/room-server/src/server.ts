@@ -18,6 +18,80 @@ import {
 import fs from 'fs'
 import path from 'path'
 import https from 'https'
+import { fileURLToPath } from 'url'
+
+// ES module equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+// Get real IP address considering proxy headers
+function getRealIP(req: any): string {
+  if (trustProxy) {
+    // Check various proxy headers in order of preference
+    const forwarded = req.headers['x-forwarded-for']
+    if (forwarded) {
+      // X-Forwarded-For can contain multiple IPs, take the first one
+      return forwarded.split(',')[0].trim()
+    }
+
+    const realIP = req.headers['x-real-ip']
+    if (realIP) {
+      return realIP
+    }
+  }
+
+  // Fall back to connection remote address
+  return req.connection?.remoteAddress || req.socket?.remoteAddress || 'unknown'
+}
+
+// Custom request handler function
+function customRequestHandler(req: any, res: any) {
+  const url = new URL(req.url!, `http://${req.headers.host}`)
+
+  // Log request info (helpful for debugging proxy setup)
+  if (behindProxy) {
+    const realIP = getRealIP(req)
+    console.debug(`Admin request from ${realIP}: ${req.method} ${url.pathname}`)
+  }
+
+  // Only handle our specific routes, let Socket.IO handle the rest
+  const isOurRoute =
+    (req.method === 'GET' && url.pathname === '/api/rooms') ||
+    (req.method === 'POST' && url.pathname.startsWith('/api/rooms/') && url.pathname.endsWith('/close')) ||
+    (req.method === 'GET' && url.pathname === '/admin') ||
+    (req.method === 'OPTIONS' && (url.pathname.startsWith('/api/') || url.pathname === '/admin'))
+
+  if (!isOurRoute) {
+    return false // Let Socket.IO or other handlers process this request
+  }
+
+  // Set CORS headers only for our routes
+  const origin = req.headers.origin || '*'
+  res.setHeader('Access-Control-Allow-Origin', origin)
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  res.setHeader('Access-Control-Allow-Credentials', 'true')
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200)
+    res.end()
+    return true
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/rooms') {
+    handleGetRooms(req, res)
+    return true
+  } else if (req.method === 'POST' && url.pathname.startsWith('/api/rooms/') && url.pathname.endsWith('/close')) {
+    const roomName = decodeURIComponent(url.pathname.split('/')[3])
+    handleCloseRoom(req, res, roomName)
+    return true
+  } else if (req.method === 'GET' && url.pathname === '/admin') {
+    handleAdminPage(req, res)
+    return true
+  }
+
+  return false
+}
 
 let server
 if (process.env.MOQTAIL_SECURE_WS) {
@@ -27,12 +101,28 @@ if (process.env.MOQTAIL_SECURE_WS) {
     key: fs.readFileSync(path.join(certDir, 'key.pem')),
     cert: fs.readFileSync(path.join(certDir, 'cert.pem')),
   }
-  server = https.createServer(options)
+  server = https.createServer(options, (req, res) => {
+    if (!customRequestHandler(req, res)) {
+      // If not handled by our custom handler, let it through (Socket.IO will handle it)
+      res.writeHead(404)
+      res.end('Not Found')
+    }
+  })
   console.info('Starting server in HTTPS mode')
 } else {
-  server = http.createServer()
+  server = http.createServer((req, res) => {
+    if (!customRequestHandler(req, res)) {
+      // If not handled by our custom handler, let it through (Socket.IO will handle it)
+      res.writeHead(404)
+      res.end('Not Found')
+    }
+  })
   console.info('Starting server in HTTP mode')
 }
+
+// Proxy configuration
+const behindProxy = process.env.MOQTAIL_BEHIND_PROXY === 'true'
+const trustProxy = process.env.MOQTAIL_TRUST_PROXY === 'true'
 
 const io = new Server(server, {
   cors: {
@@ -40,7 +130,168 @@ const io = new Server(server, {
     methods: ['GET', 'POST'],
   },
   path: '/ws',
+  // Handle proxy configurations
+  allowEIO3: true,
+  transports: ['websocket', 'polling'],
 })
+
+function checkAdminAuth(req: any, res: any): boolean {
+  // Check if admin password is set
+  const adminPassword = process.env.MOQTAIL_ADMIN_PASSWORD
+  if (!adminPassword) {
+    res.writeHead(500, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: 'Admin access disabled: MOQTAIL_ADMIN_PASSWORD environment variable not set' }))
+    return false
+  }
+
+  // Check for Basic Authentication
+  const authHeader = req.headers.authorization
+  if (!authHeader || !authHeader.startsWith('Basic ')) {
+    res.writeHead(401, {
+      'Content-Type': 'application/json',
+      'WWW-Authenticate': 'Basic realm="MOQtail Admin"',
+    })
+    res.end(JSON.stringify({ error: 'Authentication required' }))
+    return false
+  }
+
+  // Decode and verify credentials
+  try {
+    const base64Credentials = authHeader.slice(6) // Remove 'Basic ' prefix
+    const credentials = Buffer.from(base64Credentials, 'base64').toString('ascii')
+    const [username, password] = credentials.split(':')
+
+    // Check password (username can be anything)
+    if (password !== adminPassword) {
+      res.writeHead(401, {
+        'Content-Type': 'application/json',
+        'WWW-Authenticate': 'Basic realm="MOQtail Admin"',
+      })
+      res.end(JSON.stringify({ error: 'Invalid credentials' }))
+      return false
+    }
+
+    return true // Authentication successful
+  } catch (error) {
+    console.error('Authentication error:', error)
+    res.writeHead(401, {
+      'Content-Type': 'application/json',
+      'WWW-Authenticate': 'Basic realm="MOQtail Admin"',
+    })
+    res.end(JSON.stringify({ error: 'Authentication failed' }))
+    return false
+  }
+}
+
+function handleGetRooms(req: any, res: any) {
+  if (!checkAdminAuth(req, res)) return
+  const roomsData = []
+
+  for (const [roomName, room] of rooms.entries()) {
+    const timer = roomTimers.get(roomName)
+    const timeLeft = timer ? Math.max(0, ROOM_TIMEOUT_MS - (Date.now() - room.created)) : 0
+
+    const users = Array.from(room.users.values()).map((user) => ({
+      id: user.id,
+      name: user.name,
+      joined: user.joined,
+      hasVideo: user.hasVideo,
+      hasAudio: user.hasAudio,
+      hasScreenshare: user.hasScreenshare,
+    }))
+
+    roomsData.push({
+      name: roomName,
+      id: room.id,
+      userCount: room.users.size,
+      created: room.created,
+      timeLeft: timeLeft,
+      users: users,
+    })
+  }
+
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify(roomsData))
+}
+
+function handleCloseRoom(req: any, res: any, roomName: string) {
+  if (!checkAdminAuth(req, res)) return
+
+  if (!rooms.has(roomName)) {
+    res.writeHead(404, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: 'Room not found' }))
+    return
+  }
+
+  closeRoom(roomName, 'admin')
+
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify({ success: true, message: `Room ${roomName} closed successfully by administrator` }))
+}
+
+function checkAdminAuthHTML(req: any, res: any): boolean {
+  // Check if admin password is set
+  const adminPassword = process.env.MOQTAIL_ADMIN_PASSWORD
+  if (!adminPassword) {
+    res.writeHead(500, { 'Content-Type': 'text/plain' })
+    res.end('Admin access disabled: MOQTAIL_ADMIN_PASSWORD environment variable not set')
+    return false
+  }
+
+  // Check for Basic Authentication
+  const authHeader = req.headers.authorization
+  if (!authHeader || !authHeader.startsWith('Basic ')) {
+    res.writeHead(401, {
+      'Content-Type': 'text/plain',
+      'WWW-Authenticate': 'Basic realm="MOQtail Admin"',
+    })
+    res.end('Authentication required')
+    return false
+  }
+
+  // Decode and verify credentials
+  try {
+    const base64Credentials = authHeader.slice(6) // Remove 'Basic ' prefix
+    const credentials = Buffer.from(base64Credentials, 'base64').toString('ascii')
+    const [username, password] = credentials.split(':')
+
+    // Check password (username can be anything)
+    if (password !== adminPassword) {
+      res.writeHead(401, {
+        'Content-Type': 'text/plain',
+        'WWW-Authenticate': 'Basic realm="MOQtail Admin"',
+      })
+      res.end('Invalid credentials')
+      return false
+    }
+
+    return true // Authentication successful
+  } catch (error) {
+    console.error('Authentication error:', error)
+    res.writeHead(401, {
+      'Content-Type': 'text/plain',
+      'WWW-Authenticate': 'Basic realm="MOQtail Admin"',
+    })
+    res.end('Authentication failed')
+    return false
+  }
+}
+
+function handleAdminPage(req: any, res: any) {
+  if (!checkAdminAuthHTML(req, res)) return
+
+  try {
+    const adminHtmlPath = path.join(__dirname, '..', 'admin.html')
+    const adminHtml = fs.readFileSync(adminHtmlPath, 'utf8')
+
+    res.writeHead(200, { 'Content-Type': 'text/html' })
+    res.end(adminHtml)
+  } catch (error) {
+    console.error('Failed to read admin.html:', error)
+    res.writeHead(500, { 'Content-Type': 'text/plain' })
+    res.end('Failed to load admin page')
+  }
+}
 
 const rooms = new Map<string, RoomState>()
 const userRoomMapping = new Map<string, string>()
@@ -50,7 +301,7 @@ let lastTrackAlias = 1
 
 // constants
 const MAX_ROOM_CAPACITY = 6
-const MAX_ROOM_COUNT = 100
+const MAX_ROOM_COUNT = 5
 const ROOM_TIMEOUT_MS = 10 * 60 * 1000 // 10 mins (ms)
 
 function newRoom(roomName: string) {
@@ -62,7 +313,7 @@ function newRoom(roomName: string) {
   }
 
   const timeoutId = setTimeout(() => {
-    closeRoom(roomName)
+    closeRoom(roomName, 'timeout')
   }, ROOM_TIMEOUT_MS)
 
   roomTimers.set(roomName, timeoutId)
@@ -117,8 +368,9 @@ function toRoomUserView(user: RoomUser): RoomUserView {
   }
 }
 
-function closeRoom(roomName: string) {
-  console.info(`Closing room ${roomName} due to timeout`)
+function closeRoom(roomName: string, reason: 'timeout' | 'admin' = 'timeout') {
+  const reasonText = reason === 'timeout' ? 'due to timeout' : 'by administrator'
+  console.info(`Closing room ${roomName} ${reasonText}`)
 
   const room = rooms.get(roomName)
   if (!room) {
@@ -126,9 +378,17 @@ function closeRoom(roomName: string) {
     return
   }
 
-  io.to(roomName).emit('room-timeout', {
-    message: `Room ${roomName} has timed out after 10 minutes and will be closed.`,
-  })
+  // Send appropriate message based on closure reason
+  if (reason === 'timeout') {
+    io.to(roomName).emit('room-timeout', {
+      message: `Room ${roomName} has timed out and will be closed.`,
+    })
+  } else {
+    io.to(roomName).emit('room-closed', {
+      message: `Room ${roomName} has been closed by an administrator.`,
+      reason: 'admin',
+    })
+  }
 
   for (const [userId] of room.users) {
     userRoomMapping.delete(userId)
@@ -146,12 +406,16 @@ function closeRoom(roomName: string) {
   }
 
   rooms.delete(roomName)
+  roomCounter--
 
   console.info(`Room ${roomName} successfully closed and cleaned up`)
 }
 
 io.on('connection', (socket) => {
   console.debug('new connection', socket.id)
+  socket.on('time', () => {
+    socket.emit('time', { serverTime: Date.now() })
+  })
   socket.on('join-room', (request: JoinRequest) => {
     console.debug('join-room', request, socket.id)
 
@@ -372,12 +636,7 @@ io.on('connection', (socket) => {
     console.debug(`User removed from room ${roomName}`, socket.id)
 
     if (room.users.size === 0) {
-      const timer = roomTimers.get(roomName)
-      if (timer) {
-        clearTimeout(timer)
-        roomTimers.delete(roomName)
-      }
-      rooms.delete(roomName)
+      closeRoom(roomName, 'timeout')
       console.info(`Empty room ${roomName} cleaned up`)
     } else {
       const response: UserDisconnectedMessage = {
@@ -392,4 +651,18 @@ io.on('connection', (socket) => {
 const PORT = process.env.MOQTAIL_WS_PORT || 3001
 server.listen(PORT, () => {
   console.info(`MOQtail Room Server is running on port ${PORT}`)
+
+  if (behindProxy) {
+    console.info('🔗 Running behind proxy - make sure to configure proxy routes for:')
+    console.info('   - /admin (admin interface)')
+    console.info('   - /api/rooms* (room management API)')
+    console.info('   - /ws/ (WebSocket connections - already configured)')
+    if (trustProxy) {
+      console.info('   - Proxy headers are trusted for real IP detection')
+    }
+  } else {
+    console.info('🌐 Running standalone mode')
+    console.info(`   - Admin interface: http://localhost:${PORT}/admin`)
+    console.info(`   - API endpoint: http://localhost:${PORT}/api/rooms`)
+  }
 })
