@@ -125,7 +125,7 @@ export class MoqtObject {
   static fromDatagramObject(datagramObject: DatagramObject, fullTrackName: FullTrackName): MoqtObject {
     return new MoqtObject(
       fullTrackName,
-      Location.from(datagramObject.groupId, datagramObject.objectId),
+      new Location(datagramObject.groupId, datagramObject.objectId),
       datagramObject.publisherPriority,
       ObjectForwardingPreference.Datagram,
       null,
@@ -170,7 +170,7 @@ export class MoqtObject {
   ): MoqtObject {
     return new MoqtObject(
       fullTrackName,
-      Location.from(groupId, subgroupObject.objectId),
+      new Location(groupId, subgroupObject.objectId),
       publisherPriority,
       ObjectForwardingPreference.Subgroup,
       subgroupId,
@@ -305,7 +305,7 @@ if (import.meta.vitest) {
       const payload = new TextEncoder().encode('test payload')
       const extensionHeaders = new ExtensionHeaders().addAudioLevel(100).addCaptureTimestamp(0).build()
       const fullTrackName = FullTrackName.tryNew('test/demo', 'track1')
-      const location = Location.from(100n, 10n)
+      const location = new Location(100n, 10n)
       const obj = MoqtObject.newWithPayload(
         fullTrackName,
         location,
@@ -331,7 +331,7 @@ if (import.meta.vitest) {
 
     test('create object with status', () => {
       const fullTrackName = FullTrackName.tryNew('test/demo', 'track2')
-      const location = Location.from(200n, 20n)
+      const location = new Location(200n, 20n)
       const obj = MoqtObject.newWithStatus(
         fullTrackName,
         location,
@@ -390,7 +390,7 @@ if (import.meta.vitest) {
 
     test('utility functions', () => {
       const fullTrackName = FullTrackName.tryNew('test/demo', 'track5')
-      const location1 = Location.from(100n, 10n)
+      const location1 = new Location(100n, 10n)
       const datagramObj = MoqtObject.newWithStatus(
         fullTrackName,
         location1,
@@ -400,7 +400,7 @@ if (import.meta.vitest) {
         null,
         ObjectStatus.EndOfTrack,
       )
-      const location2 = Location.from(100n, 10n)
+      const location2 = new Location(100n, 10n)
       const subgroupObj = MoqtObject.newWithPayload(
         fullTrackName,
         location2,

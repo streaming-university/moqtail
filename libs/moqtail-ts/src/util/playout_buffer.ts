@@ -1,6 +1,5 @@
 import { MoqtObject } from '../model'
 import Heap from 'heap-js'
-import { ClockNormalizer } from './clock_normalizer'
 import { ExtensionHeaders, ExtensionHeader } from '../model/extension_header'
 
 const DEFAULT_TARGET_LATENCY_MS = 100
@@ -9,6 +8,9 @@ const DEFAULT_MAX_LATENCY_MS = 1000
 export interface BufferedObject {
   object: MoqtObject
   createdAt: number
+}
+export interface Clock {
+  now(): number
 }
 
 /**
@@ -23,7 +25,7 @@ export interface BufferedObject {
  * const buffer = new PlayoutBuffer(objectStream, {
  *   targetLatencyMs: 500,
  *   maxLatencyMs: 2000,
- *   clockNormalizer
+ *   clock
  * });
  * buffer.onObject = (obj) => {
  *   if (obj) {
@@ -42,8 +44,10 @@ export class PlayoutBuffer {
   })
   #isRunning: boolean = true
   #targetLatencyMs: number
+  #moqObjectCountInBuffer: number = 0
+  #moqObjectCountExitingBuffer: number = 0
   #maxLatencyMs: number
-  #clockNormalizer: ClockNormalizer | undefined
+  #clock: Clock | undefined
 
   onObject: ((obj: MoqtObject | null) => void) | null = null
 
@@ -52,12 +56,12 @@ export class PlayoutBuffer {
     readonly options?: {
       targetLatencyMs: number // target latency to maintain (default: 500ms)
       maxLatencyMs: number // max latency before dropping GOPs (default: 2000ms)
-      clockNormalizer: ClockNormalizer
+      clock: Clock
     },
   ) {
     this.#targetLatencyMs = this.options?.targetLatencyMs ?? DEFAULT_TARGET_LATENCY_MS
     this.#maxLatencyMs = this.options?.maxLatencyMs ?? DEFAULT_MAX_LATENCY_MS
-    this.#clockNormalizer = this.options?.clockNormalizer
+    this.#clock = this.options?.clock
     this.#reader = objectStream.getReader()
     this.#fillBuffer()
     this.#serveBuffer()
@@ -89,8 +93,8 @@ export class PlayoutBuffer {
   }
 
   #getNormalizedTime(): number {
-    if (this.#clockNormalizer) {
-      return this.#clockNormalizer.now()
+    if (this.#clock) {
+      return this.#clock.now()
     }
     return Date.now()
   }
@@ -105,7 +109,14 @@ export class PlayoutBuffer {
 
         if (timeUntilReady <= 0) {
           const bufferedObj = this.#buffer.pop()!
+          this.#moqObjectCountExitingBuffer++
+          if (this.#moqObjectCountExitingBuffer % 50 === 0) {
+            console.log(`[PLAYOUT BUFFER] Exiting buffer: ${this.#moqObjectCountExitingBuffer} MoQ objects`)
+          }
           this.onObject(bufferedObj.object)
+          if (this.#moqObjectCountExitingBuffer % 50 === 0) {
+            console.log(`[PLAYOUT BUFFER] Exported to decoder: ${this.#moqObjectCountExitingBuffer} MoQ objects`)
+          }
         } else {
           const sleepTime = Math.min(timeUntilReady, 50)
           await new Promise((resolve) => setTimeout(resolve, sleepTime))
@@ -131,6 +142,10 @@ export class PlayoutBuffer {
           createdAt: this.#extractCreatedAt(value),
         }
 
+        this.#moqObjectCountInBuffer++
+        if (this.#moqObjectCountInBuffer % 50 === 0) {
+          console.log(`[PLAYOUT BUFFER] Buffered ${this.#moqObjectCountInBuffer} MoQ objects`)
+        }
         this.#buffer.push(bufferedObject)
       } catch (error) {
         this.cleanup()

@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { JoinResponse, ErrorResponse } from '../types/types'
 import { useSession } from '../contexts/SessionContext'
 import { useSocket } from '../sockets/SocketContext'
+import { SocketClock } from '../util/socketClock'
+import { setClock } from '../composables/useVideoPipeline'
 
 export default function JoinPage() {
   const [username, setUsername] = useState('')
@@ -24,6 +26,8 @@ export default function JoinPage() {
     if (!contextSocket) return
 
     const socket = contextSocket
+    const clock = new SocketClock(socket)
+    setClock(clock)
 
     socket.on('joined-room', (response: JoinResponse) => {
       setSession(response.userId, username, response.roomState)
@@ -133,7 +137,7 @@ export default function JoinPage() {
         </form>
         <div className="privacy-notice">
           * We collect anonymous usage statistics and logs to improve the platform.
-          <br />* Session duration in each room is limited to 10 minutes and session size is limited to six
+          <br />* Session duration in each room is limited to 10 minutes and session size is limited to three
           participants.
         </div>
         {error && <div className="error-message">{error}</div>}

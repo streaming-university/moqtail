@@ -2,13 +2,11 @@ import { BaseByteBuffer, ByteBuffer, FrozenByteBuffer } from './byte_buffer'
 import { NotEnoughBytesError } from '../error/error'
 
 export class Location {
-  constructor(
-    public readonly group: bigint,
-    public readonly object: bigint,
-  ) {}
-
-  static from(group: number | bigint, object: number | bigint): Location {
-    return new Location(BigInt(group), BigInt(object))
+  public readonly group: bigint
+  public readonly object: bigint
+  constructor(group: bigint | number, object: bigint | number) {
+    this.group = BigInt(group)
+    this.object = BigInt(object)
   }
 
   serialize(): FrozenByteBuffer {

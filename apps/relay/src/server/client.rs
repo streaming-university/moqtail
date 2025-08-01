@@ -16,7 +16,6 @@ use tokio::sync::Notify;
 use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, error, info, warn};
 use wtransport::{Connection, SendStream, error::StreamWriteError};
-
 #[derive(Debug, Clone)]
 pub(crate) struct MOQTClient {
   pub connection_id: usize,
@@ -24,6 +23,7 @@ pub(crate) struct MOQTClient {
   #[allow(dead_code)]
   pub client_setup: Arc<ClientSetup>,
   pub announced_track_namespaces: Arc<RwLock<Vec<Tuple>>>, // the track namespaces the publisher announced
+  pub published_tracks: Arc<RwLock<Vec<u64>>>,             // the tracks the client is publishing
   pub subscribers: Arc<RwLock<Vec<usize>>>, // the subscribers the client is subscribed to
 
   pub message_queue: Arc<RwLock<VecDeque<ControlMessage>>>, // the control messages the client has sent
@@ -51,6 +51,7 @@ impl MOQTClient {
       connection,
       client_setup,
       announced_track_namespaces: Arc::new(RwLock::new(Vec::new())),
+      published_tracks: Arc::new(RwLock::new(Vec::new())),
       subscribers: Arc::new(RwLock::new(Vec::new())),
       message_queue: Arc::new(RwLock::new(VecDeque::new())),
       message_notify: Arc::new(Notify::default()),
@@ -68,6 +69,16 @@ impl MOQTClient {
   pub(crate) async fn add_subscriber(&self, subscriber_id: usize) {
     let mut subscribers = self.subscribers.write().await;
     subscribers.push(subscriber_id);
+  }
+
+  pub(crate) async fn add_published_track(&self, track_alias: u64) {
+    let mut published_tracks = self.published_tracks.write().await;
+    published_tracks.push(track_alias);
+  }
+
+  pub(crate) async fn get_published_tracks(&self) -> Vec<u64> {
+    let published_tracks = self.published_tracks.read().await;
+    published_tracks.clone()
   }
 
   /// Get the next control message from the queue.
@@ -111,10 +122,16 @@ impl MOQTClient {
           .map_err(|e| anyhow::anyhow!("Failed to open send stream 2: {:?}", e))?;
         send_stream.set_priority(priority);
         entry.insert(Arc::new(Mutex::new(send_stream)));
-        info!("open_stream | Create send_stream ({})", stream_id);
+        info!(
+          "open_stream | Create send_stream ({}) connection_id: {}",
+          stream_id, self.connection_id
+        );
       }
       std::collections::hash_map::Entry::Occupied(_) => {
-        debug!("open_stream | Send stream for {} already exists", stream_id);
+        debug!(
+          "open_stream | Send stream for {} already exists connection_id: {}",
+          stream_id, self.connection_id
+        );
       }
     }
     drop(send_streams);
@@ -125,7 +142,13 @@ impl MOQTClient {
     debug!("open_stream | Send stream for {}", stream_id);
     let send_stream = send_streams
       .get(&stream_id.to_string())
-      .ok_or_else(|| anyhow::anyhow!("Send stream not found ({})", stream_id))
+      .ok_or_else(|| {
+        anyhow::anyhow!(
+          "Send stream not found ({}) connection_id: {}",
+          stream_id,
+          self.connection_id
+        )
+      })
       .cloned()?;
     drop(send_streams);
 
@@ -134,8 +157,8 @@ impl MOQTClient {
       Ok(..) => {}
       Err(e) => {
         error!(
-          "open_stream |  Failed to write header payload to send stream ({})",
-          stream_id
+          "open_stream |  Failed to write header payload to send stream ({}) connection_id: {}",
+          stream_id, self.connection_id
         );
 
         // remove this from the streams
@@ -143,8 +166,9 @@ impl MOQTClient {
         send_streams.remove(&stream_id.to_string());
 
         return Err(anyhow::anyhow!(
-          "Failed to write header payload to send stream ({}): {:?}",
+          "Failed to write header payload to send stream ({}): {:?} connection_id: {}",
           stream_id,
+          self.connection_id,
           e
         ));
       }
@@ -159,16 +183,26 @@ impl MOQTClient {
       let mut stream = send_stream.lock().await;
       stream.finish().await.map_err(|e| {
         error!(
-          "close_stream | Failed to finish send stream ({}): {:?}",
-          stream_id, e
+          "close_stream | Failed to finish send stream ({}): {:?} connection_id: {}",
+          stream_id, e, self.connection_id
         );
         anyhow::anyhow!("Failed to finish send stream ({}): {:?}", stream_id, e)
       })?;
-      info!("close_stream | Closed send stream ({})", stream_id);
+      info!(
+        "close_stream | Closed send stream ({}) connection_id: {}",
+        stream_id, self.connection_id
+      );
       Ok(())
     } else {
-      warn!("close_stream | Send stream not found for {}", stream_id);
-      Err(anyhow::anyhow!("Send stream not found ({})", stream_id))
+      warn!(
+        "close_stream | Send stream not found for {} connection_id: {}",
+        stream_id, self.connection_id
+      );
+      Err(anyhow::anyhow!(
+        "Send stream not found ({}) connection_id: {}",
+        stream_id,
+        self.connection_id
+      ))
     }
   }
 
@@ -180,8 +214,8 @@ impl MOQTClient {
     the_stream: Option<Arc<Mutex<SendStream>>>,
   ) -> Result<(), anyhow::Error> {
     debug!(
-      "write_object_to_stream | Writing object to stream ({} - {})",
-      object_id, stream_id
+      "write_object_to_stream | Writing object to stream ({} - {}) connection_id: {}",
+      object_id, stream_id, self.connection_id
     );
 
     let send_stream = {
@@ -192,6 +226,8 @@ impl MOQTClient {
         send_streams.get(&stream_id.to_string()).cloned()
       }
     };
+
+    // flow control
 
     if let Some(s) = send_stream {
       let mut stream = s.lock().await;
@@ -204,6 +240,7 @@ impl MOQTClient {
                 "write_object_to_stream | Send stream is closed or stopped ({})",
                 stream_id
               );
+              drop(stream);
               // remove this from the streams
               let mut send_streams = self.send_streams.write().await;
               send_streams.remove(&stream_id.to_string());
@@ -215,8 +252,8 @@ impl MOQTClient {
       Ok(())
     } else {
       warn!(
-        "write_object_to_stream | Send stream not found for {}",
-        stream_id
+        "write_object_to_stream | Send stream not found for {} connection_id: {}",
+        stream_id, self.connection_id
       );
       // This is not an error. The stream already started, wait for the next group...
       // Err(anyhow::anyhow!("Send stream not found ({})", stream_id))

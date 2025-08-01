@@ -14,8 +14,9 @@ use tracing::{debug, error, info};
 #[derive(Debug, Clone)]
 pub enum TrackEvent {
   Header { header: HeaderInfo },
-  Object { header_id: String, object: Object },
+  Object { stream_id: String, object: Object },
   StreamClosed { stream_id: String },
+  PublisherDisconnected { reason: String },
 }
 #[derive(Debug, Clone)]
 pub struct Track {
@@ -26,9 +27,10 @@ pub struct Track {
   #[allow(dead_code)]
   pub track_name: String,
   subscriptions: Arc<RwLock<BTreeMap<usize, Arc<RwLock<Subscription>>>>>,
+  pub publisher_connection_id: usize,
   #[allow(dead_code)]
   pub(crate) cache: TrackCache,
-  event_tx: Arc<Sender<TrackEvent>>,
+  event_tx: Sender<TrackEvent>,
   #[allow(dead_code)]
   event_rx: Arc<Receiver<TrackEvent>>,
 }
@@ -41,6 +43,7 @@ impl Track {
     track_namespace: Tuple,
     track_name: String,
     cache_size: usize,
+    publisher_connection_id: usize,
   ) -> Self {
     let (event_tx, event_rx) = tokio::sync::broadcast::channel(1000);
 
@@ -49,8 +52,9 @@ impl Track {
       track_namespace,
       track_name,
       subscriptions: Arc::new(RwLock::new(BTreeMap::new())),
+      publisher_connection_id,
       cache: TrackCache::new(track_alias, cache_size),
-      event_tx: Arc::new(event_tx),
+      event_tx,
       event_rx: Arc::new(event_rx), // Keep the receiver alive so that the sender stays alive
     }
   }
@@ -72,6 +76,7 @@ impl Track {
       subscriber.clone(),
       event_rx,
       self.cache.clone(),
+      connection_id,
     );
 
     let mut subscriptions = self.subscriptions.write().await;
@@ -102,8 +107,6 @@ impl Track {
   }
 
   pub async fn new_header(&self, header: &HeaderInfo) -> Result<()> {
-    // self.cache.add_header(header.clone()).await;
-
     let header_event = TrackEvent::Header {
       header: header.clone(),
     };
@@ -121,29 +124,31 @@ impl Track {
     Ok(())
   }
 
-  pub async fn new_object(&self, header_id: String, object: &Object) -> Result<(), anyhow::Error> {
+  pub async fn new_object(&self, stream_id: String, object: &Object) -> Result<(), anyhow::Error> {
     debug!(
       "new_object: track: {:?} location: {:?} stream_id: {} diff_ms: {}",
       object.track_alias,
       object.location,
-      &header_id,
+      &stream_id,
       (Instant::now() - *utils::BASE_TIME).as_millis()
     );
 
+    /*
     self
       .cache
-      .add_object(header_id.clone(), object.clone())
+      .add_object(object.clone())
       .await;
+    */
 
     let object_event = TrackEvent::Object {
-      header_id: header_id.clone(),
+      stream_id: stream_id.clone(),
       object: object.clone(),
     };
 
     match self.event_tx.send(object_event) {
       Ok(_) => {}
       Err(e) => {
-        tracing::error!("Failed to send object: header_id: {}, e: {}", header_id, e);
+        tracing::error!("Failed to send object: stream_id: {}, e: {}", stream_id, e);
         return Err(anyhow::Error::from(e));
       }
     };
@@ -160,6 +165,36 @@ impl Track {
         return Err(anyhow::Error::from(e));
       }
     };
+    Ok(())
+  }
+
+  /// Send PublisherDisconnected event to all subscribers
+  pub async fn notify_publisher_disconnected(&self) -> Result<(), anyhow::Error> {
+    info!(
+      "Publisher disconnected for track: {} - notifying all subscribers",
+      self.track_alias
+    );
+
+    let event = TrackEvent::PublisherDisconnected {
+      reason: "Publisher disconnected".to_string(),
+    };
+
+    match self.event_tx.send(event) {
+      Ok(_) => {
+        info!(
+          "Publisher disconnected event sent successfully for track: {}",
+          self.track_alias
+        );
+      }
+      Err(e) => {
+        error!(
+          "Failed to send publisher disconnected event for track {}: {}",
+          self.track_alias, e
+        );
+        return Err(anyhow::Error::from(e));
+      }
+    }
+
     Ok(())
   }
 }

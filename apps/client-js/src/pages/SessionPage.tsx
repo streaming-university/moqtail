@@ -5,7 +5,7 @@ import {
   Video,
   VideoOff,
   MonitorUp,
-  Phone,
+  PhoneOff,
   Send,
   Users,
   MessageSquare,
@@ -47,7 +47,6 @@ import {
   startAudioEncoder,
   subscribeToChatTrack,
   useVideoSubscriber,
-  cleanupClockNormalizer,
 } from '../composables/useVideoPipeline'
 import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client'
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
@@ -85,6 +84,8 @@ function SessionPage() {
   const selfMediaStream = useRef<MediaStream | null>(null)
   const publisherInitialized = useRef<boolean>(false)
   const moqtailClientInitStarted = useRef<boolean>(false)
+  const [pendingRoomClosedMessage, setPendingRoomClosedMessage] = useState<string | null>(null)
+  const originalTitle = useRef<string>(document.title)
   const videoEncoderObjRef = useRef<any>(null)
   const chatSenderRef = useRef<{ send: (msg: string) => void } | null>(null)
   const offsetRef = useRef<number>(0)
@@ -444,6 +445,38 @@ function SessionPage() {
     return user?.id || ''
   }
 
+  // Request notification permission on component mount
+  const requestNotificationPermission = async () => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      try {
+        await Notification.requestPermission()
+      } catch (error) {
+        console.warn('Failed to request notification permission:', error)
+      }
+    }
+  }
+
+  // Show notification when tab is not visible
+  const showRoomClosedNotification = (message: string) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const notification = new Notification('MOQtail Room Closed', {
+        body: message,
+        icon: '/moqtail.ico',
+        requireInteraction: true, // Keep notification visible until user interacts
+      })
+
+      notification.onclick = () => {
+        window.focus()
+        notification.close()
+      }
+    }
+  }
+
+  // Check if document is visible
+  const isDocumentVisible = () => {
+    return !document.hidden
+  }
+
   const handleToggle = (kind: 'mic' | 'cam') => {
     // Don't allow toggles while rewind player is cleaning up
     if (isRewindCleaningUp.current) {
@@ -774,7 +807,6 @@ function SessionPage() {
           videoFullTrackName,
           videoStreamController: tracks.getVideoStreamController(),
           publisherPriority: 1,
-          offset,
           objectForwardingPreference: ObjectForwardingPreference.Subgroup,
         })
         // Only start video encoder if we have video tracks
@@ -792,7 +824,6 @@ function SessionPage() {
           audioStreamController: tracks.getAudioStreamController(),
           publisherPriority: 1,
           audioGroupId: 0,
-          offset,
           objectForwardingPreference: ObjectForwardingPreference.Subgroup,
         })
         chatSenderRef.current = initializeChatMessageSender({
@@ -800,7 +831,6 @@ function SessionPage() {
           chatStreamController: tracks.getChatStreamController(),
           publisherPriority: 1,
           objectForwardingPreference: ObjectForwardingPreference.Subgroup,
-          offset,
         })
 
         await Promise.all([videoPromise, audioPromise])
@@ -849,6 +879,9 @@ function SessionPage() {
       const initClient = async () => {
         const client = await connectToRelay(relayUrl + '/' + username)
         setMoqClient(client)
+        client.onDataReceived = (data) => {
+          console.warn('Data received:', data)
+        }
         //console.log('initClient', client)
         if (roomState && Object.values(users).length === 0) {
           const otherUsers = Object.keys(roomState.users).filter((uId) => uId != userId)
@@ -865,7 +898,6 @@ function SessionPage() {
 
     if (!contextSocket) return
     const socket = contextSocket
-
     socket.on('user-joined', (user: RoomUser) => {
       console.info(`User joined: ${user.name} (${user.id})`)
       addUser(user)
@@ -978,11 +1010,20 @@ function SessionPage() {
       // TODO: unsubscribe
     })
 
-    socket.on('room-timeout', (msg: RoomTimeoutMessage) => {
-      console.info('Room timeout:', msg.message)
-      alert(`${msg.message}\n\nYou will be redirected to the home page.`)
+    socket.on('room-closed', (msg: RoomTimeoutMessage) => {
+      console.info('Room closed:', msg.message)
+      const fullMessage = msg.message
 
-      leaveRoom()
+      if (isDocumentVisible()) {
+        // Tab is visible, show alert immediately
+        alert(`${fullMessage}\n\nYou will be redirected to the home page.`)
+        leaveRoom()
+      } else {
+        // Tab is not visible, show notification and save message for later
+        showRoomClosedNotification(fullMessage)
+        setPendingRoomClosedMessage(fullMessage)
+        document.title = '🔴 Room Closed - MOQtail Demo'
+      }
     })
 
     return () => {
@@ -1039,9 +1080,9 @@ function SessionPage() {
     return {
       videoCodec: videoConfig.codec,
       audioCodec: audioConfig.codec,
-      frameRate: videoConfig.framerate,
-      sampleRate: audioConfig.sampleRate,
-      resolution: `${videoConfig.width}x${videoConfig.height}`,
+      frameRate: videoConfig.framerate || 30,
+      sampleRate: audioConfig.sampleRate || 48000,
+      resolution: `${videoConfig.width || 1280}x${videoConfig.height || 720}`,
       syncDrift: 0, // TODO
       videoBitrate: videoConfig.bitrate,
       audioBitrate: audioConfig.bitrate,
@@ -1057,9 +1098,9 @@ function SessionPage() {
     return {
       videoCodec: videoConfig.codec,
       audioCodec: audioConfig.codec,
-      frameRate: videoConfig.framerate,
-      sampleRate: audioConfig.sampleRate,
-      resolution: `${videoConfig.width}x${videoConfig.height}`,
+      frameRate: videoConfig.framerate || 30,
+      sampleRate: audioConfig.sampleRate || 48000,
+      resolution: `${videoConfig.width || 1280}x${videoConfig.height || 720}`,
       syncDrift: 0, // TODO
       videoBitrate: videoConfig.bitrate,
       audioBitrate: audioConfig.bitrate,
@@ -1168,6 +1209,37 @@ function SessionPage() {
 
     return () => {
       window.removeEventListener('popstate', handlePopState)
+    }
+  }, [])
+
+  // Request notification permission and handle page visibility changes
+  useEffect(() => {
+    // Request notification permission on mount
+    requestNotificationPermission()
+
+    // Handle page visibility changes to show pending room closed messages
+    const handleVisibilityChange = () => {
+      if (!document.hidden && pendingRoomClosedMessage) {
+        // Tab became visible and we have a pending message
+        alert(`${pendingRoomClosedMessage}\n\nYou will be redirected to the home page.`)
+        setPendingRoomClosedMessage(null)
+        document.title = originalTitle.current
+        leaveRoom()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [pendingRoomClosedMessage])
+
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      // Restore original title on unmount
+      document.title = originalTitle.current
     }
   }, [])
 
@@ -1339,6 +1411,10 @@ function SessionPage() {
   function leaveRoom() {
     //console.log('Leaving room...');
 
+    // Clean up any pending room closed messages and restore title
+    setPendingRoomClosedMessage(null)
+    document.title = originalTitle.current
+
     setMoqClient(undefined)
     if (selfMediaStream.current) {
       const tracks = selfMediaStream.current.getTracks()
@@ -1362,8 +1438,6 @@ function SessionPage() {
       contextSocket.disconnect()
     }
     moqClient?.disconnect()
-
-    cleanupClockNormalizer()
 
     clearSession()
 
@@ -2058,7 +2132,7 @@ function SessionPage() {
           onClick={leaveRoom}
           className="p-3 rounded-full bg-red-600 hover:bg-red-700 text-white transition-all duration-200 ml-8"
         >
-          <Phone className="w-5 h-5 transform rotate-135" />
+          <PhoneOff className="w-5 h-5 transform rotate-135" />
         </button>
         {/* Chat Toggle Button (when chat is closed) */}
         {!isChatOpen && (
