@@ -20,6 +20,7 @@ import path from 'path'
 import https from 'https'
 import { fileURLToPath } from 'url'
 import { exec } from 'child_process'
+import Convert from 'ansi-to-html'
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url)
@@ -160,6 +161,15 @@ let roomLimits = {
   sessionDurationMinutes: parseInt(process.env.MOQTAIL_SESSION_DURATION_MINUTES || '10')
 }
 
+// ANSI to HTML converter for log formatting
+const ansiConverter = new Convert({
+  fg: '#FFF',
+  bg: '#000',
+  newline: true,
+  escapeXML: true,
+  stream: false
+})
+
 const io = new Server(server, {
   cors: {
     origin: '*',
@@ -225,7 +235,8 @@ function handleGetRooms(req: any, res: any) {
 
   for (const [roomName, room] of rooms.entries()) {
     const timer = roomTimers.get(roomName)
-    const timeLeft = timer ? Math.max(0, ROOM_TIMEOUT_MS - (Date.now() - room.created)) : 0
+    const timeoutMs = roomLimits.sessionDurationMinutes * 60 * 1000
+    const timeLeft = timer ? Math.max(0, timeoutMs - (Date.now() - room.created)) : 0
 
     const users = Array.from(room.users.values()).map((user) => ({
       id: user.id,
@@ -531,12 +542,16 @@ function handleLogs(req: any, res: any) {
       logs = `[PM2 Info]: ${stderr.trim()}\n\n${stdout}`
     }
 
+    const rawLogs = logs || `No logs available for service: ${service}`
+    const htmlLogs = ansiConverter.toHtml(rawLogs)
+
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ 
       success: true, 
       service,
       lines,
-      logs: logs || `No logs available for service: ${service}`
+      logs: rawLogs,
+      htmlLogs: htmlLogs
     }))
   })
 }
@@ -611,10 +626,7 @@ const roomTimers = new Map<string, NodeJS.Timeout>()
 let roomCounter = 0
 let lastTrackAlias = 1
 
-// constants
-const MAX_ROOM_CAPACITY = 6
-const MAX_ROOM_COUNT = 5
-const ROOM_TIMEOUT_MS = 10 * 60 * 1000 // 10 mins (ms)
+// Room management will now use configurable roomLimits instead of constants
 
 function newRoom(roomName: string) {
   const room: RoomState = {
@@ -624,12 +636,13 @@ function newRoom(roomName: string) {
     users: new Map(),
   }
 
+  const timeoutMs = roomLimits.sessionDurationMinutes * 60 * 1000
   const timeoutId = setTimeout(() => {
     closeRoom(roomName, 'timeout')
-  }, ROOM_TIMEOUT_MS)
+  }, timeoutMs)
 
   roomTimers.set(roomName, timeoutId)
-  console.info(`Room ${roomName} created with 10-minute timeout`)
+  console.info(`Room ${roomName} created with ${roomLimits.sessionDurationMinutes}-minute timeout`)
 
   return room
 }
@@ -769,8 +782,8 @@ io.on('connection', (socket) => {
 
     let room = rooms.get(roomName)
     if (!room) {
-      if (roomCounter >= MAX_ROOM_COUNT) {
-        const errorText = `Maximum room count (${MAX_ROOM_COUNT}) is reached. Room: ${roomName}`
+      if (rooms.size >= roomLimits.maxRooms) {
+        const errorText = `Maximum room count (${roomLimits.maxRooms}) is reached. Room: ${roomName}`
         console.warn(errorText, socket.id)
         socket.emit('error', newError('join-room', ErrorCode.MaxRoomReached, errorText))
         return
@@ -779,8 +792,8 @@ io.on('connection', (socket) => {
       rooms.set(roomName, room)
     }
 
-    if (room?.users.size >= MAX_ROOM_CAPACITY) {
-      const errorText = `Maximum user count (${MAX_ROOM_CAPACITY}) in room is reached. Room:${roomName}`
+    if (room?.users.size >= roomLimits.maxUsersPerRoom) {
+      const errorText = `Maximum user count (${roomLimits.maxUsersPerRoom}) in room is reached. Room:${roomName}`
       console.warn(errorText, socket.id)
       socket.emit('error', newError('join-room', ErrorCode.MaxUserReached, errorText))
       return

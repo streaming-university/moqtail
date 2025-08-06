@@ -261,6 +261,18 @@
             word-break: break-all;
         }
 
+        /* Style for ANSI color spans within logs */
+        .logs-container span {
+            white-space: inherit;
+        }
+
+        /* Ensure HTML content preserves formatting */
+        .logs-container * {
+            font-family: inherit;
+            font-size: inherit;
+            line-height: inherit;
+        }
+
         .logs-container:empty::before {
             content: 'Loading logs...';
             color: #86868b;
@@ -321,40 +333,40 @@
             background: #86868b;
             cursor: wait;
         }
-        
+
         .settings-section {
             max-width: 600px;
         }
-        
+
         .settings-section h3 {
             font-size: 1.4rem;
             font-weight: 600;
             color: #1d1d1f;
             margin-bottom: 8px;
         }
-        
+
         .settings-section p {
             color: #86868b;
             margin-bottom: 24px;
         }
-        
+
         .settings-form {
             display: flex;
             flex-direction: column;
             gap: 20px;
         }
-        
+
         .form-group {
             display: flex;
             flex-direction: column;
             gap: 6px;
         }
-        
+
         .form-group label {
             font-weight: 500;
             color: #1d1d1f;
         }
-        
+
         .form-group input {
             padding: 10px 12px;
             border: 1px solid #e5e5e7;
@@ -362,24 +374,24 @@
             font-size: 14px;
             transition: border-color 0.2s ease;
         }
-        
+
         .form-group input:focus {
             outline: none;
             border-color: #007aff;
             box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
         }
-        
+
         .form-help {
             font-size: 12px;
             color: #86868b;
         }
-        
+
         .form-actions {
             display: flex;
             gap: 12px;
             margin-top: 8px;
         }
-        
+
         .save-btn {
             background: #30d158;
             color: white;
@@ -391,16 +403,16 @@
             cursor: pointer;
             transition: background-color 0.2s ease;
         }
-        
+
         .save-btn:hover {
             background: #28a745;
         }
-        
+
         .save-btn:disabled {
             background: #86868b;
             cursor: not-allowed;
         }
-        
+
         .reset-btn {
             background: #86868b;
             color: white;
@@ -412,7 +424,7 @@
             cursor: pointer;
             transition: background-color 0.2s ease;
         }
-        
+
         .reset-btn:hover {
             background: #666;
         }
@@ -655,32 +667,32 @@
                 </div>
                 <div class="logs-container" id="logs-container"></div>
             </div>
-            
+
             <!-- Settings Tab -->
             <div id="settings-tab" class="tab-pane">
                 <div class="settings-section">
                     <h3>Room Limits Configuration</h3>
                     <p>Configure the limits for room creation and usage.</p>
-                    
+
                     <form id="settings-form" class="settings-form">
                         <div class="form-group">
                             <label for="max-rooms">Maximum number of rooms:</label>
                             <input type="number" id="max-rooms" min="1" max="100" required>
                             <span class="form-help">Current limit: 1-100 rooms</span>
                         </div>
-                        
+
                         <div class="form-group">
                             <label for="max-users">Maximum users per room:</label>
                             <input type="number" id="max-users" min="1" max="50" required>
                             <span class="form-help">Current limit: 1-50 users</span>
                         </div>
-                        
+
                         <div class="form-group">
                             <label for="session-duration">Session duration (minutes):</label>
                             <input type="number" id="session-duration" min="1" max="1440" required>
                             <span class="form-help">Current limit: 1-1440 minutes (24 hours)</span>
                         </div>
-                        
+
                         <div class="form-actions">
                             <button type="submit" class="save-btn">Save Settings</button>
                             <button type="button" class="reset-btn" onclick="loadSettings()">Reset</button>
@@ -750,7 +762,9 @@
                 const result = await response.json();
 
                 if (response.ok && result.success) {
-                    container.textContent = result.logs;
+                    // Use HTML logs with ANSI color formatting if available, fallback to plain text
+                    const htmlLogs = result.htmlLogs || result.logs || 'No logs available';
+                    container.innerHTML = htmlLogs;
                     // Auto-scroll to bottom
                     container.scrollTop = container.scrollHeight;
                 } else {
@@ -814,12 +828,12 @@
                 }
             }
         }
-        
+
         async function loadSettings() {
             try {
                 const response = await fetch('/api/rooms/limits');
                 const result = await response.json();
-                
+
                 if (response.ok && result.success) {
                     const limits = result.limits;
                     document.getElementById('max-rooms').value = limits.maxRooms;
@@ -834,21 +848,21 @@
                 alert('Failed to load settings. Please try refreshing the page.');
             }
         }
-        
+
         async function saveSettings(event) {
             event.preventDefault();
-            
+
             const saveBtn = document.querySelector('.save-btn');
             saveBtn.disabled = true;
             saveBtn.textContent = 'Saving...';
-            
+
             try {
                 const limits = {
                     maxRooms: parseInt(document.getElementById('max-rooms').value),
                     maxUsersPerRoom: parseInt(document.getElementById('max-users').value),
                     sessionDurationMinutes: parseInt(document.getElementById('session-duration').value)
                 };
-                
+
                 const response = await fetch('/api/rooms/limits', {
                     method: 'POST',
                     headers: {
@@ -856,9 +870,9 @@
                     },
                     body: JSON.stringify(limits)
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (response.ok && result.success) {
                     alert('Settings saved successfully!');
                 } else {
@@ -872,7 +886,7 @@
                 saveBtn.textContent = 'Save Settings';
             }
         }
-        
+
         function updateRefreshInterval() {
             const select = document.getElementById('refresh-interval');
             refreshInterval = parseInt(select.value);
@@ -1148,18 +1162,18 @@
                 alert('Failed to close room. Please try again.');
             }
         }
-        
+
         // Initialize page
         function initializePage() {
             // Load saved refresh interval preference
             loadSavedRefreshInterval();
-            
+
             // Load initial data
             loadRooms();
-            
+
             // Start auto-refresh timer
             startRefreshTimer();
-            
+
             // Add form event listener
             document.getElementById('settings-form').addEventListener('submit', saveSettings);
         }
