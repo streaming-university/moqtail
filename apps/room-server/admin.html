@@ -309,6 +309,36 @@
             content: 'Loading logs...';
             color: #86868b;
         }
+        
+        .refresh-interval-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
+            font-size: 14px;
+            color: #86868b;
+        }
+        
+        .refresh-interval-select {
+            padding: 6px 10px;
+            border: 1px solid #e5e5e7;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            color: #1d1d1f;
+            cursor: pointer;
+            transition: border-color 0.2s ease;
+        }
+        
+        .refresh-interval-select:hover {
+            border-color: #007aff;
+        }
+        
+        .refresh-interval-select:focus {
+            outline: none;
+            border-color: #007aff;
+            box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
+        }
 
         .stats {
             color: #86868b;
@@ -461,8 +491,22 @@
 <body>
     <div class="container">
         <header>
-            <h1>MOQtail Room Management</h1>
-            <p class="subtitle">Monitor and manage active video chat rooms</p>
+            <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                <div>
+                    <h1>MOQtail Room Management</h1>
+                    <p class="subtitle">Monitor and manage active video chat rooms</p>
+                </div>
+                <div class="refresh-interval-control">
+                    <label for="refresh-interval">Auto-refresh:</label>
+                    <select id="refresh-interval" class="refresh-interval-select" onchange="updateRefreshInterval()">
+                        <option value="5000">5 seconds</option>
+                        <option value="15000">15 seconds</option>
+                        <option value="30000">30 seconds</option>
+                        <option value="60000">1 minute</option>
+                        <option value="300000">5 minutes</option>
+                    </select>
+                </div>
+            </div>
         </header>
 
 
@@ -545,6 +589,8 @@
     <script>
         // Global variables for current state
         let currentLogService = 'relay';
+        let refreshInterval = 5000; // Default 5 seconds
+        let refreshTimer = null;
 
         function switchTab(tabName) {
             // Hide all tab panes
@@ -606,6 +652,48 @@
             } catch (error) {
                 console.error('Failed to load logs:', error);
                 container.textContent = 'Failed to load logs. Please try again.';
+            }
+        }
+        
+        function updateRefreshInterval() {
+            const select = document.getElementById('refresh-interval');
+            refreshInterval = parseInt(select.value);
+            
+            // Save to localStorage
+            localStorage.setItem('moqtail-refresh-interval', refreshInterval.toString());
+            
+            // Restart the refresh timer with new interval
+            startRefreshTimer();
+        }
+        
+        function startRefreshTimer() {
+            // Clear existing timer
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
+            }
+            
+            // Start new timer with current interval
+            refreshTimer = setInterval(() => {
+                const activeTab = document.querySelector('.tab.active');
+                if (activeTab) {
+                    const tabText = activeTab.textContent.trim();
+                    if (tabText === 'Active Rooms') {
+                        loadRooms();
+                    } else if (tabText === 'Service Status') {
+                        loadServices();
+                    } else if (tabText === 'Logs') {
+                        loadLogs();
+                    }
+                }
+            }, refreshInterval);
+        }
+        
+        function loadSavedRefreshInterval() {
+            const saved = localStorage.getItem('moqtail-refresh-interval');
+            if (saved) {
+                refreshInterval = parseInt(saved);
+                const select = document.getElementById('refresh-interval');
+                select.value = refreshInterval.toString();
             }
         }
 
@@ -896,24 +984,21 @@
                 alert('Failed to close room. Please try again.');
             }
         }
-
-        // Load initial data on page load
-        loadRooms();
-
-        // Auto-refresh only the active tab every 5 seconds
-        setInterval(() => {
-            const activeTab = document.querySelector('.tab.active');
-            if (activeTab) {
-                const tabText = activeTab.textContent.trim();
-                if (tabText === 'Active Rooms') {
-                    loadRooms();
-                } else if (tabText === 'Service Status') {
-                    loadServices();
-                } else if (tabText === 'Logs') {
-                    loadLogs();
-                }
-            }
-        }, 5000);
+        
+        // Initialize page
+        function initializePage() {
+            // Load saved refresh interval preference
+            loadSavedRefreshInterval();
+            
+            // Load initial data
+            loadRooms();
+            
+            // Start auto-refresh timer
+            startRefreshTimer();
+        }
+        
+        // Initialize when page loads
+        initializePage();
     </script>
 </body>
 
