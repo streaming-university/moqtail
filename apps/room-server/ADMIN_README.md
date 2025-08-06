@@ -40,6 +40,15 @@ The admin interface now includes a modern tabbed design with three main sections
 - **Auto-scroll**: Automatically scrolls to latest log entries
 - **Real-time Updates**: Auto-refresh every 5 seconds when active
 
+### ⚙️ Settings Tab
+- **Room Limits Configuration**: Configure system-wide room and user limits
+- **Maximum Rooms**: Set the maximum number of concurrent rooms (1-100)
+- **Users Per Room**: Set the maximum users allowed per room (1-50)
+- **Session Duration**: Set session timeout in minutes (1-1440, 24 hours max)
+- **Real-time Updates**: Changes take effect immediately and are reflected on the join page
+- **Validation**: Input validation with helpful error messages
+- **Persistent Settings**: Settings are maintained until changed by an administrator
+
 ### 🎨 UI/UX Features
 - **Responsive Design**: Works on desktop and mobile devices
 - **Modern Tabbed Interface**: Clean organization of different admin functions
@@ -451,12 +460,3 @@ module.exports = {
 - Verify services are properly configured in PM2
 - Ensure adequate system resources for restarts
 - Check server logs for detailed error messages
-
-## Development Notes
-
-- **Technology Stack**: Vanilla HTML, CSS, and JavaScript for simplicity
-- **Design System**: Modern, Apple-inspired design with smooth transitions
-- **Responsive Layout**: Works on all screen sizes and devices
-- **Single File Deployment**: All functionality contained for easy deployment
-- **Tab-based Architecture**: Organized functionality with smart auto-refresh
-- **Real-time Updates**: Efficient polling only for active tabs
