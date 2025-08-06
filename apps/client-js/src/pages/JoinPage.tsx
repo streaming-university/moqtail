@@ -11,6 +11,11 @@ export default function JoinPage() {
   const [roomName, setRoomName] = useState('')
   const [error, setError] = useState('')
   const [connecting, setConnecting] = useState(false)
+  const [roomLimits, setRoomLimits] = useState({
+    maxRooms: 5,
+    maxUsersPerRoom: 6,
+    sessionDurationMinutes: 10
+  })
   const navigate = useNavigate()
   const { setSession } = useSession()
   const { socket: contextSocket, reconnect } = useSocket()
@@ -20,6 +25,26 @@ export default function JoinPage() {
       console.log('WebSocket not connected on page load, reconnecting...')
       reconnect()
     }
+  }, [])
+
+  useEffect(() => {
+    // Fetch room limits from the server
+    const fetchRoomLimits = async () => {
+      try {
+        const response = await fetch('/api/rooms/limits')
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.limits) {
+            setRoomLimits(data.limits)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch room limits:', error)
+        // Keep default values on error
+      }
+    }
+
+    fetchRoomLimits()
   }, [])
 
   useEffect(() => {
@@ -137,8 +162,7 @@ export default function JoinPage() {
         </form>
         <div className="privacy-notice">
           * We collect anonymous usage statistics and logs to improve the platform.
-          <br />* Session duration in each room is limited to 10 minutes and session size is limited to three
-          participants.
+          <br />* Session duration in each room is limited to {roomLimits.sessionDurationMinutes} minute{roomLimits.sessionDurationMinutes !== 1 ? 's' : ''} and session size is limited to {roomLimits.maxUsersPerRoom} participants.
         </div>
         {error && <div className="error-message">{error}</div>}
       </div>

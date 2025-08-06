@@ -59,6 +59,8 @@ function customRequestHandler(req: any, res: any) {
   const isOurRoute =
     (req.method === 'GET' && url.pathname === '/api/rooms') ||
     (req.method === 'POST' && url.pathname.startsWith('/api/rooms/') && url.pathname.endsWith('/close')) ||
+    (req.method === 'GET' && url.pathname === '/api/rooms/limits') ||
+    (req.method === 'POST' && url.pathname === '/api/rooms/limits') ||
     (req.method === 'POST' && url.pathname === '/api/backend/restart-relay') ||
     (req.method === 'POST' && url.pathname === '/api/backend/restart-room-server') ||
     (req.method === 'POST' && url.pathname === '/api/backend/restart-all') ||
@@ -90,6 +92,12 @@ function customRequestHandler(req: any, res: any) {
   } else if (req.method === 'POST' && url.pathname.startsWith('/api/rooms/') && url.pathname.endsWith('/close')) {
     const roomName = decodeURIComponent(url.pathname.split('/')[3])
     handleCloseRoom(req, res, roomName)
+    return true
+  } else if (req.method === 'GET' && url.pathname === '/api/rooms/limits') {
+    handleGetRoomLimits(req, res)
+    return true
+  } else if (req.method === 'POST' && url.pathname === '/api/rooms/limits') {
+    handleSetRoomLimits(req, res)
     return true
   } else if (req.method === 'POST' && url.pathname === '/api/backend/restart-relay') {
     handleRestartRelay(req, res)
@@ -144,6 +152,13 @@ if (process.env.MOQTAIL_SECURE_WS) {
 // Proxy configuration
 const behindProxy = process.env.MOQTAIL_BEHIND_PROXY === 'true'
 const trustProxy = process.env.MOQTAIL_TRUST_PROXY === 'true'
+
+// Room limits configuration
+let roomLimits = {
+  maxRooms: parseInt(process.env.MOQTAIL_MAX_ROOMS || '5'),
+  maxUsersPerRoom: parseInt(process.env.MOQTAIL_MAX_USERS_PER_ROOM || '6'),
+  sessionDurationMinutes: parseInt(process.env.MOQTAIL_SESSION_DURATION_MINUTES || '10')
+}
 
 const io = new Server(server, {
   cors: {
@@ -248,6 +263,70 @@ function handleCloseRoom(req: any, res: any, roomName: string) {
 
   res.writeHead(200, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify({ success: true, message: `Room ${roomName} closed successfully by administrator` }))
+}
+
+function handleGetRoomLimits(req: any, res: any) {
+  // Allow both admin and public access for GET
+  if (req.headers.authorization && !checkAdminAuth(req, res)) return
+
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify({ 
+    success: true, 
+    limits: roomLimits 
+  }))
+}
+
+function handleSetRoomLimits(req: any, res: any) {
+  if (!checkAdminAuth(req, res)) return
+
+  let body = ''
+  req.on('data', (chunk: any) => {
+    body += chunk.toString()
+  })
+
+  req.on('end', () => {
+    try {
+      const newLimits = JSON.parse(body)
+      
+      // Validate the limits
+      if (typeof newLimits.maxRooms !== 'number' || newLimits.maxRooms < 1 || newLimits.maxRooms > 100) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'maxRooms must be a number between 1 and 100' }))
+        return
+      }
+      
+      if (typeof newLimits.maxUsersPerRoom !== 'number' || newLimits.maxUsersPerRoom < 1 || newLimits.maxUsersPerRoom > 50) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'maxUsersPerRoom must be a number between 1 and 50' }))
+        return
+      }
+      
+      if (typeof newLimits.sessionDurationMinutes !== 'number' || newLimits.sessionDurationMinutes < 1 || newLimits.sessionDurationMinutes > 1440) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'sessionDurationMinutes must be a number between 1 and 1440 (24 hours)' }))
+        return
+      }
+
+      // Update the limits
+      roomLimits = {
+        maxRooms: newLimits.maxRooms,
+        maxUsersPerRoom: newLimits.maxUsersPerRoom,
+        sessionDurationMinutes: newLimits.sessionDurationMinutes
+      }
+
+      console.log('Room limits updated by admin:', roomLimits)
+
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ 
+        success: true, 
+        message: 'Room limits updated successfully',
+        limits: roomLimits 
+      }))
+    } catch (error) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Invalid JSON payload' }))
+    }
+  })
 }
 
 function handleRestartRelay(req: any, res: any) {
