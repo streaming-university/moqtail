@@ -14,7 +14,7 @@ export default function JoinPage() {
   const [roomLimits, setRoomLimits] = useState({
     maxRooms: 5,
     maxUsersPerRoom: 6,
-    sessionDurationMinutes: 10
+    sessionDurationMinutes: 10,
   })
   const navigate = useNavigate()
   const { setSession } = useSession()
@@ -162,7 +162,9 @@ export default function JoinPage() {
         </form>
         <div className="privacy-notice">
           * We collect anonymous usage statistics and logs to improve the platform.
-          <br />* Session duration in each room is limited to {roomLimits.sessionDurationMinutes} minute{roomLimits.sessionDurationMinutes !== 1 ? 's' : ''} and session size is limited to {roomLimits.maxUsersPerRoom} participants.
+          <br />* Session duration in each room is limited to {roomLimits.sessionDurationMinutes} minute
+          {roomLimits.sessionDurationMinutes !== 1 ? 's' : ''} and session size is limited to{' '}
+          {roomLimits.maxUsersPerRoom} participants.
         </div>
         {error && <div className="error-message">{error}</div>}
       </div>

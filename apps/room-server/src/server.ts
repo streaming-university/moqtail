@@ -158,7 +158,7 @@ const trustProxy = process.env.MOQTAIL_TRUST_PROXY === 'true'
 let roomLimits = {
   maxRooms: parseInt(process.env.MOQTAIL_MAX_ROOMS || '5'),
   maxUsersPerRoom: parseInt(process.env.MOQTAIL_MAX_USERS_PER_ROOM || '6'),
-  sessionDurationMinutes: parseInt(process.env.MOQTAIL_SESSION_DURATION_MINUTES || '10')
+  sessionDurationMinutes: parseInt(process.env.MOQTAIL_SESSION_DURATION_MINUTES || '10'),
 }
 
 // ANSI to HTML converter for log formatting
@@ -167,7 +167,7 @@ const ansiConverter = new Convert({
   bg: '#000',
   newline: true,
   escapeXML: true,
-  stream: false
+  stream: false,
 })
 
 const io = new Server(server, {
@@ -281,10 +281,12 @@ function handleGetRoomLimits(req: any, res: any) {
   if (req.headers.authorization && !checkAdminAuth(req, res)) return
 
   res.writeHead(200, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify({ 
-    success: true, 
-    limits: roomLimits 
-  }))
+  res.end(
+    JSON.stringify({
+      success: true,
+      limits: roomLimits,
+    }),
+  )
 }
 
 function handleSetRoomLimits(req: any, res: any) {
@@ -298,21 +300,29 @@ function handleSetRoomLimits(req: any, res: any) {
   req.on('end', () => {
     try {
       const newLimits = JSON.parse(body)
-      
+
       // Validate the limits
       if (typeof newLimits.maxRooms !== 'number' || newLimits.maxRooms < 1 || newLimits.maxRooms > 100) {
         res.writeHead(400, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ error: 'maxRooms must be a number between 1 and 100' }))
         return
       }
-      
-      if (typeof newLimits.maxUsersPerRoom !== 'number' || newLimits.maxUsersPerRoom < 1 || newLimits.maxUsersPerRoom > 50) {
+
+      if (
+        typeof newLimits.maxUsersPerRoom !== 'number' ||
+        newLimits.maxUsersPerRoom < 1 ||
+        newLimits.maxUsersPerRoom > 50
+      ) {
         res.writeHead(400, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ error: 'maxUsersPerRoom must be a number between 1 and 50' }))
         return
       }
-      
-      if (typeof newLimits.sessionDurationMinutes !== 'number' || newLimits.sessionDurationMinutes < 1 || newLimits.sessionDurationMinutes > 1440) {
+
+      if (
+        typeof newLimits.sessionDurationMinutes !== 'number' ||
+        newLimits.sessionDurationMinutes < 1 ||
+        newLimits.sessionDurationMinutes > 1440
+      ) {
         res.writeHead(400, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ error: 'sessionDurationMinutes must be a number between 1 and 1440 (24 hours)' }))
         return
@@ -322,17 +332,19 @@ function handleSetRoomLimits(req: any, res: any) {
       roomLimits = {
         maxRooms: newLimits.maxRooms,
         maxUsersPerRoom: newLimits.maxUsersPerRoom,
-        sessionDurationMinutes: newLimits.sessionDurationMinutes
+        sessionDurationMinutes: newLimits.sessionDurationMinutes,
       }
 
       console.log('Room limits updated by admin:', roomLimits)
 
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ 
-        success: true, 
-        message: 'Room limits updated successfully',
-        limits: roomLimits 
-      }))
+      res.end(
+        JSON.stringify({
+          success: true,
+          message: 'Room limits updated successfully',
+          limits: roomLimits,
+        }),
+      )
     } catch (error) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'Invalid JSON payload' }))
@@ -344,22 +356,24 @@ function handleRestartRelay(req: any, res: any) {
   if (!checkAdminAuth(req, res)) return
 
   console.log('Admin requested relay restart - closing all rooms first')
-  
+
   // Close all rooms first to warn users
   for (const [roomName] of rooms) {
     closeRoom(roomName, 'admin')
   }
-  
+
   // Give users a moment to see the warning
   setTimeout(() => {
     exec('pm2 restart relay', (error, stdout, stderr) => {
       if (error) {
         console.error('Error restarting relay:', error)
         res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ 
-          error: 'Failed to restart relay', 
-          details: error.message 
-        }))
+        res.end(
+          JSON.stringify({
+            error: 'Failed to restart relay',
+            details: error.message,
+          }),
+        )
         return
       }
 
@@ -368,13 +382,15 @@ function handleRestartRelay(req: any, res: any) {
       }
 
       console.log('PM2 restart stdout:', stdout)
-      
+
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ 
-        success: true, 
-        message: 'All rooms closed and relay restarted successfully',
-        output: stdout
-      }))
+      res.end(
+        JSON.stringify({
+          success: true,
+          message: 'All rooms closed and relay restarted successfully',
+          output: stdout,
+        }),
+      )
     })
   }, 2000) // 2 second delay to allow users to see the warning
 }
@@ -383,13 +399,15 @@ function handleRestartServer(req: any, res: any) {
   if (!checkAdminAuth(req, res)) return
 
   console.log('Admin requested server restart')
-  
+
   // Send response immediately before restarting
   res.writeHead(200, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify({ 
-    success: true, 
-    message: 'Server restart initiated. The server will restart automatically.'
-  }))
+  res.end(
+    JSON.stringify({
+      success: true,
+      message: 'Server restart initiated. The server will restart automatically.',
+    }),
+  )
 
   // Close all rooms first
   for (const [roomName] of rooms) {
@@ -407,33 +425,37 @@ function handleRestartBackend(req: any, res: any) {
   if (!checkAdminAuth(req, res)) return
 
   console.log('Admin requested backend restart - closing all rooms first')
-  
+
   // Close all rooms first to warn users
   for (const [roomName] of rooms) {
     closeRoom(roomName, 'admin')
   }
-  
+
   // Give users a moment to see the warning, then restart relay first
   setTimeout(() => {
     exec('pm2 restart relay', (error, stdout, stderr) => {
       if (error) {
         console.error('Error restarting relay:', error)
         res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ 
-          error: 'Failed to restart relay', 
-          details: error.message 
-        }))
+        res.end(
+          JSON.stringify({
+            error: 'Failed to restart relay',
+            details: error.message,
+          }),
+        )
         return
       }
 
       console.log('Relay restarted, now restarting server...')
-      
+
       // Send response before restarting server
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ 
-        success: true, 
-        message: 'All rooms closed, relay restarted, server restarting...'
-      }))
+      res.end(
+        JSON.stringify({
+          success: true,
+          message: 'All rooms closed, relay restarted, server restarting...',
+        }),
+      )
 
       // Restart server after a short delay
       setTimeout(() => {
@@ -451,10 +473,12 @@ function handleServicesStatus(req: any, res: any) {
     if (error) {
       console.error('Error getting PM2 status:', error)
       res.writeHead(500, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ 
-        error: 'Failed to get service status', 
-        details: error.message 
-      }))
+      res.end(
+        JSON.stringify({
+          error: 'Failed to get service status',
+          details: error.message,
+        }),
+      )
       return
     }
 
@@ -468,18 +492,20 @@ function handleServicesStatus(req: any, res: any) {
         memory: formatMemory(service.monit.memory),
         uptime: formatUptime(service.pm2_env.pm_uptime),
         restarts: service.pm2_env.restart_time,
-        pid: service.pid || 'N/A'
+        pid: service.pid || 'N/A',
       }))
-      
+
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ success: true, services: formattedServices }))
     } catch (parseError) {
       console.error('Error parsing PM2 output:', parseError)
       res.writeHead(500, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ 
-        error: 'Failed to parse service status', 
-        details: parseError instanceof Error ? parseError.message : String(parseError)
-      }))
+      res.end(
+        JSON.stringify({
+          error: 'Failed to parse service status',
+          details: parseError instanceof Error ? parseError.message : String(parseError),
+        }),
+      )
     }
   })
 }
@@ -488,7 +514,7 @@ function formatMemory(bytes: number): string {
   if (bytes < 1024 * 1024) {
     return Math.round(bytes / 1024) + 'kb'
   } else {
-    return Math.round(bytes / (1024 * 1024) * 10) / 10 + 'mb'
+    return Math.round((bytes / (1024 * 1024)) * 10) / 10 + 'mb'
   }
 }
 
@@ -497,7 +523,7 @@ function formatUptime(timestamp: number): string {
   const minutes = Math.floor(uptime / (1000 * 60))
   const hours = Math.floor(minutes / 60)
   const days = Math.floor(hours / 24)
-  
+
   if (days > 0) {
     return `${days}d ${hours % 24}h`
   } else if (hours > 0) {
@@ -517,22 +543,26 @@ function handleLogs(req: any, res: any) {
   // Validate service name to prevent command injection
   if (!['relay', 'ws'].includes(service)) {
     res.writeHead(400, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ 
-      error: 'Invalid service name. Must be "relay" or "ws"' 
-    }))
+    res.end(
+      JSON.stringify({
+        error: 'Invalid service name. Must be "relay" or "ws"',
+      }),
+    )
     return
   }
 
   const command = `pm2 logs --nostream --raw --lines ${lines} ${service}`
-  
+
   exec(command, { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
     if (error) {
       console.error('Error getting logs:', error)
       res.writeHead(500, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ 
-        error: 'Failed to get logs', 
-        details: error.message 
-      }))
+      res.end(
+        JSON.stringify({
+          error: 'Failed to get logs',
+          details: error.message,
+        }),
+      )
       return
     }
 
@@ -546,13 +576,15 @@ function handleLogs(req: any, res: any) {
     const htmlLogs = ansiConverter.toHtml(rawLogs)
 
     res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ 
-      success: true, 
-      service,
-      lines,
-      logs: rawLogs,
-      htmlLogs: htmlLogs
-    }))
+    res.end(
+      JSON.stringify({
+        success: true,
+        service,
+        lines,
+        logs: rawLogs,
+        htmlLogs: htmlLogs,
+      }),
+    )
   })
 }
 
