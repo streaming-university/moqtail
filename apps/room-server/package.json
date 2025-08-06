@@ -12,6 +12,7 @@
     "format": "prettier --check ."
   },
   "dependencies": {
+    "ansi-to-html": "^0.7.2",
     "dotenv": "^17.2.1",
     "http": "^0.0.1-security",
     "socket.io": "^4.8.1"
