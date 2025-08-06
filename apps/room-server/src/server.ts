@@ -59,7 +59,11 @@ function customRequestHandler(req: any, res: any) {
   const isOurRoute =
     (req.method === 'GET' && url.pathname === '/api/rooms') ||
     (req.method === 'POST' && url.pathname.startsWith('/api/rooms/') && url.pathname.endsWith('/close')) ||
-    (req.method === 'POST' && url.pathname === '/api/relay/restart') ||
+    (req.method === 'POST' && url.pathname === '/api/backend/restart-relay') ||
+    (req.method === 'POST' && url.pathname === '/api/backend/restart-room-server') ||
+    (req.method === 'POST' && url.pathname === '/api/backend/restart-all') ||
+    (req.method === 'GET' && url.pathname === '/api/backend/service-status') ||
+    (req.method === 'GET' && url.pathname === '/api/backend/logs') ||
     (req.method === 'GET' && url.pathname === '/admin') ||
     (req.method === 'OPTIONS' && (url.pathname.startsWith('/api/') || url.pathname === '/admin'))
 
@@ -87,8 +91,20 @@ function customRequestHandler(req: any, res: any) {
     const roomName = decodeURIComponent(url.pathname.split('/')[3])
     handleCloseRoom(req, res, roomName)
     return true
-  } else if (req.method === 'POST' && url.pathname === '/api/relay/restart') {
+  } else if (req.method === 'POST' && url.pathname === '/api/backend/restart-relay') {
     handleRestartRelay(req, res)
+    return true
+  } else if (req.method === 'POST' && url.pathname === '/api/backend/restart-room-server') {
+    handleRestartServer(req, res)
+    return true
+  } else if (req.method === 'POST' && url.pathname === '/api/backend/restart-all') {
+    handleRestartBackend(req, res)
+    return true
+  } else if (req.method === 'GET' && url.pathname === '/api/backend/service-status') {
+    handleServicesStatus(req, res)
+    return true
+  } else if (req.method === 'GET' && url.pathname === '/api/backend/logs') {
+    handleLogs(req, res)
     return true
   } else if (req.method === 'GET' && url.pathname === '/admin') {
     handleAdminPage(req, res)
@@ -237,30 +253,211 @@ function handleCloseRoom(req: any, res: any, roomName: string) {
 function handleRestartRelay(req: any, res: any) {
   if (!checkAdminAuth(req, res)) return
 
-  console.log('Admin requested relay restart')
+  console.log('Admin requested relay restart - closing all rooms first')
   
-  exec('pm2 restart relay', (error, stdout, stderr) => {
+  // Close all rooms first to warn users
+  for (const [roomName] of rooms) {
+    closeRoom(roomName, 'admin')
+  }
+  
+  // Give users a moment to see the warning
+  setTimeout(() => {
+    exec('pm2 restart relay', (error, stdout, stderr) => {
+      if (error) {
+        console.error('Error restarting relay:', error)
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ 
+          error: 'Failed to restart relay', 
+          details: error.message 
+        }))
+        return
+      }
+
+      if (stderr) {
+        console.warn('PM2 restart stderr:', stderr)
+      }
+
+      console.log('PM2 restart stdout:', stdout)
+      
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ 
+        success: true, 
+        message: 'All rooms closed and relay restarted successfully',
+        output: stdout
+      }))
+    })
+  }, 2000) // 2 second delay to allow users to see the warning
+}
+
+function handleRestartServer(req: any, res: any) {
+  if (!checkAdminAuth(req, res)) return
+
+  console.log('Admin requested server restart')
+  
+  // Send response immediately before restarting
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify({ 
+    success: true, 
+    message: 'Server restart initiated. The server will restart automatically.'
+  }))
+
+  // Close all rooms first
+  for (const [roomName] of rooms) {
+    closeRoom(roomName, 'admin')
+  }
+
+  // Give a short delay to allow the response to be sent
+  setTimeout(() => {
+    console.log('Restarting server process...')
+    process.exit(0) // PM2 will automatically restart the process
+  }, 1000)
+}
+
+function handleRestartBackend(req: any, res: any) {
+  if (!checkAdminAuth(req, res)) return
+
+  console.log('Admin requested backend restart - closing all rooms first')
+  
+  // Close all rooms first to warn users
+  for (const [roomName] of rooms) {
+    closeRoom(roomName, 'admin')
+  }
+  
+  // Give users a moment to see the warning, then restart relay first
+  setTimeout(() => {
+    exec('pm2 restart relay', (error, stdout, stderr) => {
+      if (error) {
+        console.error('Error restarting relay:', error)
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ 
+          error: 'Failed to restart relay', 
+          details: error.message 
+        }))
+        return
+      }
+
+      console.log('Relay restarted, now restarting server...')
+      
+      // Send response before restarting server
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ 
+        success: true, 
+        message: 'All rooms closed, relay restarted, server restarting...'
+      }))
+
+      // Restart server after a short delay
+      setTimeout(() => {
+        console.log('Restarting server process...')
+        process.exit(0) // PM2 will automatically restart the process
+      }, 1000)
+    })
+  }, 2000)
+}
+
+function handleServicesStatus(req: any, res: any) {
+  if (!checkAdminAuth(req, res)) return
+
+  exec('pm2 jlist', (error, stdout, stderr) => {
     if (error) {
-      console.error('Error restarting relay:', error)
+      console.error('Error getting PM2 status:', error)
       res.writeHead(500, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ 
-        error: 'Failed to restart relay', 
+        error: 'Failed to get service status', 
         details: error.message 
       }))
       return
     }
 
-    if (stderr) {
-      console.warn('PM2 restart stderr:', stderr)
+    try {
+      const services = JSON.parse(stdout)
+      const formattedServices = services.map((service: any) => ({
+        id: service.pm_id,
+        name: service.name,
+        status: service.pm2_env.status,
+        cpu: service.monit.cpu + '%',
+        memory: formatMemory(service.monit.memory),
+        uptime: formatUptime(service.pm2_env.pm_uptime),
+        restarts: service.pm2_env.restart_time,
+        pid: service.pid || 'N/A'
+      }))
+      
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: true, services: formattedServices }))
+    } catch (parseError) {
+      console.error('Error parsing PM2 output:', parseError)
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ 
+        error: 'Failed to parse service status', 
+        details: parseError instanceof Error ? parseError.message : String(parseError)
+      }))
+    }
+  })
+}
+
+function formatMemory(bytes: number): string {
+  if (bytes < 1024 * 1024) {
+    return Math.round(bytes / 1024) + 'kb'
+  } else {
+    return Math.round(bytes / (1024 * 1024) * 10) / 10 + 'mb'
+  }
+}
+
+function formatUptime(timestamp: number): string {
+  const uptime = Date.now() - timestamp
+  const minutes = Math.floor(uptime / (1000 * 60))
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+  
+  if (days > 0) {
+    return `${days}d ${hours % 24}h`
+  } else if (hours > 0) {
+    return `${hours}h ${minutes % 60}m`
+  } else {
+    return `${minutes}m`
+  }
+}
+
+function handleLogs(req: any, res: any) {
+  if (!checkAdminAuth(req, res)) return
+
+  const url = new URL(req.url!, `http://${req.headers.host}`)
+  const service = url.searchParams.get('service') || 'relay'
+  const lines = Math.min(Math.max(parseInt(url.searchParams.get('lines') || '100'), 10), 1000)
+
+  // Validate service name to prevent command injection
+  if (!['relay', 'ws'].includes(service)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ 
+      error: 'Invalid service name. Must be "relay" or "ws"' 
+    }))
+    return
+  }
+
+  const command = `pm2 logs --nostream --raw --lines ${lines} ${service}`
+  
+  exec(command, { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
+    if (error) {
+      console.error('Error getting logs:', error)
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ 
+        error: 'Failed to get logs', 
+        details: error.message 
+      }))
+      return
     }
 
-    console.log('PM2 restart stdout:', stdout)
-    
+    // If stderr contains warnings, include them but don't fail
+    let logs = stdout
+    if (stderr && stderr.trim()) {
+      logs = `[PM2 Info]: ${stderr.trim()}\n\n${stdout}`
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ 
       success: true, 
-      message: 'Relay restarted successfully',
-      output: stdout
+      service,
+      lines,
+      logs: logs || `No logs available for service: ${service}`
     }))
   })
 }
