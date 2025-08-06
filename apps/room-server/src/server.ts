@@ -19,6 +19,7 @@ import fs from 'fs'
 import path from 'path'
 import https from 'https'
 import { fileURLToPath } from 'url'
+import { exec } from 'child_process'
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url)
@@ -58,6 +59,7 @@ function customRequestHandler(req: any, res: any) {
   const isOurRoute =
     (req.method === 'GET' && url.pathname === '/api/rooms') ||
     (req.method === 'POST' && url.pathname.startsWith('/api/rooms/') && url.pathname.endsWith('/close')) ||
+    (req.method === 'POST' && url.pathname === '/api/relay/restart') ||
     (req.method === 'GET' && url.pathname === '/admin') ||
     (req.method === 'OPTIONS' && (url.pathname.startsWith('/api/') || url.pathname === '/admin'))
 
@@ -84,6 +86,9 @@ function customRequestHandler(req: any, res: any) {
   } else if (req.method === 'POST' && url.pathname.startsWith('/api/rooms/') && url.pathname.endsWith('/close')) {
     const roomName = decodeURIComponent(url.pathname.split('/')[3])
     handleCloseRoom(req, res, roomName)
+    return true
+  } else if (req.method === 'POST' && url.pathname === '/api/relay/restart') {
+    handleRestartRelay(req, res)
     return true
   } else if (req.method === 'GET' && url.pathname === '/admin') {
     handleAdminPage(req, res)
@@ -227,6 +232,37 @@ function handleCloseRoom(req: any, res: any, roomName: string) {
 
   res.writeHead(200, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify({ success: true, message: `Room ${roomName} closed successfully by administrator` }))
+}
+
+function handleRestartRelay(req: any, res: any) {
+  if (!checkAdminAuth(req, res)) return
+
+  console.log('Admin requested relay restart')
+  
+  exec('pm2 restart relay', (error, stdout, stderr) => {
+    if (error) {
+      console.error('Error restarting relay:', error)
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ 
+        error: 'Failed to restart relay', 
+        details: error.message 
+      }))
+      return
+    }
+
+    if (stderr) {
+      console.warn('PM2 restart stderr:', stderr)
+    }
+
+    console.log('PM2 restart stdout:', stdout)
+    
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ 
+      success: true, 
+      message: 'Relay restarted successfully',
+      output: stdout
+    }))
+  })
 }
 
 function checkAdminAuthHTML(req: any, res: any): boolean {

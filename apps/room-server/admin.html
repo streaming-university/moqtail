@@ -68,6 +68,28 @@
             background: #0056cc;
         }
         
+        .restart-btn {
+            background: #ff9500;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            margin-left: 10px;
+        }
+        
+        .restart-btn:hover {
+            background: #cc7700;
+        }
+        
+        .restart-btn:disabled {
+            background: #86868b;
+            cursor: not-allowed;
+        }
+        
         .stats {
             color: #86868b;
             font-size: 14px;
@@ -227,9 +249,14 @@
 
         
         <div class="controls">
-            <button class="refresh-btn" onclick="loadRooms()">
-                Refresh
-            </button>
+            <div>
+                <button class="refresh-btn" onclick="loadRooms()">
+                    Refresh
+                </button>
+                <button class="restart-btn" onclick="restartRelay()" id="restart-btn">
+                    Restart Relay
+                </button>
+            </div>
             <div class="stats" id="stats">
                 Loading...
             </div>
@@ -348,6 +375,36 @@
                         <p>Failed to fetch room data. Please try refreshing the page.</p>
                     </div>
                 `;
+            }
+        }
+        
+        async function restartRelay() {
+            if (!confirm('Are you sure you want to restart the relay? This may temporarily disconnect users.')) {
+                return;
+            }
+            
+            const restartBtn = document.getElementById('restart-btn');
+            restartBtn.disabled = true;
+            restartBtn.textContent = 'Restarting...';
+            
+            try {
+                const response = await fetch('/api/relay/restart', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    alert(result.message || 'Relay restarted successfully');
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to restart relay: ${error.error}`);
+                }
+            } catch (error) {
+                console.error('Failed to restart relay:', error);
+                alert('Failed to restart relay. Please try again.');
+            } finally {
+                restartBtn.disabled = false;
+                restartBtn.textContent = 'Restart Relay';
             }
         }
         
