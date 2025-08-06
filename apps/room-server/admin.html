@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,20 +11,20 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background-color: #f5f5f7;
             color: #1d1d1f;
             line-height: 1.6;
         }
-        
+
         .container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
         }
-        
+
         header {
             background: white;
             padding: 20px;
@@ -32,26 +33,26 @@
             margin-bottom: 30px;
             text-align: center;
         }
-        
+
         h1 {
             color: #1d1d1f;
             font-size: 2.5rem;
             font-weight: 600;
             margin-bottom: 10px;
         }
-        
+
         .subtitle {
             color: #86868b;
             font-size: 1.1rem;
         }
-        
+
         .controls {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
         }
-        
+
         .refresh-btn {
             background: #007aff;
             color: white;
@@ -63,22 +64,275 @@
             cursor: pointer;
             transition: background-color 0.2s ease;
         }
-        
+
         .refresh-btn:hover {
             background: #0056cc;
         }
-        
+
+        .restart-backend-btn {
+            background: #5856d6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            margin-left: 10px;
+        }
+
+        .restart-backend-btn:hover {
+            background: #4745a8;
+        }
+
+        .restart-backend-btn:disabled {
+            background: #86868b;
+            cursor: not-allowed;
+        }
+
+        .services-section {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+            border: 1px solid #e5e5e7;
+            margin-bottom: 30px;
+        }
+
+        .services-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: #1d1d1f;
+            margin-bottom: 16px;
+        }
+
+        .services-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        .services-table th,
+        .services-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e5e5e7;
+        }
+
+        .services-table th {
+            background-color: #f5f5f7;
+            font-weight: 600;
+            color: #1d1d1f;
+        }
+
+        .status-online {
+            color: #30d158;
+            font-weight: 600;
+        }
+
+        .status-offline {
+            color: #ff3b30;
+            font-weight: 600;
+        }
+
+        .status-stopping {
+            color: #ff9500;
+            font-weight: 600;
+        }
+
+        .tabs {
+            display: flex;
+            background: white;
+            border-radius: 12px 12px 0 0;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+            border: 1px solid #e5e5e7;
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 16px 24px;
+            background: #f5f5f7;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            color: #86868b;
+            transition: all 0.2s ease;
+        }
+
+        .tab:first-child {
+            border-radius: 12px 0 0 0;
+        }
+
+        .tab:last-child {
+            border-radius: 0 12px 0 0;
+        }
+
+        .tab.active {
+            background: white;
+            color: #1d1d1f;
+            border-bottom: 2px solid #007aff;
+        }
+
+        .tab:hover:not(.active) {
+            background: #e5e5e7;
+            color: #1d1d1f;
+        }
+
+        .tab-content {
+            background: white;
+            border-radius: 0 0 12px 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+            border: 1px solid #e5e5e7;
+            border-top: none;
+            padding: 24px;
+            margin-bottom: 30px;
+        }
+
+        .tab-pane {
+            display: none;
+        }
+
+        .tab-pane.active {
+            display: block;
+        }
+
+        .logs-controls {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .logs-service-selector {
+            display: flex;
+            gap: 8px;
+        }
+
+        .service-btn {
+            padding: 8px 16px;
+            border: 1px solid #e5e5e7;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+
+        .service-btn.active {
+            background: #007aff;
+            color: white;
+            border-color: #007aff;
+        }
+
+        .service-btn:hover:not(.active) {
+            background: #f5f5f7;
+        }
+
+        .line-count-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .line-count-input {
+            width: 80px;
+            padding: 8px 12px;
+            border: 1px solid #e5e5e7;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .logs-container {
+            background: #1e1e1e;
+            color: #ffffff;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            max-height: 600px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .logs-container:empty::before {
+            content: 'Loading logs...';
+            color: #86868b;
+        }
+
+        .refresh-interval-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
+            font-size: 14px;
+            color: #86868b;
+        }
+
+        .refresh-interval-select {
+            padding: 6px 10px;
+            border: 1px solid #e5e5e7;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            color: #1d1d1f;
+            cursor: pointer;
+            transition: border-color 0.2s ease;
+        }
+
+        .refresh-interval-select:hover {
+            border-color: #007aff;
+        }
+
+        .refresh-interval-select:focus {
+            outline: none;
+            border-color: #007aff;
+            box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
+        }
+
+        .service-restart-btn {
+            padding: 4px 8px;
+            background: #ff9500;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .service-restart-btn:hover {
+            background: #cc7700;
+        }
+
+        .service-restart-btn:disabled {
+            background: #86868b;
+            cursor: not-allowed;
+        }
+
+        .service-restart-btn.restarting {
+            background: #86868b;
+            cursor: wait;
+        }
+
         .stats {
             color: #86868b;
             font-size: 14px;
         }
-        
+
         .rooms-grid {
             display: grid;
             gap: 20px;
             grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
         }
-        
+
         .room-card {
             background: white;
             border-radius: 12px;
@@ -86,26 +340,26 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
             border: 1px solid #e5e5e7;
         }
-        
+
         .room-header {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
             margin-bottom: 16px;
         }
-        
+
         .room-title {
             font-size: 1.4rem;
             font-weight: 600;
             color: #1d1d1f;
             margin-bottom: 4px;
         }
-        
+
         .room-id {
             font-size: 0.9rem;
             color: #86868b;
         }
-        
+
         .end-btn {
             background: #ff3b30;
             color: white;
@@ -117,53 +371,53 @@
             cursor: pointer;
             transition: background-color 0.2s ease;
         }
-        
+
         .end-btn:hover {
             background: #d70015;
         }
-        
+
         .room-meta {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 12px;
             margin-bottom: 20px;
         }
-        
+
         .meta-item {
             display: flex;
             flex-direction: column;
         }
-        
+
         .meta-label {
             font-size: 0.85rem;
             color: #86868b;
             margin-bottom: 2px;
         }
-        
+
         .meta-value {
             font-size: 1rem;
             font-weight: 500;
             color: #1d1d1f;
         }
-        
+
         .users-section {
             border-top: 1px solid #e5e5e7;
             padding-top: 16px;
         }
-        
+
         .users-title {
             font-size: 1rem;
             font-weight: 600;
             color: #1d1d1f;
             margin-bottom: 12px;
         }
-        
+
         .users-list {
             display: flex;
             flex-direction: column;
             gap: 8px;
         }
-        
+
         .user-item {
             display: flex;
             justify-content: space-between;
@@ -172,101 +426,328 @@
             background: #f5f5f7;
             border-radius: 8px;
         }
-        
+
         .user-name {
             font-weight: 500;
             color: #1d1d1f;
         }
-        
+
         .user-status {
             display: flex;
             gap: 6px;
         }
-        
+
         .status-indicator {
             width: 8px;
             height: 8px;
             border-radius: 50%;
             background: #86868b;
         }
-        
+
         .status-indicator.active {
             background: #30d158;
         }
-        
+
         .empty-state {
             text-align: center;
             padding: 60px 20px;
             color: #86868b;
         }
-        
+
         .empty-state h3 {
             font-size: 1.5rem;
             margin-bottom: 8px;
         }
-        
+
         .time-left {
             color: #ff9500;
             font-weight: 600;
         }
-        
+
         .time-left.critical {
             color: #ff3b30;
         }
-
-
     </style>
 </head>
+
 <body>
     <div class="container">
         <header>
-            <h1>MOQtail Room Management</h1>
-            <p class="subtitle">Monitor and manage active video chat rooms</p>
-        </header>
-        
-
-        
-        <div class="controls">
-            <button class="refresh-btn" onclick="loadRooms()">
-                Refresh
-            </button>
-            <div class="stats" id="stats">
-                Loading...
+            <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                <div>
+                    <h1>MOQtail Room Management</h1>
+                    <p class="subtitle">Monitor and manage active video chat rooms</p>
+                </div>
+                <div class="refresh-interval-control">
+                    <label for="refresh-interval">Auto-refresh:</label>
+                    <select id="refresh-interval" class="refresh-interval-select" onchange="updateRefreshInterval()">
+                        <option value="5000">5 seconds</option>
+                        <option value="15000">15 seconds</option>
+                        <option value="30000">30 seconds</option>
+                        <option value="60000">1 minute</option>
+                        <option value="300000">5 minutes</option>
+                    </select>
+                </div>
             </div>
+        </header>
+
+
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('rooms')">Active Rooms</button>
+            <button class="tab" onclick="switchTab('services')">Service Status</button>
+            <button class="tab" onclick="switchTab('logs')">Logs</button>
         </div>
-        
-        <div id="rooms-container">
-            <div class="empty-state">
-                <h3>Loading rooms...</h3>
-                <p>Please wait while we fetch the active rooms.</p>
+
+        <div class="tab-content">
+            <!-- Active Rooms Tab -->
+            <div id="rooms-tab" class="tab-pane active">
+                <div class="controls">
+                    <button class="refresh-btn" onclick="loadRooms()">
+                        Refresh
+                    </button>
+                    <div class="stats" id="stats">
+                        Loading...
+                    </div>
+                </div>
+
+                <div id="rooms-container">
+                    <div class="empty-state">
+                        <h3>Loading rooms...</h3>
+                        <p>Please wait while we fetch the active rooms.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Service Status Tab -->
+            <div id="services-tab" class="tab-pane">
+                <div class="controls">
+                    <div>
+                        <button class="restart-backend-btn" onclick="restartBackend()" id="restart-backend-btn">
+                            Restart Backend Services
+                        </button>
+                    </div>
+                    <button class="refresh-btn" onclick="loadServices()">
+                        Refresh Services
+                    </button>
+                </div>
+
+                <div id="services-container">
+                    <p>Loading service status...</p>
+                </div>
+            </div>
+
+            <!-- Logs Tab -->
+            <div id="logs-tab" class="tab-pane">
+                <div class="logs-controls">
+                    <div class="logs-service-selector">
+                        <button class="service-btn active" onclick="selectLogService('relay')" id="relay-log-btn">
+                            Relay Logs
+                        </button>
+                        <button class="service-btn" onclick="selectLogService('ws')" id="ws-log-btn">
+                            Room Server Logs
+                        </button>
+                    </div>
+
+                    <div class="line-count-control">
+                        <label>Lines:</label>
+                        <input type="number" class="line-count-input" id="line-count" value="100" min="10" max="1000">
+                        <button class="refresh-btn" onclick="loadLogs()">
+                            Refresh Logs
+                        </button>
+                    </div>
+                </div>
+                <div class="logs-container" id="logs-container"></div>
             </div>
         </div>
     </div>
 
     <script>
+        // Global variables for current state
+        let currentLogService = 'relay';
+        let refreshInterval = 5000; // Default 5 seconds
+        let refreshTimer = null;
+
+        function switchTab(tabName) {
+            // Hide all tab panes
+            document.querySelectorAll('.tab-pane').forEach(pane => {
+                pane.classList.remove('active');
+            });
+
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Show selected tab pane
+            document.getElementById(tabName + '-tab').classList.add('active');
+
+            // Add active class to selected tab
+            event.target.classList.add('active');
+
+            // Load data for the selected tab
+            if (tabName === 'services') {
+                loadServices();
+            } else if (tabName === 'logs') {
+                loadLogs();
+            } else if (tabName === 'rooms') {
+                loadRooms();
+            }
+        }
+
+        function selectLogService(service) {
+            currentLogService = service;
+
+            // Update button states
+            document.querySelectorAll('.service-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById(service + '-log-btn').classList.add('active');
+
+            // Load logs for selected service
+            loadLogs();
+        }
+
+        async function loadLogs() {
+            const lineCount = document.getElementById('line-count').value;
+            const container = document.getElementById('logs-container');
+
+            container.textContent = 'Loading logs...';
+
+            try {
+                const response = await fetch(`/api/backend/logs?service=${currentLogService}&lines=${lineCount}`);
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    container.textContent = result.logs;
+                    // Auto-scroll to bottom
+                    container.scrollTop = container.scrollHeight;
+                } else {
+                    container.textContent = `Error loading logs: ${result.error || 'Unknown error'}`;
+                }
+            } catch (error) {
+                console.error('Failed to load logs:', error);
+                container.textContent = 'Failed to load logs. Please try again.';
+            }
+        }
+
+        async function restartIndividualService(serviceName) {
+            if (!confirm(`Are you sure you want to restart the ${serviceName} service? This may temporarily disconnect users.`)) {
+                return;
+            }
+
+            const buttonId = `restart-${serviceName}-btn`;
+            const button = document.getElementById(buttonId);
+
+            if (!button) return;
+
+            button.disabled = true;
+            button.classList.add('restarting');
+            button.textContent = 'Restarting...';
+
+            try {
+                let endpoint;
+                if (serviceName === 'relay') {
+                    endpoint = '/api/backend/restart-relay';
+                } else if (serviceName === 'ws') {
+                    endpoint = '/api/backend/restart-room-server';
+                } else {
+                    throw new Error(`Unknown service: ${serviceName}`);
+                }
+
+                const response = await fetch(endpoint, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    alert(result.message || `${serviceName} service restarted successfully`);
+                    // Refresh services to show updated status
+                    await loadServices();
+                    // If we restarted the room server, refresh rooms too
+                    if (serviceName === 'ws') {
+                        await loadRooms();
+                    }
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to restart ${serviceName}: ${error.error}`);
+                }
+            } catch (error) {
+                console.error(`Failed to restart ${serviceName}:`, error);
+                alert(`Failed to restart ${serviceName}. Please try again.`);
+            } finally {
+                if (button) {
+                    button.disabled = false;
+                    button.classList.remove('restarting');
+                    button.textContent = 'Restart';
+                }
+            }
+        }
+
+        function updateRefreshInterval() {
+            const select = document.getElementById('refresh-interval');
+            refreshInterval = parseInt(select.value);
+
+            // Save to localStorage
+            localStorage.setItem('moqtail-refresh-interval', refreshInterval.toString());
+
+            // Restart the refresh timer with new interval
+            startRefreshTimer();
+        }
+
+        function startRefreshTimer() {
+            // Clear existing timer
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
+            }
+
+            // Start new timer with current interval
+            refreshTimer = setInterval(() => {
+                const activeTab = document.querySelector('.tab.active');
+                if (activeTab) {
+                    const tabText = activeTab.textContent.trim();
+                    if (tabText === 'Active Rooms') {
+                        loadRooms();
+                    } else if (tabText === 'Service Status') {
+                        loadServices();
+                    } else if (tabText === 'Logs') {
+                        loadLogs();
+                    }
+                }
+            }, refreshInterval);
+        }
+
+        function loadSavedRefreshInterval() {
+            const saved = localStorage.getItem('moqtail-refresh-interval');
+            if (saved) {
+                refreshInterval = parseInt(saved);
+                const select = document.getElementById('refresh-interval');
+                select.value = refreshInterval.toString();
+            }
+        }
 
         function formatTime(timestamp) {
             return new Date(timestamp).toLocaleString();
         }
-        
+
         function formatTimeLeft(milliseconds) {
             const minutes = Math.floor(milliseconds / (1000 * 60));
             const seconds = Math.floor((milliseconds % (1000 * 60)) / 1000);
             return `${minutes}m ${seconds}s`;
         }
-        
+
         function renderUserStatus(user) {
             const indicators = [];
             if (user.hasVideo) indicators.push('<div class="status-indicator active" title="Video on"></div>');
             if (user.hasAudio) indicators.push('<div class="status-indicator active" title="Audio on"></div>');
             if (user.hasScreenshare) indicators.push('<div class="status-indicator active" title="Screen sharing"></div>');
-            
+
             return indicators.length > 0 ? indicators.join('') : '<div class="status-indicator" title="No media"></div>';
         }
-        
+
         function renderRooms(rooms) {
             const container = document.getElementById('rooms-container');
-            
+
             if (rooms.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
@@ -276,7 +757,7 @@
                 `;
                 return;
             }
-            
+
             container.innerHTML = `
                 <div class="rooms-grid">
                     ${rooms.map(room => `
@@ -330,15 +811,15 @@
                 </div>
             `;
         }
-        
+
         async function loadRooms() {
             try {
                 const response = await fetch('/api/rooms');
                 const rooms = await response.json();
-                
-                document.getElementById('stats').textContent = 
+
+                document.getElementById('stats').textContent =
                     `${rooms.length} active room${rooms.length !== 1 ? 's' : ''} • ${rooms.reduce((sum, room) => sum + room.userCount, 0)} total users`;
-                
+
                 renderRooms(rooms);
             } catch (error) {
                 console.error('Failed to load rooms:', error);
@@ -350,17 +831,120 @@
                 `;
             }
         }
-        
+
+        async function restartBackend() {
+            if (!confirm('Are you sure you want to restart all backend services? This will close all active rooms and disconnect all users.')) {
+                return;
+            }
+
+            const restartBtn = document.getElementById('restart-backend-btn');
+            restartBtn.disabled = true;
+            restartBtn.textContent = 'Restarting backend...';
+
+            try {
+                const response = await fetch('/api/backend/restart-all', {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    alert(result.message || 'Backend services restart initiated successfully');
+                    // The page will likely disconnect, so we don't need to reset the button
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to restart backend: ${error.error}`);
+                    restartBtn.disabled = false;
+                    restartBtn.textContent = 'Restart Backend Services';
+                }
+            } catch (error) {
+                console.error('Failed to restart backend:', error);
+                alert('Failed to restart backend. Please try again.');
+                restartBtn.disabled = false;
+                restartBtn.textContent = 'Restart Backend Services';
+            }
+        }
+
+        async function loadServices() {
+            try {
+                const response = await fetch('/api/backend/service-status');
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    renderServices(result.services);
+                } else {
+                    document.getElementById('services-container').innerHTML = `
+                        <p style="color: #ff3b30;">Failed to load service status: ${result.error || 'Unknown error'}</p>
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to load services:', error);
+                document.getElementById('services-container').innerHTML = `
+                    <p style="color: #ff3b30;">Error loading service status. Please try refreshing the page.</p>
+                `;
+            }
+        }
+
+        function renderServices(services) {
+            const container = document.getElementById('services-container');
+
+            if (services.length === 0) {
+                container.innerHTML = '<p>No services found.</p>';
+                return;
+            }
+
+            container.innerHTML = `
+                <table class="services-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>CPU</th>
+                            <th>Memory</th>
+                            <th>Uptime</th>
+                            <th>Restarts</th>
+                            <th>PID</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${services.map(service => `
+                            <tr>
+                                <td>${service.id}</td>
+                                <td>${service.name}</td>
+                                <td><span class="status-${service.status}">${service.status}</span></td>
+                                <td>${service.cpu}</td>
+                                <td>${service.memory}</td>
+                                <td>${service.uptime}</td>
+                                <td>${service.restarts}</td>
+                                <td>${service.pid}</td>
+                                <td>
+                                    <button 
+                                        class="service-restart-btn" 
+                                        id="restart-${service.name}-btn"
+                                        onclick="restartIndividualService('${service.name}')"
+                                        ${service.status !== 'online' ? 'disabled' : ''}
+                                    >
+                                        Restart
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
         async function closeRoom(roomName) {
             if (!confirm(`Are you sure you want to close room "${roomName}"? This will disconnect all users.`)) {
                 return;
             }
-            
+
             try {
                 const response = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/close`, {
                     method: 'POST'
                 });
-                
+
                 if (response.ok) {
                     const result = await response.json();
                     alert(result.message || `Room "${roomName}" closed successfully`);
@@ -375,12 +959,22 @@
                 alert('Failed to close room. Please try again.');
             }
         }
-        
-        // Load rooms on page load
-        loadRooms();
-        
-        // Auto-refresh every 5 seconds
-        setInterval(loadRooms, 5000);
+
+        // Initialize page
+        function initializePage() {
+            // Load saved refresh interval preference
+            loadSavedRefreshInterval();
+
+            // Load initial data
+            loadRooms();
+
+            // Start auto-refresh timer
+            startRefreshTimer();
+        }
+
+        // Initialize when page loads
+        initializePage();
     </script>
 </body>
-</html> 
+
+</html>
