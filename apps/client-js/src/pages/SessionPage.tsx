@@ -1121,11 +1121,17 @@ function SessionPage() {
         const telemetry = telemetryInstances.current[userId]
         if (telemetry) {
           const videoLatency = isSelf(userId) ? 0 : Math.round(telemetry.video.latency)
+          const audioLatency = isSelf(userId) ? 0 : Math.round(telemetry.audio.latency)
           const videoBitrate = (telemetry.video.throughput * 8) / 1000 // bytes/s to Kbps
           const audioBitrate = (telemetry.audio.throughput * 8) / 1000 // bytes/s to Kbps
 
+          const user = users[userId]
+          const shouldUseAudioLatency = user?.hasAudio && (!user?.hasVideo || audioLatency > 0)
+          const displayLatency = shouldUseAudioLatency ? audioLatency : videoLatency
+          //console.log(`Telemetry for user ${userId}: videoLatency=${videoLatency}, audioLatency=${audioLatency}, displayLatency=${displayLatency}, hasVideo=${user?.hasVideo}, hasAudio=${user?.hasAudio}, shouldUseAudioLatency=${shouldUseAudioLatency}`)
+
           newTelemetryData[userId] = {
-            latency: videoLatency,
+            latency: displayLatency,
             videoBitrate: Math.max(0, videoBitrate),
             audioBitrate: Math.max(0, audioBitrate),
           }
@@ -1134,7 +1140,7 @@ function SessionPage() {
           if (!isSelf(userId)) {
             setLatencyHistory((prevLatency) => {
               const userHistory = prevLatency[userId] || []
-              const newHistory = [...userHistory, videoLatency].slice(-30)
+              const newHistory = [...userHistory, displayLatency].slice(-30)
               return {
                 ...prevLatency,
                 [userId]: newHistory,
@@ -1168,7 +1174,7 @@ function SessionPage() {
     }, 100)
 
     return () => clearInterval(interval)
-  }, [])
+  }, [users])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
