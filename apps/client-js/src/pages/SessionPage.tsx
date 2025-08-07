@@ -949,9 +949,7 @@ function SessionPage() {
           const audioBitrate = (telemetry.audio.throughput * 8) / 1000 // bytes/s to Kbps
 
           const user = users[userId]
-          const shouldUseAudioLatency =
-            (!user?.hasVideo && user?.hasAudio && audioLatency > 0) ||
-            (videoLatency === 0 && audioLatency > 0 && user?.hasAudio)
+          const shouldUseAudioLatency = user?.hasAudio && (!user?.hasVideo || audioLatency > 0)
           const displayLatency = shouldUseAudioLatency ? audioLatency : videoLatency
           //console.log(`Telemetry for user ${userId}: videoLatency=${videoLatency}, audioLatency=${audioLatency}, displayLatency=${displayLatency}, hasVideo=${user?.hasVideo}, hasAudio=${user?.hasAudio}, shouldUseAudioLatency=${shouldUseAudioLatency}`)
 
