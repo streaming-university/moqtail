@@ -3,11 +3,15 @@ use tokio::sync::RwLock;
 use tracing::error;
 use wtransport::Connection;
 
+use moqtail::transport::data_stream_handler::{FetchRequest, SubscribeRequest};
+
 use super::{client::MOQTClient, client_manager::ClientManager, config::AppConfig, track::Track};
 
 pub struct SessionContext {
   pub(crate) client_manager: Arc<RwLock<ClientManager>>,
   pub(crate) tracks: Arc<RwLock<BTreeMap<u64, Track>>>, // the tracks the relay is subscribed to, key is the track alias
+  pub(crate) _fetch_requests: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
+  pub(crate) subscribe_requests: Arc<RwLock<BTreeMap<u64, SubscribeRequest>>>,
   pub(crate) connection_id: usize,
   pub(crate) client: Arc<RwLock<Option<Arc<RwLock<MOQTClient>>>>>, // the client that is connected to this session
   pub(crate) connection: Connection,
@@ -20,11 +24,15 @@ impl SessionContext {
     server_config: &'static AppConfig,
     client_manager: Arc<RwLock<ClientManager>>,
     tracks: Arc<RwLock<BTreeMap<u64, Track>>>,
+    fetch_requests: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
+    subscribe_requests: Arc<RwLock<BTreeMap<u64, SubscribeRequest>>>,
     connection: Connection,
   ) -> Self {
     Self {
       client_manager,
       tracks,
+      _fetch_requests: fetch_requests,
+      subscribe_requests,
       connection_id: connection.stable_id(),
       client: Arc::new(RwLock::new(None)), // initially no client is set
       connection,

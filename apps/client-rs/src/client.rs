@@ -6,24 +6,29 @@ use moqtail::model::control::constant::{self, GroupOrder};
 use moqtail::model::control::control_message::ControlMessage;
 use moqtail::model::control::subscribe::Subscribe;
 use moqtail::model::control::subscribe_ok::SubscribeOk;
+use moqtail::model::control::unsubscribe::Unsubscribe;
 use moqtail::model::data::object::Object;
 use moqtail::model::data::subgroup_header::SubgroupHeader;
 use moqtail::model::data::subgroup_object::SubgroupObject;
+use moqtail::model::error::TerminationCode;
 use moqtail::transport::control_stream_handler::ControlStreamHandler;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, Notify, RwLock};
 
 use moqtail::transport::data_stream_handler::{HeaderInfo, RecvDataStream, SendDataStream};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use tracing::error;
 use tracing::info;
 use wtransport::{ClientConfig, Endpoint};
 
+#[derive(Clone)]
 pub(crate) struct Client {
   pub endpoint: String,
   pub is_publisher: bool,
   pub validate_cert: bool,
   control_stream_handler: Option<Arc<Mutex<ControlStreamHandler>>>,
+  message_notify: Arc<Notify>,
+  message_queue: Arc<RwLock<VecDeque<ControlMessage>>>,
 }
 
 impl Client {
@@ -33,6 +38,8 @@ impl Client {
       is_publisher,
       validate_cert,
       control_stream_handler: None,
+      message_notify: Arc::new(Notify::new()),
+      message_queue: Arc::new(RwLock::new(VecDeque::new())),
     }
   }
 
@@ -190,7 +197,6 @@ impl Client {
                   error!("Failed to open unidirectional stream: {:?}", e);
                 }
               }
-              tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
           });
 
@@ -213,9 +219,6 @@ impl Client {
 
   async fn start_subscriber(&self, connection: Arc<wtransport::Connection>) {
     info!("Starting subscriber...");
-
-    self.send_subscribe().await;
-    info!("Subscribe sent successfully");
 
     // TODO: for this demo, we don't pass those
     let pending_fetches = Arc::new(RwLock::new(BTreeMap::new()));
@@ -247,34 +250,76 @@ impl Client {
       }
     });
 
+    // sub and unsub test
+    // send subscribe once in 4 seconds in another task continuously
+    let this = self.clone();
+    tokio::spawn(async move {
+      let mut request_id = 0;
+      loop {
+        let sub = this.send_subscribe(request_id).await;
+        request_id += 1;
+        info!("Subscribe sent successfully: {:?}", sub);
+        // send unsubscribe after 3 seconds
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        this.send_unsubscribe(sub.request_id).await;
+        info!("Unsubscribe sent successfully: {:?}", sub.request_id);
+        // wait for 1 second
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+      }
+    });
+
     loop {
+      info!("Waiting for next message...");
       let control_stream_handler = self.control_stream_handler.clone().unwrap();
       let mut control_stream_handler = control_stream_handler.lock().await;
-      let message = control_stream_handler.next_message().await;
-      match message {
-        Ok(ControlMessage::SubscribeOk(m)) => {
-          info!("Received SubscribeOk message: {:?}", m);
-          // Handle the subscribe message
-          // send Subscribe_ok
-          // send_subscribe_ok(control_stream_handler, m.subscribe_id).await;
+
+      let msg_result: Option<Result<ControlMessage, TerminationCode>>;
+
+      // Check if there's a message in the queue first
+      tokio::select! {
+        _ =  self.message_notify.notified() => {
+          info!("Message notified");
+          let mut queue = self.message_queue.write().await;
+          while let Some(queued_msg) = queue.pop_front() {
+            control_stream_handler.send(&queued_msg).await.unwrap();
+          }
+          msg_result = None;
         }
-        Ok(ControlMessage::Unsubscribe(m)) => {
-          info!("Received unsubscribe message: {:?}", m);
-          // Handle the unsubscribe message
+        res = control_stream_handler.next_message() => {
+          info!("Message received from control stream");
+          msg_result = Some(res);
         }
-        Ok(_) => {
-          error!("Unexpected message type");
+        else => {
+          info!("No message notified");
+          msg_result = None;
         }
-        Err(e) => {
-          error!("Failed to receive message: {:?}", e);
-          break;
+      }
+
+      if let Some(msg_result) = msg_result {
+        match msg_result {
+          Ok(ControlMessage::SubscribeOk(m)) => {
+            info!("Received SubscribeOk message: {:?}", m);
+            // Handle the subscribe message
+            // send Subscribe_ok
+            // send_subscribe_ok(control_stream_handler, m.subscribe_id).await;
+          }
+          Ok(ControlMessage::Unsubscribe(m)) => {
+            info!("Received unsubscribe message: {:?}", m);
+            // Handle the unsubscribe message
+          }
+          Ok(_) => {
+            error!("Unexpected message type");
+          }
+          Err(e) => {
+            error!("Failed to receive message: {:?}", e);
+            break;
+          }
         }
       }
     }
   }
 
-  async fn send_subscribe(&self) -> Subscribe {
-    let request_id = 0;
+  async fn send_subscribe(&self, request_id: u64) -> Subscribe {
     let track_namespace = Tuple::from_utf8_path("/moqtail");
     let track_name = "demo".to_string();
     let subscriber_priority = 1;
@@ -291,9 +336,12 @@ impl Client {
       forward,
       subscribe_parameters,
     );
-    let control_stream_handler = self.control_stream_handler.clone().unwrap();
-    let mut control_stream_handler = control_stream_handler.lock().await;
-    control_stream_handler.send_impl(&sub).await.unwrap();
+    self
+      .message_queue
+      .write()
+      .await
+      .push_back(ControlMessage::Subscribe(Box::new(sub.clone())));
+    self.message_notify.notify_waiters();
     sub
   }
 
@@ -305,6 +353,17 @@ impl Client {
     let msg = SubscribeOk::new_ascending_with_content(request_id, 0, None, None);
     control_stream_handler.send_impl(&msg).await.unwrap();
     info!("SubscribeOk message sent successfully");
+  }
+
+  async fn send_unsubscribe(&self, request_id: u64) {
+    let msg = Unsubscribe::new(request_id);
+    info!("Sending unsubscribe message: {:?}", msg);
+    self
+      .message_queue
+      .write()
+      .await
+      .push_back(ControlMessage::Unsubscribe(Box::new(msg)));
+    self.message_notify.notify_waiters();
   }
 
   async fn send_announce_and_wait(
