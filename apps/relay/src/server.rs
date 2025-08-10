@@ -13,6 +13,7 @@ mod utils;
 use crate::server::{config::AppConfig, session::Session};
 use anyhow::Result;
 use client_manager::ClientManager;
+use moqtail::transport::data_stream_handler::{FetchRequest, SubscribeRequest};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -22,9 +23,12 @@ use tracing_subscriber::{EnvFilter, filter::LevelFilter};
 use track::Track;
 use wtransport::Endpoint;
 
+#[derive(Clone)]
 pub(crate) struct Server {
   pub client_manager: Arc<RwLock<ClientManager>>,
   pub tracks: Arc<RwLock<BTreeMap<u64, Track>>>, // the tracks the relay is subscribed to, key is the track alias
+  pub fetch_requests: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
+  pub subscribe_requests: Arc<RwLock<BTreeMap<u64, SubscribeRequest>>>,
   pub app_config: &'static AppConfig,
 }
 
@@ -39,6 +43,8 @@ impl Server {
     Server {
       client_manager: Arc::new(RwLock::new(ClientManager::new())),
       tracks: Arc::new(RwLock::new(BTreeMap::new())),
+      fetch_requests: Arc::new(RwLock::new(BTreeMap::new())),
+      subscribe_requests: Arc::new(RwLock::new(BTreeMap::new())),
       app_config: config,
     }
   }
@@ -53,14 +59,11 @@ impl Server {
       self.app_config.host, self.app_config.port
     );
 
-    let app_config = self.app_config;
-
     for id in 0.. {
       let incoming_session = server.accept().await;
-      let client_manager = self.client_manager.clone();
-      let tracks = self.tracks.clone();
+      let server = self.clone();
       tokio::spawn(async move {
-        match Session::new(incoming_session, client_manager, tracks, app_config).await {
+        match Session::new(incoming_session, server).await {
           Ok(_) => {
             info!("new session: {}", id);
           }
