@@ -1,6 +1,6 @@
 import { BaseByteBuffer, ByteBuffer, FrozenByteBuffer } from '../common/byte_buffer'
 import { ReasonPhrase } from '../common/reason_phrase'
-import { ControlMessageType, FetchErrorCode, fetchErrorCodeFromBigInt } from './constant'
+import { ControlMessageType, FetchErrorCode } from './constant'
 import { LengthExceedsMaxError } from '../error/error'
 
 export class FetchError {
@@ -36,7 +36,7 @@ export class FetchError {
   static parsePayload(buf: BaseByteBuffer): FetchError {
     const requestId = buf.getVI()
     const errorCodeRaw = buf.getVI()
-    const errorCode = fetchErrorCodeFromBigInt(errorCodeRaw)
+    const errorCode = FetchErrorCode.tryFrom(errorCodeRaw)
     const reasonPhrase = buf.getReasonPhrase()
     return new FetchError(requestId, errorCode, reasonPhrase)
   }

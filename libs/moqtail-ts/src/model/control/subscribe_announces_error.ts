@@ -1,6 +1,6 @@
 import { BaseByteBuffer, ByteBuffer, FrozenByteBuffer } from '../common/byte_buffer'
 import { ReasonPhrase } from '../common/reason_phrase'
-import { ControlMessageType, SubscribeAnnouncesErrorCode, subscribeAnnouncesErrorCodeFromBigInt } from './constant'
+import { ControlMessageType, SubscribeAnnouncesErrorCode } from './constant'
 import { LengthExceedsMaxError } from '../error/error'
 
 export class SubscribeAnnouncesError {
@@ -33,7 +33,7 @@ export class SubscribeAnnouncesError {
   static parsePayload(buf: BaseByteBuffer): SubscribeAnnouncesError {
     const requestId = buf.getVI()
     const errorCodeRaw = buf.getVI()
-    const errorCode = subscribeAnnouncesErrorCodeFromBigInt(errorCodeRaw)
+    const errorCode = SubscribeAnnouncesErrorCode.tryFrom(errorCodeRaw)
     const reasonPhrase = buf.getReasonPhrase()
     return new SubscribeAnnouncesError(requestId, errorCode, reasonPhrase)
   }

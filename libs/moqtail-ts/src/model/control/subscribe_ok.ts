@@ -1,7 +1,7 @@
 import { BaseByteBuffer, ByteBuffer, FrozenByteBuffer } from '../common/byte_buffer'
 import { Location } from '../common/location'
 import { KeyValuePair } from '../common/pair'
-import { ControlMessageType, GroupOrder, groupOrderFromNumber } from './constant'
+import { ControlMessageType, GroupOrder } from './constant'
 import { LengthExceedsMaxError, NotEnoughBytesError, ProtocolViolationError } from '../error/error'
 
 export class SubscribeOk {
@@ -86,7 +86,7 @@ export class SubscribeOk {
     const expires = buf.getVI()
     if (buf.remaining < 1) throw new NotEnoughBytesError('SubscribeOk::parsePayload(groupOrder)', 1, buf.remaining)
     const groupOrderRaw = buf.getU8()
-    const groupOrder = groupOrderFromNumber(groupOrderRaw)
+    const groupOrder = GroupOrder.tryFrom(groupOrderRaw)
     if (groupOrder === GroupOrder.Original) {
       throw new ProtocolViolationError(
         'SubscribeOk::parsePayload(groupOrder)',

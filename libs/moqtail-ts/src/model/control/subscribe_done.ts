@@ -1,7 +1,7 @@
 import { BaseByteBuffer, ByteBuffer, FrozenByteBuffer } from '../common/byte_buffer'
 import { ReasonPhrase } from '../common/reason_phrase'
 import { LengthExceedsMaxError } from '../error/error'
-import { ControlMessageType, SubscribeDoneStatusCode, subscribeDoneStatusCodeFromBigInt } from './constant'
+import { ControlMessageType, SubscribeDoneStatusCode } from './constant'
 
 export class SubscribeDone {
   constructor(
@@ -44,7 +44,7 @@ export class SubscribeDone {
   static parsePayload(buf: BaseByteBuffer): SubscribeDone {
     const requestId = buf.getVI()
     const statusCodeRaw = buf.getVI()
-    const statusCode = subscribeDoneStatusCodeFromBigInt(statusCodeRaw)
+    const statusCode = SubscribeDoneStatusCode.tryFrom(statusCodeRaw)
     const streamCount = buf.getVI()
     const errorReason = buf.getReasonPhrase()
     return new SubscribeDone(requestId, statusCode, streamCount, errorReason)

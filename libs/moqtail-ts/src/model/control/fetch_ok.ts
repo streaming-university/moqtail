@@ -1,5 +1,5 @@
 import { ByteBuffer, FrozenByteBuffer, BaseByteBuffer } from '../common/byte_buffer'
-import { ControlMessageType, GroupOrder, groupOrderFromNumber } from './constant'
+import { ControlMessageType, GroupOrder } from './constant'
 import { Location } from '../common/location'
 import { KeyValuePair } from '../common/pair'
 import { LengthExceedsMaxError, NotEnoughBytesError, ProtocolViolationError } from '../error/error'
@@ -58,7 +58,7 @@ export class FetchOk {
       throw new NotEnoughBytesError('FetchOk::parsePayload(group_order)', 1, 0)
     }
     const groupOrderRaw = buf.getU8()
-    const groupOrder = groupOrderFromNumber(groupOrderRaw)
+    const groupOrder = GroupOrder.tryFrom(groupOrderRaw)
     if (groupOrder === GroupOrder.Original) {
       throw new ProtocolViolationError(
         'FetchOk::parsePayload(groupOrder)',

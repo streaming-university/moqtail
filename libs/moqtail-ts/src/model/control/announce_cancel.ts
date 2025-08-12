@@ -1,7 +1,7 @@
 import { BaseByteBuffer, ByteBuffer, FrozenByteBuffer } from '../common/byte_buffer'
 import { Tuple } from '../common/tuple'
 import { ReasonPhrase } from '../common/reason_phrase'
-import { ControlMessageType, AnnounceErrorCode, announceErrorCodeFromBigInt } from './constant'
+import { ControlMessageType, AnnounceErrorCode } from './constant'
 import { LengthExceedsMaxError } from '../error/error'
 
 export class AnnounceCancel {
@@ -34,7 +34,7 @@ export class AnnounceCancel {
   static parsePayload(buf: BaseByteBuffer): AnnounceCancel {
     const trackNamespace = buf.getTuple()
     const errorCodeRaw = buf.getVI()
-    const errorCode = announceErrorCodeFromBigInt(errorCodeRaw)
+    const errorCode = AnnounceErrorCode.tryFrom(errorCodeRaw)
     const reasonPhrase = buf.getReasonPhrase()
     return new AnnounceCancel(trackNamespace, errorCode, reasonPhrase)
   }

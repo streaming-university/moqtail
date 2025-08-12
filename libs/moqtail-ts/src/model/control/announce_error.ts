@@ -1,7 +1,7 @@
 import { BaseByteBuffer, ByteBuffer, FrozenByteBuffer } from '../common/byte_buffer'
 import { ReasonPhrase } from '../common/reason_phrase'
 import { LengthExceedsMaxError } from '../error/error'
-import { AnnounceErrorCode, ControlMessageType, announceErrorCodeFromBigInt } from './constant'
+import { AnnounceErrorCode, ControlMessageType } from './constant'
 
 export class AnnounceError {
   constructor(
@@ -33,7 +33,7 @@ export class AnnounceError {
   static parsePayload(buf: BaseByteBuffer): AnnounceError {
     const requestId = buf.getVI()
     const errorCodeRaw = buf.getVI()
-    const errorCode = announceErrorCodeFromBigInt(errorCodeRaw)
+    const errorCode = AnnounceErrorCode.tryFrom(errorCodeRaw)
     const reasonPhrase = buf.getReasonPhrase()
     return new AnnounceError(requestId, errorCode, reasonPhrase)
   }

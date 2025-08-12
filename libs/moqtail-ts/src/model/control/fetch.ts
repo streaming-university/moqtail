@@ -1,7 +1,7 @@
 import { BaseByteBuffer, ByteBuffer, FrozenByteBuffer } from '../common/byte_buffer'
 import { Location } from '../common/location'
 import { KeyValuePair } from '../common/pair'
-import { ControlMessageType, FetchType, fetchTypeFromBigInt, GroupOrder, groupOrderFromNumber } from './constant'
+import { ControlMessageType, FetchType, GroupOrder } from './constant'
 import { LengthExceedsMaxError, NotEnoughBytesError } from '../error/error'
 import { FullTrackName } from '../data'
 
@@ -71,9 +71,9 @@ export class Fetch {
     const subscriberPriority = buf.getU8()
     if (buf.remaining < 1) throw new NotEnoughBytesError('Fetch::parse_payload(group_order)', 1, buf.remaining)
     const groupOrderRaw = buf.getU8()
-    const groupOrder = groupOrderFromNumber(groupOrderRaw)
+    const groupOrder = GroupOrder.tryFrom(groupOrderRaw)
     const fetchTypeRaw = buf.getVI()
-    const fetchType = fetchTypeFromBigInt(fetchTypeRaw)
+    const fetchType = FetchType.tryFrom(fetchTypeRaw)
 
     let props: Fetch['typeAndProps']
 

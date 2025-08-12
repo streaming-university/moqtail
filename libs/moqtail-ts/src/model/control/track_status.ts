@@ -1,7 +1,7 @@
 import { ByteBuffer, FrozenByteBuffer, BaseByteBuffer } from '../common/byte_buffer'
 import { Location } from '../common/location'
 import { KeyValuePair } from '../common/pair'
-import { ControlMessageType, TrackStatusCode, trackStatusCodeFromBigInt } from './constant'
+import { ControlMessageType, TrackStatusCode } from './constant'
 import { LengthExceedsMaxError, ProtocolViolationError } from '../error/error'
 
 export class TrackStatus {
@@ -49,7 +49,7 @@ export class TrackStatus {
   static parsePayload(buf: BaseByteBuffer): TrackStatus {
     const requestId = buf.getVI()
     const statusCodeRaw = buf.getVI()
-    const statusCode = trackStatusCodeFromBigInt(statusCodeRaw)
+    const statusCode = TrackStatusCode.tryFrom(statusCodeRaw)
     let largestLocation = buf.getLocation()
     if (
       (statusCode === TrackStatusCode.DoesNotExist || statusCode === TrackStatusCode.NotYetBegun) &&
