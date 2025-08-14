@@ -11,6 +11,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
 use tokio::sync::broadcast::{Receiver, Sender};
 use tracing::{debug, error, info};
+
 #[derive(Debug, Clone)]
 pub enum TrackEvent {
   Header { header: HeaderInfo },
@@ -133,26 +134,32 @@ impl Track {
       (Instant::now() - *utils::BASE_TIME).as_millis()
     );
 
-    /*
-    self
-      .cache
-      .add_object(object.clone())
-      .await;
-    */
+    if let Ok(fetch_object) = object.clone().try_into_fetch() {
+      self.cache.add_object(fetch_object).await;
+      let object_event = TrackEvent::Object {
+        stream_id: stream_id.clone(),
+        object: object.clone(),
+      };
 
-    let object_event = TrackEvent::Object {
-      stream_id: stream_id.clone(),
-      object: object.clone(),
-    };
-
-    match self.event_tx.send(object_event) {
-      Ok(_) => {}
-      Err(e) => {
-        tracing::error!("Failed to send object: stream_id: {}, e: {}", stream_id, e);
-        return Err(anyhow::Error::from(e));
-      }
-    };
-    Ok(())
+      match self.event_tx.send(object_event) {
+        Ok(_) => {}
+        Err(e) => {
+          tracing::error!("Failed to send object: stream_id: {}, e: {}", stream_id, e);
+          return Err(anyhow::Error::from(e));
+        }
+      };
+      Ok(())
+    } else {
+      error!(
+        "new_object: track: {:?} location: {:?} stream_id: {} diff_ms: {} object: {:?}",
+        object.track_alias,
+        object.location,
+        stream_id,
+        (Instant::now() - *utils::BASE_TIME).as_millis(),
+        object
+      );
+      Err(anyhow::anyhow!("Object is not a fetch object"))
+    }
   }
 
   pub async fn stream_closed(&self, stream_id: String) -> Result<(), anyhow::Error> {

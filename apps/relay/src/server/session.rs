@@ -155,7 +155,10 @@ impl Session {
           m = c.wait_for_next_message() => {
             msg = m;
             info!("new message for client: {:?}", msg);
-            control_stream_handler.send(&msg).await.unwrap();
+            if let Err(e) = control_stream_handler.send(&msg).await {
+              error!("Error sending message: {:?}", e);
+              return Err(e);
+            }
             continue;
           },
           else => {

@@ -231,6 +231,12 @@ pub enum FetchErrorCode {
   NotSupported = 0x3,
   TrackDoesNotExist = 0x4,
   InvalidRange = 0x5,
+  NoObjects = 0x6,
+  InvalidJoiningRequestId = 0x7,
+  UnknownStatusInRange = 0x8,
+  MalformedTrack = 0x9,
+  MalformedAuthToken = 0x10,
+  ExpiredAuthToken = 0x12,
 }
 
 impl TryFrom<u64> for FetchErrorCode {
@@ -244,6 +250,12 @@ impl TryFrom<u64> for FetchErrorCode {
       0x3 => Ok(FetchErrorCode::NotSupported),
       0x4 => Ok(FetchErrorCode::TrackDoesNotExist),
       0x5 => Ok(FetchErrorCode::InvalidRange),
+      0x6 => Ok(FetchErrorCode::NoObjects),
+      0x7 => Ok(FetchErrorCode::InvalidJoiningRequestId),
+      0x8 => Ok(FetchErrorCode::UnknownStatusInRange),
+      0x9 => Ok(FetchErrorCode::MalformedTrack),
+      0x10 => Ok(FetchErrorCode::MalformedAuthToken),
+      0x12 => Ok(FetchErrorCode::ExpiredAuthToken),
       _ => Err(ParseError::InvalidType {
         context: "FetchErrorCode::try_from(u64)",
         details: format!("Invalid type, got {value}"),

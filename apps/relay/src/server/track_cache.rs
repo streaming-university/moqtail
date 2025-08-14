@@ -1,4 +1,6 @@
-use moqtail::model::{common::location::Location, data::object::Object};
+use crate::server::utils;
+use moqtail::model::common::location::Location;
+use moqtail::model::data::fetch_object::FetchObject;
 use moqtail::transport::data_stream_handler::HeaderInfo;
 use std::{
   collections::{BTreeMap, VecDeque},
@@ -8,9 +10,7 @@ use tokio::sync::{
   RwLock,
   mpsc::{Receiver, channel},
 };
-use tracing::debug;
-
-use crate::server::utils;
+use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone)]
 pub struct TrackCache {
@@ -18,7 +18,7 @@ pub struct TrackCache {
   pub track_alias: u64,
   headers: Arc<RwLock<BTreeMap<String, HeaderInfo>>>,
   #[allow(dead_code)]
-  objects: Arc<RwLock<BTreeMap<u64, Vec<Object>>>>,
+  objects: Arc<RwLock<BTreeMap<u64, Vec<FetchObject>>>>,
   // Ring buffer implementation: keep track of header IDs in order of insertion
   header_queue: Arc<RwLock<VecDeque<String>>>,
   #[allow(dead_code)]
@@ -90,41 +90,63 @@ impl TrackCache {
   }
   */
 
-  #[allow(dead_code)]
-  pub async fn add_object(&self, object: Object) {
-    // Only add object if the header exists (is in our ring buffer)
-    if self
-      .objects
-      .read()
-      .await
-      .contains_key(&object.location.group)
-    {
-      let mut map = self.objects.write().await;
-      match map.get_mut(&object.location.group) {
-        Some(objects) => {
-          objects.push(object);
-        }
-        None => {
-          map.insert(object.location.group, vec![object]);
-        }
+  pub async fn add_object(&self, object: FetchObject) {
+    let mut map = self.objects.write().await;
+    match map.get_mut(&object.group_id) {
+      Some(objects) => {
+        objects.push(object);
+      }
+      None => {
+        map.insert(object.group_id, vec![object]);
       }
     }
   }
 
-  #[allow(dead_code)]
-  pub async fn read_objects(&self, start: Location, end: Location) -> Receiver<Object> {
+  pub async fn read_objects(&self, start: Location, end: Location) -> Receiver<FetchObject> {
     let (tx, rx) = channel(32); // Smaller buffer for memory efficiency
     let objects = self.objects.clone();
 
+    // TODO: this can be done without using a task and sender-receiver pattern
+    // but I'm doing this in order to lay the foundation for the future
+    // when the cache will be filled eventually.
     tokio::spawn(async move {
       let guard = objects.read().await;
-      for (key, objects) in guard.iter() {
-        if *key >= start.group && *key <= end.group {
-          for object in objects {
-            if tx.send(object.clone()).await.is_err() {
-              break; // Client disconnected
-            }
+      if start.group >= end.group {
+        warn!("start group cannot be greater than end group");
+        return;
+      }
+
+      info!(
+        "read_objects | start: {:?}, end: {:?}, objects len: {:?}",
+        start,
+        end,
+        guard.len()
+      );
+
+      let range = guard.range(start.group..=end.group);
+
+      info!("read_objects | range: {:?}", range.clone().count());
+
+      // TODO: ordering of objects
+      for (group_id, objects) in guard.iter() {
+        info!("read_objects | group_id: {:?}", group_id);
+        if *group_id < start.group {
+          continue;
+        }
+        if *group_id > end.group {
+          break;
+        }
+        for object in objects {
+          if *group_id == end.group && end.object > 0 && end.object < object.object_id {
+            // we hit the end of the range
+            // if end object is 0, we return all objects in the group
+            break;
           }
+          if let Err(err) = tx.send(object.clone()).await {
+            warn!("read_objects | An error occurred: {:?}", err);
+            break; // Client disconnected
+          }
+          info!("read_objects | sent object: {:?}", object);
         }
       }
     });

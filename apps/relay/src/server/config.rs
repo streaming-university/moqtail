@@ -21,7 +21,7 @@ pub struct Cli {
   #[arg(long, default_value = "apps/relay/cert/key.pem")]
   pub key_file: String,
   /// Number of cached subgroups/fetches per track
-  #[arg(long, default_value_t = 10)]
+  #[arg(long, default_value_t = 1000)]
   pub cache_size: u16,
   #[arg(long, default_value_t = 7)]
   pub max_idle_timeout: u64,
