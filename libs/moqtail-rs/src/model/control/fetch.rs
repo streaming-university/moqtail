@@ -33,6 +33,54 @@ pub struct Fetch {
 }
 
 impl Fetch {
+  /// Create a new standalone fetch request
+  pub fn new_standalone(
+    request_id: u64,
+    subscriber_priority: u8,
+    group_order: GroupOrder,
+    standalone_fetch_props: StandAloneFetchProps,
+    parameters: Vec<KeyValuePair>,
+  ) -> Self {
+    Self {
+      request_id,
+      subscriber_priority,
+      group_order,
+      fetch_type: FetchType::StandAlone,
+      standalone_fetch_props: Some(standalone_fetch_props),
+      joining_fetch_props: None,
+      parameters,
+    }
+  }
+
+  /// Create a new joining fetch request (absolute or relative)
+  pub fn new_joining(
+    request_id: u64,
+    subscriber_priority: u8,
+    group_order: GroupOrder,
+    fetch_type: FetchType,
+    joining_request_id: u64,
+    joining_start: u64,
+    parameters: Vec<KeyValuePair>,
+  ) -> Result<Self, &'static str> {
+    match fetch_type {
+      FetchType::AbsoluteFetch | FetchType::RelativeFetch => Ok(Self {
+        request_id,
+        subscriber_priority,
+        group_order,
+        fetch_type,
+        standalone_fetch_props: None,
+        joining_fetch_props: Some(JoiningFetchProps {
+          joining_request_id,
+          joining_start,
+        }),
+        parameters,
+      }),
+      FetchType::StandAlone => Err("Use new_standalone for standalone fetch requests"),
+    }
+  }
+
+  /// Create a new fetch request (legacy method - prefer new_standalone or new_joining)
+  #[deprecated(note = "Use new_standalone or new_joining for better ergonomics")]
   pub fn new(
     request_id: u64,
     subscriber_priority: u8,
@@ -210,6 +258,7 @@ impl ControlMessageTrait for Fetch {
 mod tests {
 
   use super::*;
+  use crate::model::common::tuple::TupleField;
   use bytes::Buf;
 
   #[test]
@@ -320,5 +369,117 @@ mod tests {
     let mut partial = buf.slice(..upper);
     let deserialized = Fetch::parse_payload(&mut partial);
     assert!(deserialized.is_err());
+  }
+
+  #[test]
+  fn test_new_standalone_constructor() {
+    let mut track_namespace = Tuple::new();
+    track_namespace.add(TupleField::from_utf8("test"));
+    track_namespace.add(TupleField::from_utf8("namespace"));
+    let track_name = "video_track".to_string();
+    let start_location = Location::new(5, 10);
+    let end_location = Location::new(15, 20);
+    let parameters = vec![KeyValuePair::try_new_varint(100, 200).unwrap()];
+    let standalone_fetch_props = StandAloneFetchProps {
+      track_namespace,
+      track_name,
+      start_location,
+      end_location,
+    };
+
+    let fetch = Fetch::new_standalone(
+      42,
+      1,
+      GroupOrder::Ascending,
+      standalone_fetch_props.clone(),
+      parameters.clone(),
+    );
+
+    assert_eq!(fetch.request_id, 42);
+    assert_eq!(fetch.subscriber_priority, 1);
+    assert_eq!(fetch.group_order, GroupOrder::Ascending);
+    assert_eq!(fetch.fetch_type, FetchType::StandAlone);
+    assert!(fetch.standalone_fetch_props.is_some());
+    assert!(fetch.joining_fetch_props.is_none());
+
+    let props = fetch.standalone_fetch_props.unwrap();
+    assert_eq!(
+      props.track_namespace,
+      standalone_fetch_props.track_namespace
+    );
+    assert_eq!(props.track_name, standalone_fetch_props.track_name);
+    assert_eq!(props.start_location, standalone_fetch_props.start_location);
+    assert_eq!(props.end_location, standalone_fetch_props.end_location);
+    assert_eq!(fetch.parameters, parameters);
+  }
+
+  #[test]
+  fn test_new_joining_constructor_absolute() {
+    let parameters = vec![KeyValuePair::try_new_varint(300, 400).unwrap()];
+
+    let fetch = Fetch::new_joining(
+      123,
+      5,
+      GroupOrder::Descending,
+      FetchType::AbsoluteFetch,
+      456,
+      789,
+      parameters.clone(),
+    )
+    .unwrap();
+
+    assert_eq!(fetch.request_id, 123);
+    assert_eq!(fetch.subscriber_priority, 5);
+    assert_eq!(fetch.group_order, GroupOrder::Descending);
+    assert_eq!(fetch.fetch_type, FetchType::AbsoluteFetch);
+    assert!(fetch.standalone_fetch_props.is_none());
+    assert!(fetch.joining_fetch_props.is_some());
+
+    let props = fetch.joining_fetch_props.unwrap();
+    assert_eq!(props.joining_request_id, 456);
+    assert_eq!(props.joining_start, 789);
+    assert_eq!(fetch.parameters, parameters);
+  }
+
+  #[test]
+  fn test_new_joining_constructor_relative() {
+    let parameters = vec![];
+
+    let fetch = Fetch::new_joining(
+      111,
+      2,
+      GroupOrder::Ascending,
+      FetchType::RelativeFetch,
+      222,
+      333,
+      parameters.clone(),
+    )
+    .unwrap();
+
+    assert_eq!(fetch.fetch_type, FetchType::RelativeFetch);
+    let props = fetch.joining_fetch_props.unwrap();
+    assert_eq!(props.joining_request_id, 222);
+    assert_eq!(props.joining_start, 333);
+  }
+
+  #[test]
+  fn test_new_joining_constructor_rejects_standalone() {
+    let parameters = vec![];
+
+    let result = Fetch::new_joining(
+      111,
+      2,
+      GroupOrder::Ascending,
+      FetchType::StandAlone,
+      222,
+      333,
+      parameters,
+    );
+
+    assert!(result.is_err());
+    assert_eq!(
+      result.unwrap_err(),
+      "Use new_standalone for standalone fetch requests"
+    );
   }
 }

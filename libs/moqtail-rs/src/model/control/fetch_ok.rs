@@ -66,7 +66,7 @@ impl ControlMessageTrait for FetchOk {
       .len()
       .try_into()
       .map_err(|e: std::num::TryFromIntError| ParseError::CastingError {
-        context: "Unsubscribe::serialize",
+        context: "FetchOk::serialize",
         from_type: "usize",
         to_type: "u16",
         details: e.to_string(),

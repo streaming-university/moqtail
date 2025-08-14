@@ -10,10 +10,9 @@ use tracing_subscriber::filter::LevelFilter;
 async fn main() -> Result<(), anyhow::Error> {
   init_logging();
 
-  let is_publisher = env::args()
+  let client_mode = env::args()
     .nth(1)
-    .unwrap_or_else(|| "subscriber".to_string())
-    == "publisher";
+    .unwrap_or_else(|| "subscriber".to_string());
 
   let endpoint = env::args()
     .nth(2)
@@ -22,11 +21,11 @@ async fn main() -> Result<(), anyhow::Error> {
   let validate_cert = env::args().nth(3).unwrap_or_else(|| "false".to_string()) == "true";
 
   info!("Starting client...");
-  info!("Is publisher: {}", is_publisher);
+  info!("Client mode: {}", client_mode);
   info!("Endpoint: {}", endpoint);
   info!("Validate cert: {}", validate_cert);
 
-  let mut client = Client::new(endpoint, is_publisher, validate_cert);
+  let mut client = Client::new(endpoint, client_mode, validate_cert);
   client.run().await
 }
 
