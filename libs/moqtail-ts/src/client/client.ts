@@ -277,13 +277,18 @@ export class MoqtailClient {
   async unsubscribe(requestId: bigint | number): Promise<void> {
     this.#ensureActive()
     if (typeof requestId === 'number') requestId = BigInt(requestId)
+    let cleanupData: { requestId: bigint; trackAlias: bigint; subscription: SubscribeRequest } | null = null
+
     try {
       if (this.requests.has(requestId)) {
         const request = this.requests.get(requestId)!
-        if (request instanceof Subscribe) {
-          const subscription = this.subscriptions.get(requestId)
+        if (request instanceof SubscribeRequest) {
+          const subscription = this.subscriptions.get(request.trackAlias)
           if (!subscription)
             throw new InternalError('MoqtailClient.unsubscribe', 'Request exists but subscription does not')
+
+          cleanupData = { requestId, trackAlias: request.trackAlias, subscription }
+
           await this.controlStream.send(new Unsubscribe(requestId))
           subscription.unsubscribe()
         }
@@ -294,6 +299,12 @@ export class MoqtailClient {
         new InternalError('MoqtailClient.unsubscribe', error instanceof Error ? error.message : String(error)),
       )
       throw error
+    } finally {
+      if (cleanupData) {
+        this.requests.delete(cleanupData.requestId)
+        this.subscriptions.delete(cleanupData.trackAlias)
+        this.trackAliasMap.removeMappingByAlias(cleanupData.trackAlias)
+      }
     }
   }
 
@@ -305,7 +316,7 @@ export class MoqtailClient {
     try {
       if (this.requests.has(requestId)) {
         const request = this.requests.get(requestId)!
-        if (request instanceof Subscribe) {
+        if (request instanceof SubscribeRequest) {
           if (request.startLocation && request.startLocation.compare(startLocation) != 1)
             throw new ProtocolViolationError(
               'MoqtailClient.subscribeUpdate',
