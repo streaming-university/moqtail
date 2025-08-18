@@ -28,6 +28,12 @@ self.onmessage = async (e) => {
     return
   }
 
+  if (type === 'init-audio-only') {
+    console.log('[DECODER] Initializing audio-only mode')
+    theDecoderConfig = decoderConfig || null
+    return
+  }
+
   if (type === 'reset') {
     console.log('[DECODER] Resetting decoders at', new Date().toISOString())
     waitingForKeyframe = true

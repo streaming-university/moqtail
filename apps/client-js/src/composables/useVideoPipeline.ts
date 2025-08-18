@@ -584,13 +584,36 @@ export async function startVideoEncoder({
   return { videoEncoder, videoReader, stop }
 }
 
-function initWorkerAndCanvas(canvas: HTMLCanvasElement) {
-  const worker = new Worker(new URL('@app/workers/decoderWorker.ts', import.meta.url), { type: 'module' })
-  const offscreen = canvas.transferControlToOffscreen()
-  worker.postMessage({ type: 'init', canvas: offscreen, decoderConfig: window.appSettings.videoDecoderConfig }, [
-    offscreen,
-  ])
-  return worker
+const canvasWorkerMap = new WeakMap<HTMLCanvasElement, Worker>()
+
+function getOrCreateWorkerAndCanvas(canvas: HTMLCanvasElement) {
+  const existingWorker = canvasWorkerMap.get(canvas)
+  if (existingWorker) {
+    return existingWorker
+  }
+
+  try {
+    const worker = new Worker(new URL('@app/workers/decoderWorker.ts', import.meta.url), { type: 'module' })
+    const offscreen = canvas.transferControlToOffscreen()
+    worker.postMessage({ type: 'init', canvas: offscreen, decoderConfig: window.appSettings.videoDecoderConfig }, [
+      offscreen,
+    ])
+
+    canvasWorkerMap.set(canvas, worker)
+
+    const originalTerminate = worker.terminate
+    worker.terminate = function () {
+      canvasWorkerMap.delete(canvas)
+      return originalTerminate.call(this)
+    }
+
+    return worker
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'InvalidStateError') {
+      console.error('Canvas control already transferred. This should not happen with proper cleanup.')
+    }
+    throw error
+  }
 }
 
 async function setupAudioPlayback(audioContext: AudioContext) {
@@ -605,8 +628,8 @@ function subscribeAndPipeToWorker(
   subscribeArgs: SubscribeOptions,
   worker: Worker,
   type: 'moq' | 'moq-audio',
-) {
-  moqClient.subscribe(subscribeArgs).then((response) => {
+): Promise<bigint | undefined> {
+  return moqClient.subscribe(subscribeArgs).then((response) => {
     window.appSettings.playoutBufferConfig.maxLatencyMs
     if (!(response instanceof SubscribeError)) {
       const { requestId, stream } = response
@@ -640,23 +663,10 @@ function subscribeAndPipeToWorker(
         )
       }
 
-      /* If you want to use without any buffering, you may use the following...
-      const reader = stream.getReader();
-      (async () => {
-        while (true) {
-          const { done, value: obj } = await reader.read();
-          if (!(obj instanceof MoqtObject)) throw new Error('Expected MoqtObject, got: ' + obj);
-          if (done) break;
-          if (!obj.payload) {
-            console.warn('Received MoqtObject without payload, skipping:', obj);
-            continue;
-          }
-          worker.postMessage({ type, extentions: obj.extensionHeaders, payload: obj }, [obj.payload.buffer]);
-        }
-      })()
-      */
+      return requestId
     } else {
       console.error('Subscribe Error:', response)
+      return undefined
     }
   })
 }
@@ -695,12 +705,13 @@ export function useVideoPublisher(
   moqClient: MoqtailClient,
   videoRef: RefObject<HTMLVideoElement>,
   mediaStream: RefObject<MediaStream | null>,
-  roomId: string,
-  userId: string,
+  _roomId: string,
+  _userId: string,
   videoTrackAlias: number,
   audioTrackAlias: number,
   videoFullTrackName: FullTrackName,
   audioFullTrackName: FullTrackName,
+  chatFullTrackName: FullTrackName,
 ) {
   const setup = async () => {
     const video = videoRef.current
@@ -722,7 +733,15 @@ export function useVideoPublisher(
     video.muted = true
     announceNamespaces(moqClient, videoFullTrackName.namespace)
     // TODO: Add chat track
-    let tracks = setupTracks(moqClient, audioFullTrackName, videoFullTrackName)
+    let tracks = setupTracks(
+      moqClient,
+      audioFullTrackName,
+      videoFullTrackName,
+      chatFullTrackName,
+      BigInt(audioTrackAlias),
+      BigInt(videoTrackAlias),
+      BigInt(0), // chatTrackAlias
+    )
 
     const videoPromise = startVideoEncoder({
       stream,
@@ -748,7 +767,7 @@ export function useVideoPublisher(
   return setup
 }
 
-export function useVideoSubscriber(
+export function useVideoAndAudioSubscriber(
   moqClient: MoqtailClient,
   canvasRef: RefObject<HTMLCanvasElement | null>,
   videoTrackAlias: number,
@@ -758,20 +777,18 @@ export function useVideoSubscriber(
   videoTelemetry?: NetworkTelemetry,
   audioTelemetry?: NetworkTelemetry,
 ) {
-  const setup = async () => {
+  const setup = async (): Promise<{ videoRequestId?: bigint; audioRequestId?: bigint; cleanup: () => void }> => {
     const canvas = canvasRef.current
     console.log('Now will check for canvas ref')
-    if (!canvas) return
+    if (!canvas) return { cleanup: () => {} }
     console.log('Worker and audio node is going to be initialized')
-    const worker = initWorkerAndCanvas(canvas)
+    const worker = getOrCreateWorkerAndCanvas(canvas)
     const audioNode = await setupAudioPlayback(new AudioContext({ sampleRate: 48000 }))
     console.log('Worker and audio node initialized')
 
     handleWorkerMessages(worker, audioNode, videoTelemetry, audioTelemetry)
 
-    console.log('Going to subscribe to audio')
-
-    subscribeAndPipeToWorker(
+    const audioRequestId = await subscribeAndPipeToWorker(
       moqClient,
       {
         fullTrackName: audioFullTrackName,
@@ -784,10 +801,9 @@ export function useVideoSubscriber(
       worker,
       'moq-audio',
     )
-    console.log('Subscribed to audio', audioFullTrackName)
+    console.info('Subscribed to audio', audioFullTrackName, 'with requestId:', audioRequestId)
 
-    console.log('Subscribed to video', videoFullTrackName)
-    subscribeAndPipeToWorker(
+    const videoRequestId = await subscribeAndPipeToWorker(
       moqClient,
       {
         fullTrackName: videoFullTrackName,
@@ -800,9 +816,120 @@ export function useVideoSubscriber(
       worker,
       'moq',
     )
+    console.info('Subscribed to video', videoFullTrackName, 'with requestId:', videoRequestId)
 
-    return () => {
-      worker.terminate()
+    return {
+      videoRequestId,
+      audioRequestId,
+      cleanup: () => {
+        worker.terminate()
+      },
+    }
+  }
+  return setup
+}
+
+export function onlyUseVideoSubscriber(
+  moqClient: MoqtailClient,
+  canvasRef: RefObject<HTMLCanvasElement | null>,
+  videoTrackAlias: number,
+  videoFullTrackName: FullTrackName,
+  videoTelemetry?: NetworkTelemetry,
+) {
+  const setup = async (): Promise<{ videoRequestId?: bigint; cleanup: () => void }> => {
+    const canvas = canvasRef.current
+    console.log('Setting up video-only subscription')
+    if (!canvas) return { cleanup: () => {} }
+
+    const worker = getOrCreateWorkerAndCanvas(canvas)
+
+    worker.onmessage = (event) => {
+      if (event.data.type === 'video-telemetry') {
+        if (videoTelemetry) {
+          videoTelemetry.push({
+            latency: Math.abs(event.data.latency),
+            size: event.data.throughput,
+          })
+        }
+      }
+    }
+
+    const videoRequestId = await subscribeAndPipeToWorker(
+      moqClient,
+      {
+        fullTrackName: videoFullTrackName,
+        groupOrder: GroupOrder.Original,
+        filterType: FilterType.LatestObject,
+        forward: true,
+        priority: 0,
+        trackAlias: videoTrackAlias,
+      },
+      worker,
+      'moq',
+    )
+    console.log('Subscribed to video only', videoFullTrackName, 'with requestId:', videoRequestId)
+
+    return {
+      videoRequestId,
+      cleanup: () => {
+        // ! Do not terminate the worker
+        console.log('Video-only subscription cleanup called')
+      },
+    }
+  }
+  return setup
+}
+
+export function onlyUseAudioSubscriber(
+  moqClient: MoqtailClient,
+  audioTrackAlias: number,
+  audioFullTrackName: FullTrackName,
+  audioTelemetry?: NetworkTelemetry,
+) {
+  const setup = async (): Promise<{ audioRequestId?: bigint; cleanup: () => void }> => {
+    console.log('Setting up audio-only subscription')
+
+    const worker = new Worker(new URL('@app/workers/decoderWorker.ts', import.meta.url), { type: 'module' })
+    worker.postMessage({ type: 'init-audio-only', decoderConfig: window.appSettings.audioDecoderConfig })
+
+    const audioNode = await setupAudioPlayback(new AudioContext({ sampleRate: 48000 }))
+    console.log('Audio node initialized')
+
+    worker.onmessage = (event) => {
+      if (event.data.type === 'audio') {
+        audioNode.port.postMessage(new Float32Array(event.data.samples))
+      }
+      if (event.data.type === 'audio-telemetry') {
+        if (audioTelemetry) {
+          audioTelemetry.push({
+            latency: Math.abs(event.data.latency),
+            size: event.data.throughput,
+          })
+        }
+      }
+    }
+
+    const audioRequestId = await subscribeAndPipeToWorker(
+      moqClient,
+      {
+        fullTrackName: audioFullTrackName,
+        groupOrder: GroupOrder.Original,
+        filterType: FilterType.LatestObject,
+        forward: true,
+        priority: 0,
+        trackAlias: audioTrackAlias,
+      },
+      worker,
+      'moq-audio',
+    )
+    console.log('Subscribed to audio only', audioFullTrackName, 'with requestId:', audioRequestId)
+
+    return {
+      audioRequestId,
+      cleanup: () => {
+        // ! Do not terminate the worker
+        console.log('Audio-only subscription cleanup called')
+      },
     }
   }
   return setup
@@ -830,7 +957,7 @@ export async function subscribeToChatTrack({
     })
     .then((response) => {
       if (!(response instanceof SubscribeError)) {
-        const { requestId, stream } = response
+        const { stream } = response
         const reader = stream.getReader()
         ;(async () => {
           while (true) {
