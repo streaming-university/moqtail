@@ -32,7 +32,15 @@ import {
   RoomTimeoutMessage,
 } from '../types/types'
 import { useSocket } from '../sockets/SocketContext'
-import { FullTrackName, ObjectForwardingPreference, Tuple } from '../../../../libs/moqtail-ts/src/model'
+import {
+  FullTrackName,
+  ObjectForwardingPreference,
+  Tuple,
+  GroupOrder,
+  FetchType,
+  Location,
+  FetchError,
+} from '../../../../libs/moqtail-ts/src/model'
 import {
   announceNamespaces,
   initializeChatMessageSender,
@@ -47,6 +55,8 @@ import {
 import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client'
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
 import { ClockNormalizer } from '../../../../libs/moqtail-ts/src/util/clock_normalizer'
+import { RewindPlayer } from './RewindPlayer'
+import { BufferedMoqtObject } from '../composables/rewindBuffer'
 
 function SessionPage() {
   // initialize the MOQTail client
@@ -81,7 +91,6 @@ function SessionPage() {
   const [pendingRoomClosedMessage, setPendingRoomClosedMessage] = useState<string | null>(null)
   const originalTitle = useRef<string>(document.title)
   const videoEncoderObjRef = useRef<any>(null)
-  const audioEncoderObjRef = useRef<any>(null)
   const chatSenderRef = useRef<{ send: (msg: string) => void } | null>(null)
   const offsetRef = useRef<number>(0)
   const [mediaReady, setMediaReady] = useState(false)
@@ -117,6 +126,15 @@ function SessionPage() {
   const [isUserScrolling, setIsUserScrolling] = useState(false)
   const [userColors, setUserColors] = useState<{ [userId: string]: { bgClass: string; hexColor: string } }>({})
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+
+  // Rewind player state
+  const [isRewindPlayerOpen, setIsRewindPlayerOpen] = useState(false)
+  const [selectedRewindUserId, setSelectedRewindUserId] = useState<string>('')
+  const [fetchedRewindData, setFetchedRewindData] = useState<{
+    [userId: string]: { video: BufferedMoqtObject[]; audio: BufferedMoqtObject[] }
+  }>({})
+  const [isFetching, setIsFetching] = useState(false)
+  const isRewindCleaningUp = useRef<boolean>(false)
 
   const emojiCategories = {
     Faces: ['😀', '😂', '😍', '😊', '😉', '😎', '🤔', '😮', '😢', '😭', '😡', '🤯', '🙄', '😴'],
@@ -220,6 +238,165 @@ function SessionPage() {
     })
   }
 
+  // Rewind functionality
+  const handleOpenRewindPlayer = async (userId: string) => {
+    if (isFetching) {
+      console.log('Already fetching rewind data, please wait...')
+      return
+    }
+
+    console.log('Fetching rewind data for user:', userId)
+    setIsFetching(true)
+
+    try {
+      if (!moqClient || !roomState) {
+        console.error('MOQ client or room state not available')
+        return
+      }
+
+      const videoObjects: BufferedMoqtObject[] = []
+      const audioObjects: BufferedMoqtObject[] = []
+
+      // Fetch video track
+      const videoTrackName = getTrackname(roomState.name, userId, 'video')
+      console.log('Fetching video track:', videoTrackName.toString())
+
+      const videoResult = await moqClient.fetch({
+        priority: 0,
+        groupOrder: GroupOrder.Original,
+        typeAndProps: {
+          type: FetchType.StandAlone,
+          props: {
+            fullTrackName: videoTrackName,
+            startLocation: new Location(0n, 0n),
+            endLocation: new Location(60n, 0n),
+          },
+        },
+      })
+
+      if (!(videoResult instanceof FetchError)) {
+        const reader = videoResult.stream.getReader()
+        console.log('Reading video objects from fetch stream...')
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            if (value && value.payload) {
+              videoObjects.push({
+                object: value,
+                timestamp: Date.now(),
+                type: 'video',
+              })
+              console.log('Fetched video object:', {
+                group: value.location.group.toString(),
+                object: value.location.object.toString(),
+                payloadSize: value.payload.length,
+              })
+            }
+          }
+        } finally {
+          reader.releaseLock()
+        }
+      } else {
+        console.warn('Video fetch failed or returned error:', videoResult)
+      }
+
+      // Fetch audio track
+      const audioTrackName = getTrackname(roomState.name, userId, 'audio')
+      console.log('Fetching audio track:', audioTrackName.toString())
+
+      const audioResult = await moqClient.fetch({
+        priority: 0,
+        groupOrder: GroupOrder.Original,
+        typeAndProps: {
+          type: FetchType.StandAlone,
+          props: {
+            fullTrackName: audioTrackName,
+            startLocation: new Location(0n, 0n),
+            endLocation: new Location(60n, 0n),
+          },
+        },
+      })
+
+      if (!(audioResult instanceof FetchError)) {
+        const reader = audioResult.stream.getReader()
+        console.log('Reading audio objects from fetch stream...')
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            if (value && value.payload) {
+              audioObjects.push({
+                object: value,
+                timestamp: Date.now(),
+                type: 'audio',
+              })
+              console.log('Fetched audio object:', {
+                group: value.location.group.toString(),
+                object: value.location.object.toString(),
+                payloadSize: value.payload.length,
+              })
+            }
+          }
+        } finally {
+          reader.releaseLock()
+        }
+      } else {
+        console.warn('Audio fetch failed or returned error:', audioResult)
+      }
+
+      console.log(
+        `Fetch complete for user ${userId}: ${videoObjects.length} video, ${audioObjects.length} audio objects`,
+      )
+
+      // Store the fetched data
+      setFetchedRewindData((prev) => ({
+        ...prev,
+        [userId]: { video: videoObjects, audio: audioObjects },
+      }))
+
+      // Open the rewind player if we have any data
+      if (videoObjects.length > 0 || audioObjects.length > 0) {
+        setSelectedRewindUserId(userId)
+        setIsRewindPlayerOpen(true)
+      } else {
+        console.warn('No rewind data available for user:', userId)
+      }
+    } catch (error) {
+      console.error('Error fetching rewind data:', error)
+    } finally {
+      setIsFetching(false)
+    }
+  }
+
+  const handleCloseRewindPlayer = () => {
+    console.log('SessionPage: Closing rewind player')
+    isRewindCleaningUp.current = true
+
+    // Clear the fetched rewind data for the selected user
+    if (selectedRewindUserId) {
+      setFetchedRewindData((prev) => {
+        const updated = { ...prev }
+        delete updated[selectedRewindUserId]
+        console.log(`Cleared fetched rewind data for user: ${selectedRewindUserId}`)
+        return updated
+      })
+    }
+
+    setIsRewindPlayerOpen(false)
+    setSelectedRewindUserId('')
+
+    // Add a delay to ensure rewind player cleanup is complete
+    setTimeout(() => {
+      console.log('SessionPage: Rewind player cleanup complete')
+      isRewindCleaningUp.current = false
+    }, 500)
+  }
+
   const isSelf = (id: string): boolean => {
     return id === userId
   }
@@ -315,6 +492,12 @@ function SessionPage() {
   }
 
   const handleToggle = (kind: 'mic' | 'cam') => {
+    // Don't allow toggles while rewind player is cleaning up
+    if (isRewindCleaningUp.current) {
+      console.log('Rewind player is cleaning up, ignoring toggle request')
+      return
+    }
+
     // If trying to toggle camera while screen sharing, stop screen sharing first
 
     if (kind === 'cam' && isScreenSharing) {
@@ -414,9 +597,6 @@ function SessionPage() {
         if (kind === 'mic') {
           users[userId] = { ...u, hasAudio: newValue }
           toggleMediaStreamAudio(newValue)
-          if (audioEncoderObjRef.current) {
-            audioEncoderObjRef.current.setEncoding(newValue)
-          }
         } else if (kind === 'cam') {
           users[userId] = { ...u, hasVideo: newValue }
           // --- Video track switching logic ---
@@ -659,10 +839,6 @@ function SessionPage() {
           publisherPriority: 1,
           audioGroupId: 0,
           objectForwardingPreference: ObjectForwardingPreference.Subgroup,
-        }).then((audioEncoderResult) => {
-          audioEncoderObjRef.current = audioEncoderResult
-          audioEncoderObjRef.current.setEncoding(isMicOn)
-          return audioEncoderResult
         })
         chatSenderRef.current = initializeChatMessageSender({
           chatFullTrackName,
@@ -718,7 +894,7 @@ function SessionPage() {
         const client = await connectToRelay(relayUrl + '/' + username)
         setMoqClient(client)
         client.onDataReceived = (data) => {
-          console.warn('Data received:', data)
+          // console.warn('Data received:', data)
         }
         //console.log('initClient', client)
         if (roomState && Object.values(users).length === 0) {
@@ -1331,10 +1507,6 @@ function SessionPage() {
       videoEncoderObjRef.current = null
     }
 
-    if (audioEncoderObjRef.current) {
-      audioEncoderObjRef.current = null
-    }
-
     if (selfVideoRef.current) {
       selfVideoRef.current.srcObject = null
     }
@@ -1709,6 +1881,19 @@ function SessionPage() {
                       )}
                   </div>
                   <div className="flex space-x-1">
+                    {/* Rewind button for remote users */}
+                    {!isSelf(user.id) && (
+                      <button
+                        onClick={() => handleOpenRewindPlayer(user.id)}
+                        disabled={isFetching}
+                        className={`p-1 rounded transition-colors ${
+                          isFetching ? 'bg-gray-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                        }`}
+                        title={isFetching ? 'Fetching rewind data...' : 'Rewind video'}
+                      >
+                        <RotateCcw className="w-3 h-3 text-white" />
+                      </button>
+                    )}
                     <div className={user.hasAudio ? 'bg-gray-700 p-1 rounded' : 'bg-red-600 p-1 rounded'}>
                       {user.hasAudio ? (
                         <Mic className="w-3 h-3 text-white" />
@@ -2293,6 +2478,18 @@ function SessionPage() {
           </button>
         )}
       </div>
+
+      {/* Rewind Player */}
+      {isRewindPlayerOpen && selectedRewindUserId && (
+        <RewindPlayer
+          isOpen={isRewindPlayerOpen}
+          onClose={handleCloseRewindPlayer}
+          videoObjects={fetchedRewindData[selectedRewindUserId]?.video || []}
+          audioObjects={fetchedRewindData[selectedRewindUserId]?.audio || []}
+          userName={users[selectedRewindUserId]?.name || 'Unknown User'}
+          userColor={getUserColorHex(selectedRewindUserId)}
+        />
+      )}
     </div>
   )
 }

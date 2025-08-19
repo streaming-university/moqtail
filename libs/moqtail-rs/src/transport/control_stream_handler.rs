@@ -50,7 +50,7 @@ impl ControlStreamHandler {
       .serialize()
       .map_err(|_| TerminationCode::InternalError)?;
     if (self.send.write_all(&bytes).await).is_err() {
-      warn!("Error sending message: {:?}", message);
+      warn!("Error sending (send_impl) message: {:?}", message);
       return Err(TerminationCode::InternalError);
     }
     Ok(())

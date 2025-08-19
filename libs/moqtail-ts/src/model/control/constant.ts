@@ -236,6 +236,12 @@ export enum FetchErrorCode {
   NotSupported = 0x3,
   TrackDoesNotExist = 0x4,
   InvalidRange = 0x5,
+  NoObjects = 0x6,
+  InvalidJoiningRequestId = 0x7,
+  UnknownStatusInRange = 0x8,
+  MalformedTrack = 0x9,
+  MalformedAuthToken = 0x10,
+  ExpiredAuthToken = 0x12,
 }
 export function fetchErrorCodeFromBigInt(v: bigint): FetchErrorCode {
   switch (v) {
@@ -251,6 +257,18 @@ export function fetchErrorCodeFromBigInt(v: bigint): FetchErrorCode {
       return FetchErrorCode.TrackDoesNotExist
     case 0x5n:
       return FetchErrorCode.InvalidRange
+    case 0x6n:
+      return FetchErrorCode.NoObjects
+    case 0x7n:
+      return FetchErrorCode.InvalidJoiningRequestId
+    case 0x8n:
+      return FetchErrorCode.UnknownStatusInRange
+    case 0x9n:
+      return FetchErrorCode.MalformedTrack
+    case 0x10n:
+      return FetchErrorCode.MalformedAuthToken
+    case 0x12n:
+      return FetchErrorCode.ExpiredAuthToken
     default:
       throw new CastingError('fetchErrorCodeFromBigInt', 'number', 'FetchErrorCode', 'Invalid fetch error code')
   }

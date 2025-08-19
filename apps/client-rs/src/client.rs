@@ -1,9 +1,12 @@
 use bytes::Bytes;
-use moqtail::model::common::tuple::Tuple;
+use moqtail::model::common::location::Location;
+use moqtail::model::common::pair::KeyValuePair;
+use moqtail::model::common::tuple::{Tuple, TupleField};
 use moqtail::model::control::announce::Announce;
 use moqtail::model::control::client_setup::ClientSetup;
 use moqtail::model::control::constant::{self, GroupOrder};
 use moqtail::model::control::control_message::ControlMessage;
+use moqtail::model::control::fetch::{Fetch, StandAloneFetchProps};
 use moqtail::model::control::subscribe::Subscribe;
 use moqtail::model::control::subscribe_ok::SubscribeOk;
 use moqtail::model::control::unsubscribe::Unsubscribe;
@@ -12,11 +15,12 @@ use moqtail::model::data::subgroup_header::SubgroupHeader;
 use moqtail::model::data::subgroup_object::SubgroupObject;
 use moqtail::model::error::TerminationCode;
 use moqtail::transport::control_stream_handler::ControlStreamHandler;
-use tokio::sync::{Mutex, Notify, RwLock};
-
-use moqtail::transport::data_stream_handler::{HeaderInfo, RecvDataStream, SendDataStream};
+use moqtail::transport::data_stream_handler::{
+  FetchRequest, HeaderInfo, RecvDataStream, SendDataStream,
+};
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
+use tokio::sync::{Mutex, Notify, RwLock};
 use tracing::error;
 use tracing::info;
 use wtransport::{ClientConfig, Endpoint};
@@ -24,28 +28,30 @@ use wtransport::{ClientConfig, Endpoint};
 #[derive(Clone)]
 pub(crate) struct Client {
   pub endpoint: String,
-  pub is_publisher: bool,
+  pub client_mode: String,
   pub validate_cert: bool,
   control_stream_handler: Option<Arc<Mutex<ControlStreamHandler>>>,
   message_notify: Arc<Notify>,
   message_queue: Arc<RwLock<VecDeque<ControlMessage>>>,
+  continue_publishing: Arc<Mutex<bool>>,
 }
 
 impl Client {
-  pub fn new(endpoint: String, is_publisher: bool, validate_cert: bool) -> Self {
+  pub fn new(endpoint: String, client_mode: String, validate_cert: bool) -> Self {
     Client {
       endpoint,
-      is_publisher,
+      client_mode,
       validate_cert,
       control_stream_handler: None,
       message_notify: Arc::new(Notify::new()),
       message_queue: Arc::new(RwLock::new(VecDeque::new())),
+      continue_publishing: Arc::new(Mutex::new(true)),
     }
   }
 
   pub async fn run(&mut self) -> Result<(), anyhow::Error> {
     let endpoint = self.endpoint.clone();
-    let is_publisher = self.is_publisher;
+    let client_mode = self.client_mode.clone();
     let validate_cert = self.validate_cert;
 
     let c = ClientConfig::builder().with_bind_default();
@@ -104,10 +110,15 @@ impl Client {
 
     self.control_stream_handler = Some(Arc::new(Mutex::new(control_stream_handler)));
 
-    if is_publisher {
+    if client_mode == "publisher" {
       self.start_publisher(connection.clone()).await;
+    } else if client_mode == "subscriber" || client_mode == "fetcher" {
+      self
+        .start_subscriber(connection.clone(), client_mode == "fetcher")
+        .await;
     } else {
-      self.start_subscriber(connection.clone()).await;
+      error!("Invalid client mode: {}", client_mode);
+      return Err(anyhow::anyhow!("Invalid client mode: {}", client_mode));
     }
     Ok(())
   }
@@ -145,8 +156,15 @@ impl Client {
 
           // open a unidirectional stream
           let connection = connection.clone();
+          let continue_publishing = self.continue_publishing.clone();
           tokio::spawn(async move {
             for group_id in 1..100 {
+              let continue_publishing = continue_publishing.lock().await;
+              if !*continue_publishing {
+                info!("Stopping publishing");
+                break;
+              }
+
               info!("Opening unidirectional stream for group_id: {}", group_id);
               let stream = connection.open_uni().await.unwrap().await.unwrap();
               let sub_header =
@@ -204,7 +222,10 @@ impl Client {
         }
         Ok(ControlMessage::Unsubscribe(m)) => {
           info!("Received unsubscribe message: {:?}", m);
-          // Handle the unsubscribe message
+          // stop publishing
+          let mut continue_publishing = self.continue_publishing.lock().await;
+          *continue_publishing = false;
+          info!("Stopped publishing");
         }
         Ok(_) => {
           error!("Unexpected message type");
@@ -217,20 +238,21 @@ impl Client {
     }
   }
 
-  async fn start_subscriber(&self, connection: Arc<wtransport::Connection>) {
+  async fn start_subscriber(&self, connection: Arc<wtransport::Connection>, is_fetcher: bool) {
     info!("Starting subscriber...");
 
     // TODO: for this demo, we don't pass those
     let pending_fetches = Arc::new(RwLock::new(BTreeMap::new()));
-
+    let conn = connection.clone();
+    let pending_fetches_2 = pending_fetches.clone();
     tokio::spawn(async move {
       loop {
         info!("Waiting for incoming unidirectional streams...");
         // listen for incoming unidirectional streams
-        let stream = connection.accept_uni().await.unwrap();
+        let stream = conn.accept_uni().await.unwrap();
         info!("Accepted unidirectional stream");
 
-        let mut stream_handler = &RecvDataStream::new(stream, pending_fetches.clone());
+        let mut stream_handler = &RecvDataStream::new(stream, pending_fetches_2.clone());
 
         loop {
           let next = stream_handler.next_object().await;
@@ -250,23 +272,31 @@ impl Client {
       }
     });
 
-    // sub and unsub test
-    // send subscribe once in 4 seconds in another task continuously
-    let this = self.clone();
-    tokio::spawn(async move {
-      let mut request_id = 0;
-      loop {
-        let sub = this.send_subscribe(request_id).await;
-        request_id += 1;
-        info!("Subscribe sent successfully: {:?}", sub);
-        // send unsubscribe after 3 seconds
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-        this.send_unsubscribe(sub.request_id).await;
-        info!("Unsubscribe sent successfully: {:?}", sub.request_id);
-        // wait for 1 second
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-      }
-    });
+    if !is_fetcher {
+      // sub and unsub test
+      // send subscribe once in 4 seconds in another task continuously
+      let this = self.clone();
+      tokio::spawn(async move {
+        let mut request_id = 0;
+        loop {
+          let sub = this.send_subscribe(request_id).await;
+          request_id += 1;
+          info!("Subscribe sent successfully: {:?}", sub);
+          // send unsubscribe after 3 seconds
+          tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+          this.send_unsubscribe(sub.request_id).await;
+          info!("Unsubscribe sent successfully: {:?}", sub.request_id);
+          // wait for 1 second
+          tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+      });
+    } else {
+      let this = self.clone();
+      let pending_fetches = pending_fetches.clone();
+      tokio::spawn(async move {
+        this.send_fetch(0, pending_fetches).await;
+      });
+    }
 
     loop {
       info!("Waiting for next message...");
@@ -307,6 +337,14 @@ impl Client {
             info!("Received unsubscribe message: {:?}", m);
             // Handle the unsubscribe message
           }
+          Ok(ControlMessage::FetchOk(m)) => {
+            info!("Received fetch ok message: {:?}", m);
+            // Handle the fetch ok message
+          }
+          Ok(ControlMessage::FetchError(m)) => {
+            info!("Received fetch error message: {:?}", m);
+            // Handle the fetch error message
+          }
           Ok(_) => {
             error!("Unexpected message type");
           }
@@ -343,6 +381,47 @@ impl Client {
       .push_back(ControlMessage::Subscribe(Box::new(sub.clone())));
     self.message_notify.notify_waiters();
     sub
+  }
+
+  async fn send_fetch(
+    &self,
+    request_id: u64,
+    pending_fetches: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
+  ) {
+    info!("Starting fetcher...");
+    let mut track_namespace = Tuple::new();
+    track_namespace.add(TupleField::from_utf8("moqtail"));
+    let track_name = "demo".to_string();
+    let start_location = Location::new(1, 0);
+    let end_location = Location::new(5, 3);
+    let parameters = vec![KeyValuePair::try_new_varint(100, 200).unwrap()];
+    let standalone_fetch_props = StandAloneFetchProps {
+      track_namespace,
+      track_name,
+      start_location,
+      end_location,
+    };
+
+    let fetch = Fetch::new_standalone(
+      request_id,
+      1,
+      GroupOrder::Ascending,
+      standalone_fetch_props,
+      parameters.clone(),
+    );
+    info!("Fetch message: {:?}", fetch);
+    self
+      .message_queue
+      .write()
+      .await
+      .push_back(ControlMessage::Fetch(Box::new(fetch.clone())));
+    self.message_notify.notify_waiters();
+    pending_fetches
+      .write()
+      .await
+      .insert(request_id, FetchRequest::new(request_id, 1, fetch, 0));
+
+    info!("Fetch message sent successfully");
   }
 
   async fn send_subscribe_ok(&self, request_id: u64) {

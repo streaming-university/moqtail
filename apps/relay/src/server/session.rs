@@ -155,7 +155,10 @@ impl Session {
           m = c.wait_for_next_message() => {
             msg = m;
             info!("new message for client: {:?}", msg);
-            control_stream_handler.send(&msg).await.unwrap();
+            if let Err(e) = control_stream_handler.send(&msg).await {
+              error!("Error sending message: {:?}", e);
+              return Err(e);
+            }
             continue;
           },
           else => {
@@ -482,7 +485,7 @@ impl Session {
         }
         (_, None) => {
           // error!("Failed to receive object: {:?}", e);
-          debug!(
+          info!(
             "no more objects in the stream track: {}, stream_id: {}, objects: {}",
             track_alias, stream_id, object_count
           );
