@@ -15,6 +15,7 @@ import {
   Activity,
   Expand,
   Minimize,
+  RotateCcw,
   Eye,
   EyeOff,
   Volume2,
