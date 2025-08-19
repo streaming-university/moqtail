@@ -15,7 +15,10 @@ import {
   Activity,
   Expand,
   Minimize,
-  RotateCcw,
+  Eye,
+  EyeOff,
+  Volume2,
+  VolumeX,
 } from 'lucide-react'
 
 import { useSession } from '../contexts/SessionContext'
@@ -46,7 +49,8 @@ import {
   setupTracks,
   startAudioEncoder,
   subscribeToChatTrack,
-  useVideoSubscriber,
+  onlyUseVideoSubscriber,
+  onlyUseAudioSubscriber,
 } from '../composables/useVideoPipeline'
 import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client'
 import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
@@ -61,13 +65,13 @@ function SessionPage() {
 
   // initialize the variables
   const [maximizedUserId, setMaximizedUserId] = useState<string | null>(null)
-  const { userId, username, roomState, setSession, clearSession } = useSession()
+  const { userId, username, roomState, clearSession } = useSession()
   const [isMicOn, setIsMicOn] = useState(false)
   const [isCamOn, setisCamOn] = useState(false)
   const [isScreenSharing, setIsScreenSharing] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(true) // TODO: implement MoQ chat
   const [chatMessage, setChatMessage] = useState('')
-  const { socket: contextSocket, reconnect } = useSocket()
+  const { socket: contextSocket } = useSocket()
   const [users, setUsers] = useState<{ [K: string]: RoomUser }>({})
   const [remoteCanvasRefs, setRemoteCanvasRefs] = useState<{ [id: string]: React.RefObject<HTMLCanvasElement> }>({})
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
@@ -103,6 +107,16 @@ function SessionPage() {
       videoBitrate?: number
       audioBitrate?: number
       numberOfChannels?: number
+    }
+  }>({})
+
+  const [userSubscriptions, setUserSubscriptions] = useState<{
+    [userId: string]: {
+      videoSubscribed: boolean
+      audioSubscribed: boolean
+      videoRequestId?: bigint
+      audioRequestId?: bigint
+      intentionallyUnsubscribed?: boolean // Track if user was intentionally unsubscribed from both tracks
     }
   }>({})
 
@@ -880,7 +894,7 @@ function SessionPage() {
         const client = await connectToRelay(relayUrl + '/' + username)
         setMoqClient(client)
         client.onDataReceived = (data) => {
-          console.warn('Data received:', data)
+          // console.warn('Data received:', data)
         }
         //console.log('initClient', client)
         if (roomState && Object.values(users).length === 0) {
@@ -905,6 +919,13 @@ function SessionPage() {
       setRemoteCanvasRefs((prev) => ({
         ...prev,
         [user.id]: React.createRef<HTMLCanvasElement>(),
+      }))
+      setUserSubscriptions((prev) => ({
+        ...prev,
+        [user.id]: {
+          videoSubscribed: false,
+          audioSubscribed: false,
+        },
       }))
     })
 
@@ -983,6 +1004,13 @@ function SessionPage() {
         delete newData[msg.userId]
         return newData
       })
+
+      setUserSubscriptions((prev) => {
+        const updated = { ...prev }
+        delete updated[msg.userId]
+        return updated
+      })
+
       setLatencyHistory((prev) => {
         const newHistory = { ...prev }
         delete newHistory[msg.userId]
@@ -1302,11 +1330,32 @@ function SessionPage() {
     const audioTrackAlias = parseInt(canvasRef.current.dataset.audiotrackalias || '-1')
     const chatTrackAlias = parseInt(canvasRef.current.dataset.chattrackalias || '-1')
     const announced = parseInt(canvasRef.current.dataset.announced || '0')
-    //console.log('handleRemoteVideo', canvasRef.current.id, moqClient, roomName, videoTrackAlias, audioTrackAlias, announced)
-    if (announced > 0 && videoTrackAlias > 0 && audioTrackAlias > 0 && chatTrackAlias > 0)
+    const currentSubscription = userSubscriptions[userId]
+    const isVideoSubscribed = currentSubscription?.videoSubscribed || false
+    const isAudioSubscribed = currentSubscription?.audioSubscribed || false
+    const isCompletelyUnsubscribed = !isVideoSubscribed && !isAudioSubscribed
+    const tracksReady = announced > 0 && videoTrackAlias > 0 && audioTrackAlias > 0
+    const wasIntentionallyUnsubscribed = currentSubscription?.intentionallyUnsubscribed === true
+    const shouldSubscribe = tracksReady && isCompletelyUnsubscribed && !wasIntentionallyUnsubscribed
+
+    if (shouldSubscribe) {
+      console.log(`Starting subscription to ${userId} - video: ${videoTrackAlias}, audio: ${audioTrackAlias}`)
       setTimeout(async () => {
         await subscribeToTrack(roomName, userId, videoTrackAlias, audioTrackAlias, chatTrackAlias, canvasRef)
       }, 500)
+    } else {
+      if (tracksReady && wasIntentionallyUnsubscribed) {
+        console.log(`Skipping auto-subscription to ${userId} - user was intentionally unsubscribed from both tracks`)
+      } else if (tracksReady && !isCompletelyUnsubscribed) {
+        console.log(
+          `Skipping subscription to ${userId} - already subscribed (video: ${isVideoSubscribed}, audio: ${isAudioSubscribed})`,
+        )
+      } else if (!tracksReady) {
+        console.log(
+          `Not ready to subscribe to ${userId} yet - announced: ${announced}, video: ${videoTrackAlias}, audio: ${audioTrackAlias}`,
+        )
+      }
+    }
   }
 
   async function subscribeToTrack(
@@ -1334,17 +1383,39 @@ function SessionPage() {
         const userTelemetry = telemetryInstances.current[userId]
 
         //console.log("subscribeToTrack - Use video subscriber called", videoTrackAlias, audioTrackAlias, videoFullTrackName, audioFullTrackName)
-        // Subscribe to video and audio
-        const videoResult = await useVideoSubscriber(
+        // Subscribe to video and audio separately for independent control
+        const videoResult = await onlyUseVideoSubscriber(
           the_client,
           canvasRef,
           videoTrackAlias,
-          audioTrackAlias,
           videoFullTrackName,
-          audioFullTrackName,
           userTelemetry.video,
+        )()
+
+        const audioResult = await onlyUseAudioSubscriber(
+          the_client,
+          audioTrackAlias,
+          audioFullTrackName,
           userTelemetry.audio,
         )()
+
+        const subscriptionResult = {
+          videoRequestId: videoResult.videoRequestId,
+          audioRequestId: audioResult.audioRequestId,
+        }
+
+        if (subscriptionResult) {
+          setUserSubscriptions((prev) => ({
+            ...prev,
+            [userId]: {
+              videoSubscribed: true,
+              audioSubscribed: true,
+              videoRequestId: subscriptionResult.videoRequestId,
+              audioRequestId: subscriptionResult.audioRequestId,
+              intentionallyUnsubscribed: false, // Clear the flag when subscribing
+            },
+          }))
+        }
 
         // Subscribe to chat if we have a valid chat track alias
         if (chatTrackAlias > 0) {
@@ -1405,7 +1476,7 @@ function SessionPage() {
         }
         //console.log('subscribeToTrack result', result)
         // TODO: result comes true all the time, refactor...
-        canvasRef.current!.dataset.status = videoResult ? 'playing' : ''
+        canvasRef.current!.dataset.status = subscriptionResult ? 'playing' : ''
       }
     } catch (err) {
       console.error('Error in subscribing', roomName, userId, err)
@@ -1448,6 +1519,226 @@ function SessionPage() {
     clearSession()
 
     window.location.href = '/'
+  }
+
+  const unsubscribeFromUser = async (targetUserId: string, type: 'video' | 'audio' | 'both') => {
+    if (!moqClient || targetUserId === userId) {
+      console.warn(`Cannot unsubscribe: moqClient=${!!moqClient}, targetUserId=${targetUserId}, userId=${userId}`)
+      return
+    }
+
+    const subscription = userSubscriptions[targetUserId]
+
+    if (!subscription) {
+      console.warn(`No subscription found for user ${targetUserId}`)
+      return
+    }
+
+    let videoUnsubscribed = false
+    let audioUnsubscribed = false
+
+    if (
+      (type === 'video' || type === 'both') &&
+      subscription.videoSubscribed &&
+      subscription.videoRequestId !== undefined
+    ) {
+      try {
+        console.log(`Attempting to unsubscribe from ${targetUserId} video with requestId:`, subscription.videoRequestId)
+        await moqClient.unsubscribe(subscription.videoRequestId)
+        console.log(`Successfully unsubscribed from ${targetUserId} video`)
+        videoUnsubscribed = true
+      } catch (error) {
+        console.error(`Failed to unsubscribe from ${targetUserId} video:`, error)
+      }
+    } else if (type === 'video' || type === 'both') {
+      console.log(`Skipping video unsubscribe for ${targetUserId} - not subscribed or missing requestId`)
+    }
+
+    const audioTypeCheck = type === 'audio' || type === 'both'
+    const audioSubscribedCheck = subscription.audioSubscribed
+    const audioRequestIdCheck = subscription.audioRequestId !== undefined
+
+    if (audioTypeCheck && audioSubscribedCheck && audioRequestIdCheck) {
+      try {
+        console.log(
+          `Attempting to unsubscribe from ${targetUserId} audio with requestId:`,
+          subscription.audioRequestId!,
+        )
+        await moqClient.unsubscribe(subscription.audioRequestId!)
+        console.log(`Successfully unsubscribed from ${targetUserId} audio`)
+        audioUnsubscribed = true
+      } catch (error) {
+        console.error(`Failed to unsubscribe from ${targetUserId} audio:`, error)
+      }
+    } else if (type === 'audio' || type === 'both') {
+      console.log(`Skipping audio unsubscribe for ${targetUserId} - condition failed`)
+    }
+
+    setUserSubscriptions((prev) => {
+      const currentSub = prev[targetUserId] || {}
+
+      const newVideoSubscribed =
+        (type === 'video' || type === 'both') && videoUnsubscribed ? false : currentSub.videoSubscribed || false
+      const newAudioSubscribed =
+        (type === 'audio' || type === 'both') && audioUnsubscribed ? false : currentSub.audioSubscribed || false
+
+      const willBeCompletelyUnsubscribed = !newVideoSubscribed && !newAudioSubscribed
+
+      const newSubscription = {
+        ...currentSub,
+        videoSubscribed: newVideoSubscribed,
+        audioSubscribed: newAudioSubscribed,
+
+        videoRequestId:
+          (type === 'video' || type === 'both') && videoUnsubscribed ? undefined : currentSub.videoRequestId,
+
+        audioRequestId:
+          (type === 'audio' || type === 'both') && audioUnsubscribed ? undefined : currentSub.audioRequestId,
+
+        intentionallyUnsubscribed: willBeCompletelyUnsubscribed,
+      }
+
+      console.log(`Updated subscription state for ${targetUserId}:`, newSubscription)
+      return {
+        ...prev,
+        [targetUserId]: newSubscription,
+      }
+    })
+
+    if ((type === 'video' || type === 'both') && videoUnsubscribed) {
+      const canvasRef = remoteCanvasRefs[targetUserId]
+      if (canvasRef?.current) {
+        canvasRef.current.dataset.status = ''
+      }
+    }
+  }
+
+  const resubscribeToUser = async (targetUserId: string, type: 'video' | 'audio' | 'both') => {
+    if (!moqClient || !roomState || targetUserId === userId) return
+
+    const canvasRef = remoteCanvasRefs[targetUserId]
+    if (!canvasRef?.current) return
+
+    const roomName = roomState.name
+    const videoTrackAlias = parseInt(canvasRef.current.dataset.videotrackalias || '-1')
+    const audioTrackAlias = parseInt(canvasRef.current.dataset.audiotrackalias || '-1')
+
+    if (videoTrackAlias === -1 || audioTrackAlias === -1) {
+      console.warn(`Track aliases not available for user ${targetUserId}`)
+      return
+    }
+
+    try {
+      const currentSubscription = userSubscriptions[targetUserId]
+
+      const hasVideoSub = currentSubscription?.videoSubscribed && currentSubscription?.videoRequestId !== undefined
+      const hasAudioSub = currentSubscription?.audioSubscribed && currentSubscription?.audioRequestId !== undefined
+
+      const needsVideoSub = (type === 'video' || type === 'both') && !hasVideoSub
+      const needsAudioSub = (type === 'audio' || type === 'both') && !hasAudioSub
+
+      if (!needsVideoSub && !needsAudioSub) {
+        console.log(`Already subscribed to ${targetUserId} ${type}`)
+        return
+      }
+
+      if (canvasRef.current.dataset.status) {
+        console.log(`Resetting canvas status for ${targetUserId} to allow resubscription`)
+        canvasRef.current.dataset.status = ''
+      }
+
+      if (needsVideoSub && needsAudioSub) {
+        console.log(`Subscribing to both video and audio for ${targetUserId}`)
+        await subscribeToTrack(
+          roomName,
+          targetUserId,
+          videoTrackAlias,
+          audioTrackAlias,
+          parseInt(canvasRef.current.dataset.chattrackalias || '-1'),
+          canvasRef,
+        )
+      } else if (needsVideoSub) {
+        console.log(`Adding video subscription for ${targetUserId}`)
+        const videoFullTrackName = getTrackname(roomName, targetUserId, 'video')
+        initializeTelemetryForUser(targetUserId)
+        const userTelemetry = telemetryInstances.current[targetUserId]
+
+        try {
+          const videoResult = await onlyUseVideoSubscriber(
+            moqClient,
+            canvasRef,
+            videoTrackAlias,
+            videoFullTrackName,
+            userTelemetry.video,
+          )()
+
+          if (videoResult.videoRequestId) {
+            setUserSubscriptions((prev) => ({
+              ...prev,
+              [targetUserId]: {
+                ...prev[targetUserId],
+                videoSubscribed: true,
+                videoRequestId: videoResult.videoRequestId,
+                intentionallyUnsubscribed: false,
+              },
+            }))
+
+            canvasRef.current.dataset.status = 'playing'
+            console.log(`Video subscription added for ${targetUserId}, requestId: ${videoResult.videoRequestId}`)
+          } else {
+            console.error(`Video subscription failed for ${targetUserId}`)
+          }
+        } catch (error) {
+          console.error(`Failed to add video subscription for ${targetUserId}:`, error)
+        }
+      } else if (needsAudioSub) {
+        console.log(`Adding audio subscription for ${targetUserId}`)
+
+        const audioFullTrackName = getTrackname(roomName, targetUserId, 'audio')
+        initializeTelemetryForUser(targetUserId)
+        const userTelemetry = telemetryInstances.current[targetUserId]
+
+        try {
+          const audioResult = await onlyUseAudioSubscriber(
+            moqClient,
+            audioTrackAlias,
+            audioFullTrackName,
+            userTelemetry.audio,
+          )()
+
+          if (audioResult.audioRequestId) {
+            setUserSubscriptions((prev) => ({
+              ...prev,
+              [targetUserId]: {
+                ...prev[targetUserId],
+                audioSubscribed: true,
+                audioRequestId: audioResult.audioRequestId,
+                intentionallyUnsubscribed: false,
+              },
+            }))
+
+            console.log(`Audio subscription added for ${targetUserId}, requestId: ${audioResult.audioRequestId}`)
+          } else {
+            console.error(`Audio subscription failed for ${targetUserId}`)
+          }
+        } catch (error) {
+          console.error(`Failed to add audio subscription for ${targetUserId}:`, error)
+        }
+      }
+    } catch (error) {
+      console.error(`Failed to resubscribe to ${targetUserId} ${type}:`, error)
+    }
+  }
+
+  const toggleUserSubscription = async (targetUserId: string, type: 'video' | 'audio') => {
+    const subscription = userSubscriptions[targetUserId]
+    const isSubscribed = type === 'video' ? subscription?.videoSubscribed : subscription?.audioSubscribed
+
+    if (isSubscribed) {
+      await unsubscribeFromUser(targetUserId, type)
+    } else {
+      await resubscribeToUser(targetUserId, type)
+    }
   }
 
   useEffect(() => {
@@ -1627,6 +1918,43 @@ function SessionPage() {
                 )}
                 {/* Info card toggle buttons */}
                 <div className="absolute top-3 right-3 flex space-x-1">
+                  {/* Subscription Controls - Only for remote users */}
+                  {!isSelf(user.id) && (
+                    <>
+                      {/* Video Subscription Toggle */}
+                      <button
+                        onClick={() => toggleUserSubscription(user.id, 'video')}
+                        className={`p-1 rounded-full transition-all duration-200 ${
+                          userSubscriptions[user.id]?.videoSubscribed
+                            ? 'bg-green-600 hover:bg-green-700 text-white'
+                            : 'bg-gray-700 hover:bg-red-600 text-white'
+                        }`}
+                        title={`${userSubscriptions[user.id]?.videoSubscribed ? 'Unsubscribe from' : 'Subscribe to'} ${user.name}'s video`}
+                      >
+                        {userSubscriptions[user.id]?.videoSubscribed ? (
+                          <Eye className="w-4 h-4" />
+                        ) : (
+                          <EyeOff className="w-4 h-4" />
+                        )}
+                      </button>
+                      {/* Audio Subscription Toggle */}
+                      <button
+                        onClick={() => toggleUserSubscription(user.id, 'audio')}
+                        className={`p-1 rounded-full transition-all duration-200 ${
+                          userSubscriptions[user.id]?.audioSubscribed
+                            ? 'bg-green-600 hover:bg-green-700 text-white'
+                            : 'bg-gray-700 hover:bg-red-600 text-white'
+                        }`}
+                        title={`${userSubscriptions[user.id]?.audioSubscribed ? 'Unsubscribe from' : 'Subscribe to'} ${user.name}'s audio`}
+                      >
+                        {userSubscriptions[user.id]?.audioSubscribed ? (
+                          <Volume2 className="w-4 h-4" />
+                        ) : (
+                          <VolumeX className="w-4 h-4" />
+                        )}
+                      </button>
+                    </>
+                  )}
                   {/* Network Stats Button */}
                   {!isSelf(user.id) && ( // TODO: Calculate throughputs for self user
                     <button

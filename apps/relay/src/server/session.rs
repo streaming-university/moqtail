@@ -485,7 +485,7 @@ impl Session {
         }
         (_, None) => {
           // error!("Failed to receive object: {:?}", e);
-          debug!(
+          info!(
             "no more objects in the stream track: {}, stream_id: {}, objects: {}",
             track_alias, stream_id, object_count
           );
