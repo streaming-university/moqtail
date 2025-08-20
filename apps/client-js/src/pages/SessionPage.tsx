@@ -262,6 +262,7 @@ function SessionPage() {
       const videoTrackName = getTrackname(roomState.name, userId, 'video')
       console.log('Fetching video track:', videoTrackName.toString())
 
+      /*
       const videoResult = await moqClient.fetch({
         priority: 0,
         groupOrder: GroupOrder.Original,
@@ -270,7 +271,27 @@ function SessionPage() {
           props: {
             fullTrackName: videoTrackName,
             startLocation: new Location(0n, 0n),
-            endLocation: new Location(60n, 0n),
+            endLocation: new Location(60n, 0n)
+          },
+        },
+      })
+      */
+      // get request id from the video track subscription
+      console.log('userSubscriptions', userSubscriptions)
+      const videoRequestId = userSubscriptions[userId]?.videoRequestId
+      if (videoRequestId === undefined) {
+        console.error('No video request id found for user:', userId)
+        return
+      }
+
+      const videoResult = await moqClient.fetch({
+        priority: 0,
+        groupOrder: GroupOrder.Original,
+        typeAndProps: {
+          type: FetchType.Relative,
+          props: {
+            joiningRequestId: videoRequestId,
+            joiningStart: 5n, // last 5 groups
           },
         },
       })
@@ -308,6 +329,7 @@ function SessionPage() {
       const audioTrackName = getTrackname(roomState.name, userId, 'audio')
       console.log('Fetching audio track:', audioTrackName.toString())
 
+      /*
       const audioResult = await moqClient.fetch({
         priority: 0,
         groupOrder: GroupOrder.Original,
@@ -317,6 +339,25 @@ function SessionPage() {
             fullTrackName: audioTrackName,
             startLocation: new Location(0n, 0n),
             endLocation: new Location(60n, 0n),
+          },
+        },
+      })
+      */
+
+      // get request id from the audio track subscription
+      const audioRequestId = userSubscriptions[userId]?.audioRequestId
+      if (audioRequestId === undefined) {
+        console.error('No audio request id found for user:', userId)
+        return
+      }
+      const audioResult = await moqClient.fetch({
+        priority: 0,
+        groupOrder: GroupOrder.Original,
+        typeAndProps: {
+          type: FetchType.Relative,
+          props: {
+            joiningRequestId: audioRequestId,
+            joiningStart: 5n, // last 5 groups
           },
         },
       })

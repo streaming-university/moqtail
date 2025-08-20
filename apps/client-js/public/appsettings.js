@@ -30,7 +30,7 @@ window.appSettings = {
     numberOfChannels: 1,
     bitrate: 48_000,
   },
-  keyFrameInterval: 200,
+  keyFrameInterval: 50,
   clockNormalizationConfig: {
     timeServerUrl: 'https://time.akamai.com/?ms',
     numberOfSamples: 5,

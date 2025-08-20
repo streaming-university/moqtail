@@ -3,6 +3,7 @@ use crate::server::client::MOQTClient;
 use crate::server::subscription::Subscription;
 use crate::server::utils;
 use anyhow::Result;
+use moqtail::model::common::location::Location;
 use moqtail::model::control::subscribe::Subscribe;
 use moqtail::model::data::object::Object;
 use moqtail::{model::common::tuple::Tuple, transport::data_stream_handler::HeaderInfo};
@@ -34,6 +35,7 @@ pub struct Track {
   event_tx: Sender<TrackEvent>,
   #[allow(dead_code)]
   event_rx: Arc<Receiver<TrackEvent>>,
+  pub largest_location: Arc<RwLock<Location>>,
 }
 
 // TODO: this track implementation should be static? At least
@@ -44,7 +46,7 @@ impl Track {
     track_namespace: Tuple,
     track_name: String,
     cache_size: usize,
-    publisher_connection_id: usize,
+    publisher_connection_id: usize
   ) -> Self {
     let (event_tx, event_rx) = tokio::sync::broadcast::channel(1000);
 
@@ -57,6 +59,7 @@ impl Track {
       cache: TrackCache::new(track_alias, cache_size),
       event_tx,
       event_rx: Arc::new(event_rx), // Keep the receiver alive so that the sender stays alive
+      largest_location: Arc::new(RwLock::new(Location::new(0, 0))),
     }
   }
 
@@ -140,6 +143,18 @@ impl Track {
         stream_id: stream_id.clone(),
         object: object.clone(),
       };
+
+      // update the largest location
+      {
+        let mut largest_location = self.largest_location.write().await;
+        if object.location.group > largest_location.group
+          || (object.location.group == largest_location.group
+            && object.location.object > largest_location.object)
+        {
+          largest_location.group = object.location.group;
+          largest_location.object = object.location.object;
+        }
+      }
 
       match self.event_tx.send(object_event) {
         Ok(_) => {}

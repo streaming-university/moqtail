@@ -128,14 +128,14 @@ impl TrackCache {
       info!("read_objects | range: {:?}", range.clone().count());
 
       // TODO: ordering of objects
-      for (group_id, objects) in guard.iter() {
-        info!("read_objects | group_id: {:?}", group_id);
+      for (group_id, objects) in range {
         if *group_id < start.group {
           continue;
         }
         if *group_id > end.group {
           break;
         }
+        info!("read_objects | group_id: {:?}", group_id);
         for object in objects {
           if *group_id == end.group && end.object > 0 && end.object < object.object_id {
             // we hit the end of the range
@@ -146,7 +146,7 @@ impl TrackCache {
             warn!("read_objects | An error occurred: {:?}", err);
             break; // Client disconnected
           }
-          info!("read_objects | sent object: {:?}", object);
+          debug!("read_objects | sent object: {:?}", object);
         }
       }
     });

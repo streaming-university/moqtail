@@ -32,7 +32,7 @@ pub struct Subscription {
   finished: Arc<RwLock<bool>>, // Indicates if the subscription is finished
   #[allow(dead_code)]
   cache: TrackCache,
-  client_connection_id: usize,
+  client_connection_id: usize
 }
 
 impl Subscription {
@@ -50,7 +50,7 @@ impl Subscription {
       send_streams: Arc::new(RwLock::new(BTreeMap::new())),
       finished: Arc::new(RwLock::new(false)),
       cache,
-      client_connection_id,
+      client_connection_id
     }
   }
   pub fn new(
@@ -141,12 +141,16 @@ impl Subscription {
               return;
             }
 
-            if let Ok((stream_id, send_stream)) = self.handle_header(header.clone()).await {
-              self
-                .send_streams
-                .write()
-                .await
-                .insert(stream_id.clone(), send_stream.clone());
+            if let HeaderInfo::Subgroup { header: _subgroup_header } = header {
+              if let Ok((stream_id, send_stream)) = self.handle_header(header.clone()).await {
+                self
+                  .send_streams
+                  .write()
+                  .await
+                  .insert(stream_id.clone(), send_stream.clone());
+              }
+            } else {
+              error!("Received Header event for non-subgroup header: {:?}", header);
             }
           }
           TrackEvent::Object { object, stream_id } => {

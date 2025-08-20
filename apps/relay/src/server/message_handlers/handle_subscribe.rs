@@ -18,7 +18,6 @@ pub async fn handle_subscribe_messages(
   control_stream_handler: &mut ControlStreamHandler,
   msg: ControlMessage,
   context: Arc<SessionContext>,
-  relay_next_request_id: Arc<tokio::sync::RwLock<u64>>,
 ) -> Result<(), TerminationCode> {
   match msg {
     ControlMessage::Subscribe(m) => {
@@ -79,70 +78,86 @@ pub async fn handle_subscribe_messages(
         None => return Err(TerminationCode::InternalError),
       };
 
-      let res: Result<(), TerminationCode> =
-        if !context.tracks.read().await.contains_key(&sub.track_alias) {
-          info!("Track not found, creating new track: {:?}", sub.track_alias);
-          // subscribed_tracks.insert(sub.track_alias, Track::new(sub.track_alias, track_namespace.clone(), sub.track_name.clone()));
-          let mut track = Track::new(
-            sub.track_alias,
-            sub.track_namespace.clone(),
-            sub.track_name.clone(),
-            context.server_config.cache_size.into(),
-            publisher.read().await.connection_id,
+      let res: Result<(), TerminationCode> = if !context
+        .tracks
+        .read()
+        .await
+        .contains_key(&sub.track_alias)
+      {
+        info!("Track not found, creating new track: {:?}", sub.track_alias);
+        // subscribed_tracks.insert(sub.track_alias, Track::new(sub.track_alias, track_namespace.clone(), sub.track_name.clone()));
+        let mut track = Track::new(
+          sub.track_alias,
+          sub.track_namespace.clone(),
+          sub.track_name.clone(),
+          context.server_config.cache_size.into(),
+          publisher.read().await.connection_id
+        );
+        {
+          context
+            .tracks
+            .write()
+            .await
+            .insert(sub.track_alias, track.clone());
+        }
+
+        let _ = track.add_subscription(client.clone(), sub.clone()).await;
+
+        // send the subscribe message to the publisher
+        let mut new_sub = sub.clone();
+        new_sub.request_id =
+          Session::get_next_relay_request_id(context.relay_next_request_id.clone()).await;
+
+        let publisher = publisher.read().await;
+        publisher
+          .queue_message(ControlMessage::Subscribe(Box::new(new_sub.clone())))
+          .await;
+
+        // add the track to the publisher's published tracks
+        publisher.add_published_track(track.track_alias).await;
+
+        // insert this request id into the relay's subscribe requests
+        // TODO: we need to add a timeout here or another loop to control expired requests
+        let req =
+          SubscribeRequest::new(original_request_id, context.connection_id, new_sub.clone());
+        let mut requests = context.subscribe_requests.write().await;
+        requests.insert(new_sub.request_id, req.clone());
+        info!(
+          "inserted request into relay's subscribe requests: {:?} with relay's request id: {:?}",
+          req, new_sub.request_id
+        );
+
+        Ok(())
+      } else {
+        info!("track already exists, sending SubscribeOk");
+        let mut tracks = context.tracks.write().await;
+        let track = tracks.get_mut(&sub.track_alias).unwrap();
+        let _ = track.add_subscription(client.clone(), sub.clone()).await;
+        drop(tracks);
+
+        // insert this request id into the relay's subscribe requests
+        // however, here we use the original request id instead of the new request id
+        // because the relay does not send this subscribe message to the publisher
+        let req = SubscribeRequest::new(original_request_id, context.connection_id, sub.clone());
+        let mut requests = context.subscribe_requests.write().await;
+        requests.insert(sub.request_id, req.clone());
+        info!(
+          "inserted request into relay's subscribe requests: {:?} with subscriber's request id: {:?}",
+          req, sub.request_id
+        );
+
+        // TODO: Send the first sub_ok message to the subscriber
+        // for now, just sending some default values
+        let subscribe_ok =
+          moqtail::model::control::subscribe_ok::SubscribeOk::new_ascending_with_content(
+            sub.request_id,
+            0,
+            None,
+            None,
           );
-          {
-            context
-              .tracks
-              .write()
-              .await
-              .insert(sub.track_alias, track.clone());
-          }
 
-          let _ = track.add_subscription(client.clone(), sub.clone()).await;
-
-          // send the subscribe message to the publisher
-          let mut new_sub = sub.clone();
-          new_sub.request_id =
-            Session::get_next_relay_request_id(relay_next_request_id.clone()).await;
-
-          let publisher = publisher.read().await;
-          publisher
-            .queue_message(ControlMessage::Subscribe(Box::new(new_sub.clone())))
-            .await;
-
-          // add the track to the publisher's published tracks
-          publisher.add_published_track(track.track_alias).await;
-
-          // insert this request id into the relay's subscribe requests
-          // TODO: we need to add a timeout here or another loop to control expired requests
-          let req =
-            SubscribeRequest::new(original_request_id, context.connection_id, new_sub.clone());
-          let mut requests = context.subscribe_requests.write().await;
-          requests.insert(new_sub.request_id, req.clone());
-          debug!(
-            "inserted request into publisher's subscribe requests: {:?}",
-            req
-          );
-
-          Ok(())
-        } else {
-          info!("track already exists, sending SubscribeOk");
-          let mut tracks = context.tracks.write().await;
-          let track = tracks.get_mut(&sub.track_alias).unwrap();
-          let _ = track.add_subscription(client.clone(), sub.clone()).await;
-          drop(tracks);
-          // TODO: Send the first sub_ok message to the subscriber
-          // for now, just sending some default values
-          let subscribe_ok =
-            moqtail::model::control::subscribe_ok::SubscribeOk::new_ascending_with_content(
-              sub.request_id,
-              0,
-              None,
-              None,
-            );
-
-          control_stream_handler.send_impl(&subscribe_ok).await
-        };
+        control_stream_handler.send_impl(&subscribe_ok).await
+      };
 
       // return if there's an error
       if res.is_ok() {

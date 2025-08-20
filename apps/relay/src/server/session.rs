@@ -36,6 +36,7 @@ impl Session {
     let server_config = server.app_config;
     let fetch_requests = server.fetch_requests.clone();
     let subscribe_requests = server.subscribe_requests.clone();
+    let relay_next_request_id = server.relay_next_request_id.clone();
     let connection = session_request.accept().await?;
 
     let context = Arc::new(SessionContext::new(
@@ -45,6 +46,7 @@ impl Session {
       fetch_requests,
       subscribe_requests,
       connection,
+      relay_next_request_id,
     ));
 
     tokio::spawn(Self::handle_connection_close(context.clone()));
@@ -101,11 +103,6 @@ impl Session {
   ) -> core::result::Result<(), TerminationCode> {
     info!("new control message stream");
     let mut control_stream_handler = ControlStreamHandler::new(send_stream, recv_stream);
-
-    // the server's Request ID starts at 1 and are odd
-    // The Request ID increments by 2 with ANNOUNCE, FETCH,
-    // SUBSCRIBE, SUBSCRIBE_ANNOUNCES or TRACK_STATUS request.
-    let relay_next_request_id = Arc::new(RwLock::new(1u64));
 
     // Client-server negotiation
     let client = match Self::negotiate(context.clone(), &mut control_stream_handler)
@@ -175,8 +172,7 @@ impl Session {
               client.clone(),
               &mut control_stream_handler,
               msg,
-              context.clone(),
-              relay_next_request_id.clone(),
+              context.clone()
             )
             .await
           {
@@ -198,7 +194,6 @@ impl Session {
               &mut control_stream_handler,
               msg,
               context.clone(),
-              relay_next_request_id.clone(),
             )
             .await
           {
@@ -220,7 +215,6 @@ impl Session {
             &mut control_stream_handler,
             msg,
             context.clone(),
-            relay_next_request_id.clone(),
           )
           .await
           {

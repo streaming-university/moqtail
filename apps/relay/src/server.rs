@@ -30,6 +30,7 @@ pub(crate) struct Server {
   pub fetch_requests: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
   pub subscribe_requests: Arc<RwLock<BTreeMap<u64, SubscribeRequest>>>,
   pub app_config: &'static AppConfig,
+  pub relay_next_request_id: Arc<RwLock<u64>>,
 }
 
 impl Server {
@@ -46,6 +47,7 @@ impl Server {
       fetch_requests: Arc::new(RwLock::new(BTreeMap::new())),
       subscribe_requests: Arc::new(RwLock::new(BTreeMap::new())),
       app_config: config,
+      relay_next_request_id: Arc::new(RwLock::new(1u64)), // relay's request id starts at 1 and are odd
     }
   }
 

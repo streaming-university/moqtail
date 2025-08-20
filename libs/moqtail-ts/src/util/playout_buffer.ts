@@ -111,11 +111,11 @@ export class PlayoutBuffer {
           const bufferedObj = this.#buffer.pop()!
           this.#moqObjectCountExitingBuffer++
           if (this.#moqObjectCountExitingBuffer % 50 === 0) {
-            console.log(`[PLAYOUT BUFFER] Exiting buffer: ${this.#moqObjectCountExitingBuffer} MoQ objects`)
+            // console.log(`[PLAYOUT BUFFER] Exiting buffer: ${this.#moqObjectCountExitingBuffer} MoQ objects`)
           }
           this.onObject(bufferedObj.object)
           if (this.#moqObjectCountExitingBuffer % 50 === 0) {
-            console.log(`[PLAYOUT BUFFER] Exported to decoder: ${this.#moqObjectCountExitingBuffer} MoQ objects`)
+            // console.log(`[PLAYOUT BUFFER] Exported to decoder: ${this.#moqObjectCountExitingBuffer} MoQ objects`)
           }
         } else {
           const sleepTime = Math.min(timeUntilReady, 50)
@@ -144,7 +144,7 @@ export class PlayoutBuffer {
 
         this.#moqObjectCountInBuffer++
         if (this.#moqObjectCountInBuffer % 50 === 0) {
-          console.log(`[PLAYOUT BUFFER] Buffered ${this.#moqObjectCountInBuffer} MoQ objects`)
+          // console.log(`[PLAYOUT BUFFER] Buffered ${this.#moqObjectCountInBuffer} MoQ objects`)
         }
         this.#buffer.push(bufferedObject)
       } catch (error) {

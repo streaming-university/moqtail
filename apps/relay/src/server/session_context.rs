@@ -10,13 +10,14 @@ use super::{client::MOQTClient, client_manager::ClientManager, config::AppConfig
 pub struct SessionContext {
   pub(crate) client_manager: Arc<RwLock<ClientManager>>,
   pub(crate) tracks: Arc<RwLock<BTreeMap<u64, Track>>>, // the tracks the relay is subscribed to, key is the track alias
-  pub(crate) _fetch_requests: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
+  pub(crate) fetch_requests: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
   pub(crate) subscribe_requests: Arc<RwLock<BTreeMap<u64, SubscribeRequest>>>,
   pub(crate) connection_id: usize,
   pub(crate) client: Arc<RwLock<Option<Arc<RwLock<MOQTClient>>>>>, // the client that is connected to this session
   pub(crate) connection: Connection,
   pub(crate) server_config: &'static AppConfig,
   pub(crate) is_connection_closed: Arc<RwLock<bool>>,
+  pub(crate) relay_next_request_id: Arc<RwLock<u64>>,
 }
 
 impl SessionContext {
@@ -27,17 +28,19 @@ impl SessionContext {
     fetch_requests: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
     subscribe_requests: Arc<RwLock<BTreeMap<u64, SubscribeRequest>>>,
     connection: Connection,
+    relay_next_request_id: Arc<RwLock<u64>>,
   ) -> Self {
     Self {
       client_manager,
       tracks,
-      _fetch_requests: fetch_requests,
+      fetch_requests,
       subscribe_requests,
       connection_id: connection.stable_id(),
       client: Arc::new(RwLock::new(None)), // initially no client is set
       connection,
       server_config,
       is_connection_closed: Arc::new(RwLock::new(false)),
+      relay_next_request_id,
     }
   }
 

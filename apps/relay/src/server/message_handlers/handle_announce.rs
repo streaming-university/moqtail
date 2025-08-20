@@ -13,7 +13,6 @@ pub async fn handle_announce_messages(
   control_stream_handler: &mut ControlStreamHandler,
   msg: ControlMessage,
   _context: Arc<SessionContext>,
-  _relay_next_request_id: Arc<tokio::sync::RwLock<u64>>,
 ) -> Result<(), TerminationCode> {
   match msg {
     ControlMessage::Announce(m) => {
