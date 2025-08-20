@@ -141,12 +141,22 @@ impl Subscription {
               return;
             }
 
-            if let Ok((stream_id, send_stream)) = self.handle_header(header.clone()).await {
-              self
-                .send_streams
-                .write()
-                .await
-                .insert(stream_id.clone(), send_stream.clone());
+            if let HeaderInfo::Subgroup {
+              header: _subgroup_header,
+            } = header
+            {
+              if let Ok((stream_id, send_stream)) = self.handle_header(header.clone()).await {
+                self
+                  .send_streams
+                  .write()
+                  .await
+                  .insert(stream_id.clone(), send_stream.clone());
+              }
+            } else {
+              error!(
+                "Received Header event for non-subgroup header: {:?}",
+                header
+              );
             }
           }
           TrackEvent::Object { object, stream_id } => {

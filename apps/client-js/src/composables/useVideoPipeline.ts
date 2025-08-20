@@ -20,7 +20,7 @@ setInterval(() => {
   const localTime = Date.now()
   const serverTime = clock.now()
   const diff = localTime - serverTime
-  console.log(`Local Time:${localTime} | Estimated Server Time:${serverTime}\nDifference:${diff}`)
+  //console.log(`Local Time:${localTime} | Estimated Server Time:${serverTime}\nDifference:${diff}`)
 }, 2000)
 export async function connectToRelay(url: string) {
   return await MoqtailClient.new({ url, supportedVersions: [0xff00000b] })
@@ -155,7 +155,8 @@ export async function startAudioEncoder({
   let shouldEncode = true
 
   setInterval(() => {
-    currentAudioGroupId += 2
+    currentAudioGroupId += 1
+    audioObjectId = 0n
   }, 2000)
 
   const audioContext = new AudioContext({ sampleRate: 48000 })
@@ -179,6 +180,7 @@ export async function startAudioEncoder({
         const captureTime = Math.round(clock!.now())
         const locHeaders = new ExtensionHeaders().addCaptureTimestamp(captureTime)
 
+        console.warn('Audio Group ID is:', currentAudioGroupId)
         // console.log('AudioEncoder output chunk:', chunk);
         const moqt = MoqtObject.newWithPayload(
           audioFullTrackName,

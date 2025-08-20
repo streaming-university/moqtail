@@ -687,7 +687,7 @@ export const RewindPlayer: React.FC<RewindPlayerProps> = ({
             >
               {userName.substring(0, 2).toUpperCase()}
             </div>
-            <h2 className="text-white text-xl font-semibold">{userName} - Rewind (Last 30s)</h2>
+            <h2 className="text-white text-xl font-semibold">{userName} - Rewind (Last 10s)</h2>
             <div className="bg-red-600 text-white text-xs px-2 py-1 rounded-full">REWIND MODE</div>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">

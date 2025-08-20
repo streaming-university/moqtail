@@ -29,13 +29,13 @@ self.onmessage = async (e) => {
   }
 
   if (type === 'init-audio-only') {
-    console.log('[DECODER] Initializing audio-only mode')
+    // console.log('[DECODER] Initializing audio-only mode')
     theDecoderConfig = decoderConfig || null
     return
   }
 
   if (type === 'reset') {
-    console.log('[DECODER] Resetting decoders at', new Date().toISOString())
+    // console.log('[DECODER] Resetting decoders at', new Date().toISOString())
     waitingForKeyframe = true
     if (frameTimeoutId) {
       clearTimeout(frameTimeoutId)
@@ -65,7 +65,7 @@ self.onmessage = async (e) => {
 
     moqObjectCount++
     if (moqObjectCount % 50 === 0) {
-      console.log(`[WORKER] Received ${moqObjectCount} MoQ objects`)
+      // console.log(`[WORKER] Received ${moqObjectCount} MoQ objects`)
     }
 
     //console.debug('[WORKER]Received the payload:', moqtObj)
@@ -83,7 +83,7 @@ self.onmessage = async (e) => {
     }, frameTimeoutMs)
 
     if ((configHeader || isKey) && !videoDecoder && theDecoderConfig) {
-      console.log('[DECODER] Creating new video decoder at', new Date().toISOString())
+      // console.log('[DECODER] Creating new video decoder at', new Date().toISOString())
       videoDecoder = new VideoDecoder({
         output: handleFrame,
         error: (error) => {
@@ -92,7 +92,7 @@ self.onmessage = async (e) => {
       })
 
       const videoDecoderConfig = theDecoderConfig
-      console.log('Using video decoder config:', videoDecoderConfig)
+      // console.log('Using video decoder config:', videoDecoderConfig)
       if (configHeader?.config) {
         videoDecoderConfig.description = configHeader.config
       }
@@ -155,7 +155,7 @@ self.onmessage = async (e) => {
     const timestamp = Number(headers.find((h) => ExtensionHeader.isCaptureTimestamp(h))?.timestamp ?? 0n)
 
     if (!audioDecoder) {
-      console.log('[DECODER] Creating new audio decoder at', new Date().toISOString())
+      // console.log('[DECODER] Creating new audio decoder at', new Date().toISOString())
       audioDecoder = new AudioDecoder({
         output: (frame) => {
           const pcm = new Float32Array(frame.numberOfFrames * frame.numberOfChannels)

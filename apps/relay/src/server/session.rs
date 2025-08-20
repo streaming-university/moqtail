@@ -7,7 +7,7 @@ use moqtail::transport::{
   control_stream_handler::ControlStreamHandler,
   data_stream_handler::{HeaderInfo, RecvDataStream},
 };
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::{Instrument, debug, error, info, info_span, warn};
 use wtransport::{RecvStream, SendStream, endpoint::IncomingSession};
@@ -15,7 +15,11 @@ use wtransport::{RecvStream, SendStream, endpoint::IncomingSession};
 use crate::server::Server;
 
 use super::{
-  client::MOQTClient, message_handlers, session_context::SessionContext, track::Track, utils,
+  client::MOQTClient,
+  message_handlers,
+  session_context::{RequestMaps, SessionContext},
+  track::Track,
+  utils,
 };
 use bytes::Bytes;
 
@@ -34,17 +38,27 @@ impl Session {
     let client_manager = server.client_manager.clone();
     let tracks = server.tracks.clone();
     let server_config = server.app_config;
-    let fetch_requests = server.fetch_requests.clone();
-    let subscribe_requests = server.subscribe_requests.clone();
+    let relay_fetch_requests = server.relay_fetch_requests.clone();
+    let client_fetch_requests = Arc::new(RwLock::new(BTreeMap::new()));
+    let relay_subscribe_requests = server.relay_subscribe_requests.clone();
+    let client_subscribe_requests = Arc::new(RwLock::new(BTreeMap::new()));
+    let relay_next_request_id = server.relay_next_request_id.clone();
     let connection = session_request.accept().await?;
+
+    let request_maps = RequestMaps {
+      relay_fetch_requests,
+      client_fetch_requests,
+      relay_subscribe_requests,
+      client_subscribe_requests,
+    };
 
     let context = Arc::new(SessionContext::new(
       server_config,
       client_manager,
       tracks,
-      fetch_requests,
-      subscribe_requests,
+      request_maps,
       connection,
+      relay_next_request_id,
     ));
 
     tokio::spawn(Self::handle_connection_close(context.clone()));
@@ -101,11 +115,6 @@ impl Session {
   ) -> core::result::Result<(), TerminationCode> {
     info!("new control message stream");
     let mut control_stream_handler = ControlStreamHandler::new(send_stream, recv_stream);
-
-    // the server's Request ID starts at 1 and are odd
-    // The Request ID increments by 2 with ANNOUNCE, FETCH,
-    // SUBSCRIBE, SUBSCRIBE_ANNOUNCES or TRACK_STATUS request.
-    let relay_next_request_id = Arc::new(RwLock::new(1u64));
 
     // Client-server negotiation
     let client = match Self::negotiate(context.clone(), &mut control_stream_handler)
@@ -176,7 +185,6 @@ impl Session {
               &mut control_stream_handler,
               msg,
               context.clone(),
-              relay_next_request_id.clone(),
             )
             .await
           {
@@ -198,7 +206,6 @@ impl Session {
               &mut control_stream_handler,
               msg,
               context.clone(),
-              relay_next_request_id.clone(),
             )
             .await
           {
@@ -220,7 +227,6 @@ impl Session {
             &mut control_stream_handler,
             msg,
             context.clone(),
-            relay_next_request_id.clone(),
           )
           .await
           {

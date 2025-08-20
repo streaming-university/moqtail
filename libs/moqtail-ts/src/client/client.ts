@@ -362,10 +362,20 @@ export class MoqtailClient {
       const params = parameters ? parameters.build() : new VersionSpecificParameters().build()
       let msg: Fetch
       let joiningRequest: MoqtailRequest | undefined
+      // Generate unique requestId at the beginning to ensure uniqueness
+      const requestId = this.#nextClientRequestId
+      console.log(
+        'MoqtailClient.fetch: generated requestId:',
+        requestId,
+        'for fetch type:',
+        typeAndProps.type,
+        'current #dontUseRequestId:',
+        this.#dontUseRequestId,
+      )
       switch (typeAndProps.type) {
         case FetchType.StandAlone:
           msg = new Fetch(
-            this.#nextClientRequestId,
+            requestId,
             priority,
             groupOrder,
             { type: typeAndProps.type, props: typeAndProps.props },
@@ -381,7 +391,7 @@ export class MoqtailClient {
               `No subscribe request for the given joiningRequestId: ${typeAndProps.props.joiningRequestId}`,
             )
           msg = new Fetch(
-            this.#nextClientRequestId,
+            requestId,
             priority,
             groupOrder,
             { type: typeAndProps.type, props: typeAndProps.props },
@@ -396,7 +406,7 @@ export class MoqtailClient {
               `No subscribe request for the given joiningRequestId: ${typeAndProps.props.joiningRequestId}`,
             )
           msg = new Fetch(
-            this.#nextClientRequestId,
+            requestId,
             priority,
             groupOrder,
             { type: typeAndProps.type, props: typeAndProps.props },
@@ -405,8 +415,21 @@ export class MoqtailClient {
           break
       }
       const request = new FetchRequest(msg)
+      console.log(
+        'MoqtailClient.fetch: storing FetchRequest with requestId:',
+        msg.requestId,
+        'for fetch type:',
+        typeAndProps.type,
+      )
+      console.log('MoqtailClient.fetch: full fetch message:', {
+        requestId: msg.requestId,
+        fetchType: typeAndProps.type,
+        joiningRequestId: typeAndProps.type !== FetchType.StandAlone ? typeAndProps.props.joiningRequestId : 'N/A',
+      })
       this.requests.set(msg.requestId, request)
+      console.log('MoqtailClient.fetch: about to send fetch message to server')
       await this.controlStream.send(msg)
+      console.log('MoqtailClient.fetch: fetch message sent successfully, waiting for response')
       const response = await request
       if (response instanceof FetchError) {
         this.requests.delete(msg.requestId)
@@ -603,8 +626,7 @@ export class MoqtailClient {
             while (true) {
               const { done, value: nextObject } = await reader.read()
               if (done) {
-                // Fetch Cleanup
-                this.requests.delete(request.requestId)
+                // Fetch data stream complete - don't delete request here, FetchOk handler will do it
                 request.controller?.close()
                 break
               }

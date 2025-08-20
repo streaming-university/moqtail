@@ -18,7 +18,6 @@ pub async fn handle_subscribe_messages(
   control_stream_handler: &mut ControlStreamHandler,
   msg: ControlMessage,
   context: Arc<SessionContext>,
-  relay_next_request_id: Arc<tokio::sync::RwLock<u64>>,
 ) -> Result<(), TerminationCode> {
   match msg {
     ControlMessage::Subscribe(m) => {
@@ -103,7 +102,7 @@ pub async fn handle_subscribe_messages(
           // send the subscribe message to the publisher
           let mut new_sub = sub.clone();
           new_sub.request_id =
-            Session::get_next_relay_request_id(relay_next_request_id.clone()).await;
+            Session::get_next_relay_request_id(context.relay_next_request_id.clone()).await;
 
           let publisher = publisher.read().await;
           publisher
@@ -117,13 +116,12 @@ pub async fn handle_subscribe_messages(
           // TODO: we need to add a timeout here or another loop to control expired requests
           let req =
             SubscribeRequest::new(original_request_id, context.connection_id, new_sub.clone());
-          let mut requests = context.subscribe_requests.write().await;
+          let mut requests = context.relay_subscribe_requests.write().await;
           requests.insert(new_sub.request_id, req.clone());
-          debug!(
-            "inserted request into publisher's subscribe requests: {:?}",
-            req
+          info!(
+            "inserted request into relay's subscribe requests: {:?} with relay's request id: {:?}",
+            req, new_sub.request_id
           );
-
           Ok(())
         } else {
           info!("track already exists, sending SubscribeOk");
@@ -131,6 +129,7 @@ pub async fn handle_subscribe_messages(
           let track = tracks.get_mut(&sub.track_alias).unwrap();
           let _ = track.add_subscription(client.clone(), sub.clone()).await;
           drop(tracks);
+
           // TODO: Send the first sub_ok message to the subscriber
           // for now, just sending some default values
           let subscribe_ok =
@@ -146,6 +145,15 @@ pub async fn handle_subscribe_messages(
 
       // return if there's an error
       if res.is_ok() {
+        // insert this request id into the clients subscribe requests
+        let req = SubscribeRequest::new(original_request_id, context.connection_id, sub.clone());
+        let mut requests = context.client_subscribe_requests.write().await;
+        requests.insert(sub.request_id, req.clone());
+        info!(
+          "inserted request into client's subscribe requests: {:?} with subscriber's request id: {:?}",
+          req, sub.request_id
+        );
+
         // also insert the request to the client's subscribe requests
         let client = client.read().await.clone();
         let mut requests = client.subscribe_requests.write().await;
@@ -170,7 +178,7 @@ pub async fn handle_subscribe_messages(
       let request_id = msg.request_id;
 
       let mut sub_request = {
-        let requests = context.subscribe_requests.read().await;
+        let requests = context.relay_subscribe_requests.read().await;
         // print out every request
         debug!("current requests: {:?}", requests);
         match requests.get(&request_id) {
