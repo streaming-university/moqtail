@@ -284,12 +284,18 @@ function SessionPage() {
         return
       }
 
+      console.log('SessionPage: About to fetch video with joiningRequestId:', videoRequestId)
+      console.log(
+        'SessionPage: All moqClient requestIds before video fetch:',
+        moqClient ? Array.from(moqClient.requests.keys()) : 'no client',
+      )
       const videoResult = await moqClient.fetch({
         priority: 0,
         groupOrder: GroupOrder.Original,
         typeAndProps: {
           type: FetchType.Relative,
           props: {
+            fullTrackName: videoTrackName,
             joiningRequestId: videoRequestId,
             joiningStart: 5n, // last 5 groups
           },
@@ -325,6 +331,10 @@ function SessionPage() {
         console.warn('Video fetch failed or returned error:', videoResult)
       }
 
+      // Add a small delay before audio fetch to prevent timing issues
+      console.log('Waiting 1 second before fetching audio...')
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
       // Fetch audio track
       const audioTrackName = getTrackname(roomState.name, userId, 'audio')
       console.log('Fetching audio track:', audioTrackName.toString())
@@ -350,12 +360,29 @@ function SessionPage() {
         console.error('No audio request id found for user:', userId)
         return
       }
+      console.log('SessionPage: About to fetch audio with joiningRequestId:', audioRequestId)
+      console.log(
+        'SessionPage: All moqClient requestIds before audio fetch:',
+        moqClient ? Array.from(moqClient.requests.keys()) : 'no client',
+      )
+
+      // Verify the joiningRequestId exists and is valid
+      console.log('SessionPage: Audio subscription validation:', {
+        audioRequestId,
+        requestExists: moqClient?.requests.has(audioRequestId),
+        requestType: moqClient?.requests.get(audioRequestId)?.constructor.name,
+        allUserSubscriptions: userSubscriptions,
+      })
+
+      // NOTE: Using standalone fetch for audio due to server-side issue with relative fetch for audio tracks
+      // TODO: Switch back to relative fetch once server-side bug is fixed
       const audioResult = await moqClient.fetch({
         priority: 0,
         groupOrder: GroupOrder.Original,
         typeAndProps: {
           type: FetchType.Relative,
           props: {
+            fullTrackName: audioTrackName,
             joiningRequestId: audioRequestId,
             joiningStart: 5n, // last 5 groups
           },
