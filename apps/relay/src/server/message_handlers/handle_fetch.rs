@@ -49,12 +49,8 @@ pub async fn handle_fetch_messages(
           let tracks = context.tracks.read().await;
           let track = tracks.get(&existing_sub.subscribe_request.track_alias);
 
-          if track.is_none() {
-            (None, None, None)
-          } else {
-            let t = track.unwrap().clone();
-
-            let largest_location = t.largest_location.read().await;
+          if let Some(track) = track {
+            let largest_location = track.largest_location.read().await;
 
             // TODO: validate the range
             if largest_location.group < joining_fetch_props.joining_start {
@@ -81,10 +77,12 @@ pub async fn handle_fetch_messages(
             let start_location = Location::new(start_group, 0);
             let end_location = Location::new(largest_location.group, 0);
             (
-              Some(track.unwrap().clone()),
+              Some(track.clone()),
               Some(start_location),
               Some(end_location),
             )
+          } else {
+            (None, None, None)
           }
         } else {
           // standalone fetch
@@ -101,16 +99,14 @@ pub async fn handle_fetch_messages(
               .map(|track| track.1.clone())
           };
 
-          if track.is_none() {
-            (None, None, None)
-          } else {
-            let track = track.unwrap();
-
+          if let Some(track) = track {
             (
               Some(track),
               Some(props.start_location.clone()),
               Some(props.end_location.clone()),
             )
+          } else {
+            (None, None, None)
           }
         }
       };
