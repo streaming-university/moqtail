@@ -28,80 +28,85 @@ pub async fn handle_fetch_messages(
       let fetch = *m;
       let request_id = fetch.clone().request_id;
 
-      let (track, start_location, end_location) =
-        if let Some(joining_fetch_props) = fetch.clone().joining_fetch_props {
-          let sub_request_id = joining_fetch_props.joining_request_id;
-          let sub_requests = context.subscribe_requests.read().await;
-          // the original request id is the request id of the subscribe request that created the subscription
-          let existing_sub = sub_requests
-            .iter()
-            .find(|e| e.1.original_request_id == sub_request_id);
-          if existing_sub.is_none() {
-            error!(
-              "handle_fetch_messages | Joining fetch request id not found: {:?} {:?}",
-              sub_request_id, sub_requests
-            );
-            return Err(TerminationCode::InternalError);
-          }
-          let existing_sub = existing_sub.unwrap().1;
-
-          let tracks = context.tracks.read().await;
-          let track = tracks.get(&existing_sub.subscribe_request.track_alias);
-
-          if track.is_none() {
-            (None, None, None)
-          } else {
-            let t = track.unwrap().clone();
-
-            let largest_location = t.largest_location.read().await;
-            
-            // TODO: validate the range
-            if largest_location.group < joining_fetch_props.joining_start {
-              error!("handle_fetch_messages | Joining fetch start location is larger than the track's largest location: {:?} {:?}", largest_location, joining_fetch_props.joining_start);
-              send_fetch_error(client.clone(), request_id, FetchErrorCode::InvalidRange, ReasonPhrase::try_new(String::from("Invalid range")).unwrap()).await;
-            }
-
-            let start_group = if fetch.fetch_type == FetchType::RelativeFetch {
-              largest_location.group - joining_fetch_props.joining_start
-            } else {
-              joining_fetch_props.joining_start
-            };
-
-            let start_location = Location::new(start_group, 0);
-            let end_location = Location::new(largest_location.group, 0);
-            (
-              Some(track.unwrap().clone()),
-              Some(start_location),
-              Some(end_location),
-            )
-          }
-        } else {
-          // standalone fetch
-          let props = fetch.standalone_fetch_props.clone().unwrap();
-
-          // let's see whether the track is in the cache
-          let track = {
-            let tracks = context.tracks.read().await;
-            tracks
+      let fn_ = async {
+          if let Some(joining_fetch_props) = fetch.clone().joining_fetch_props {
+            let sub_request_id = joining_fetch_props.joining_request_id;
+            let sub_requests = context.client_subscribe_requests.read().await;
+            // the original request id is the request id of the subscribe request that created the subscription
+            let existing_sub = sub_requests
               .iter()
-              .find(|e| {
-                e.1.track_namespace == props.track_namespace && e.1.track_name == props.track_name
-              })
-              .map(|track| track.1.clone())
-          };
-
-          if track.is_none() {
-            (None, None, None)
+              .find(|e| e.1.original_request_id == sub_request_id);
+            if existing_sub.is_none() {
+              error!(
+                "handle_fetch_messages | Joining fetch request id not found: {:?} {:?}",
+                sub_request_id, sub_requests
+              );
+              // return Err(TerminationCode::InternalError);
+              return (None, None, None);
+            }
+            let existing_sub = existing_sub.unwrap().1;
+  
+            let tracks = context.tracks.read().await;
+            let track = tracks.get(&existing_sub.subscribe_request.track_alias);
+  
+            if track.is_none() {
+              (None, None, None)
+            } else {
+              let t = track.unwrap().clone();
+  
+              let largest_location = t.largest_location.read().await;
+              
+              // TODO: validate the range
+              if largest_location.group < joining_fetch_props.joining_start {
+                error!("handle_fetch_messages | Joining fetch start location is larger than the track's largest location: {:?} {:?}", largest_location, joining_fetch_props.joining_start);
+                send_fetch_error(client.clone(), request_id, FetchErrorCode::InvalidRange, ReasonPhrase::try_new(String::from("Invalid range")).unwrap()).await;
+                return (None, None, None);
+              }
+  
+              let start_group = if fetch.fetch_type == FetchType::RelativeFetch {
+                largest_location.group - joining_fetch_props.joining_start
+              } else {
+                joining_fetch_props.joining_start
+              };
+  
+              let start_location = Location::new(start_group, 0);
+              let end_location = Location::new(largest_location.group, 0);
+              (
+                Some(track.unwrap().clone()),
+                Some(start_location),
+                Some(end_location),
+              )
+            }
           } else {
-            let track = track.unwrap();
-
-            (
-              Some(track),
-              Some(props.start_location.clone()),
-              Some(props.end_location.clone()),
-            )
+            // standalone fetch
+            let props = fetch.standalone_fetch_props.clone().unwrap();
+  
+            // let's see whether the track is in the cache
+            let track = {
+              let tracks = context.tracks.read().await;
+              tracks
+                .iter()
+                .find(|e| {
+                  e.1.track_namespace == props.track_namespace && e.1.track_name == props.track_name
+                })
+                .map(|track| track.1.clone())
+            };
+  
+            if track.is_none() {
+              (None, None, None)
+            } else {
+              let track = track.unwrap();
+  
+              (
+                Some(track),
+                Some(props.start_location.clone()),
+                Some(props.end_location.clone()),
+              )
+            }
           }
         };
+
+      let (track, start_location, end_location) = fn_.await;
 
       // TODO: send fetch message to the publisher
       if track.is_none() {

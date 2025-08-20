@@ -7,7 +7,7 @@ use moqtail::transport::{
   control_stream_handler::ControlStreamHandler,
   data_stream_handler::{HeaderInfo, RecvDataStream},
 };
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::{Instrument, debug, error, info, info_span, warn};
 use wtransport::{RecvStream, SendStream, endpoint::IncomingSession};
@@ -15,7 +15,7 @@ use wtransport::{RecvStream, SendStream, endpoint::IncomingSession};
 use crate::server::Server;
 
 use super::{
-  client::MOQTClient, message_handlers, session_context::SessionContext, track::Track, utils,
+  client::MOQTClient, message_handlers, session_context::{RequestMaps, SessionContext}, track::Track, utils,
 };
 use bytes::Bytes;
 
@@ -35,16 +35,22 @@ impl Session {
     let tracks = server.tracks.clone();
     let server_config = server.app_config;
     let fetch_requests = server.fetch_requests.clone();
-    let subscribe_requests = server.subscribe_requests.clone();
+    let relay_subscribe_requests = server.relay_subscribe_requests.clone();
+    let client_subscribe_requests = Arc::new(RwLock::new(BTreeMap::new()));
     let relay_next_request_id = server.relay_next_request_id.clone();
     let connection = session_request.accept().await?;
+
+    let request_maps = RequestMaps {
+      fetch_requests,
+      relay_subscribe_requests,
+      client_subscribe_requests,
+    };
 
     let context = Arc::new(SessionContext::new(
       server_config,
       client_manager,
       tracks,
-      fetch_requests,
-      subscribe_requests,
+      request_maps,
       connection,
       relay_next_request_id,
     ));
@@ -172,7 +178,7 @@ impl Session {
               client.clone(),
               &mut control_stream_handler,
               msg,
-              context.clone()
+              context.clone(),
             )
             .await
           {
