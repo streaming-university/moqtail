@@ -46,7 +46,7 @@ impl Track {
     track_namespace: Tuple,
     track_name: String,
     cache_size: usize,
-    publisher_connection_id: usize
+    publisher_connection_id: usize,
   ) -> Self {
     let (event_tx, event_rx) = tokio::sync::broadcast::channel(1000);
 
