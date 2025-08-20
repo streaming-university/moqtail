@@ -27,7 +27,7 @@ use wtransport::Endpoint;
 pub(crate) struct Server {
   pub client_manager: Arc<RwLock<ClientManager>>,
   pub tracks: Arc<RwLock<BTreeMap<u64, Track>>>, // the tracks the relay is subscribed to, key is the track alias
-  pub fetch_requests: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
+  pub relay_fetch_requests: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
   pub relay_subscribe_requests: Arc<RwLock<BTreeMap<u64, SubscribeRequest>>>,
   pub app_config: &'static AppConfig,
   pub relay_next_request_id: Arc<RwLock<u64>>,
@@ -44,7 +44,7 @@ impl Server {
     Server {
       client_manager: Arc::new(RwLock::new(ClientManager::new())),
       tracks: Arc::new(RwLock::new(BTreeMap::new())),
-      fetch_requests: Arc::new(RwLock::new(BTreeMap::new())),
+      relay_fetch_requests: Arc::new(RwLock::new(BTreeMap::new())),
       relay_subscribe_requests: Arc::new(RwLock::new(BTreeMap::new())),
       app_config: config,
       relay_next_request_id: Arc::new(RwLock::new(1u64)), // relay's request id starts at 1 and are odd

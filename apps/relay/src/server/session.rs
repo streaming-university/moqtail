@@ -38,14 +38,16 @@ impl Session {
     let client_manager = server.client_manager.clone();
     let tracks = server.tracks.clone();
     let server_config = server.app_config;
-    let fetch_requests = server.fetch_requests.clone();
+    let relay_fetch_requests = server.relay_fetch_requests.clone();
+    let client_fetch_requests = Arc::new(RwLock::new(BTreeMap::new()));
     let relay_subscribe_requests = server.relay_subscribe_requests.clone();
     let client_subscribe_requests = Arc::new(RwLock::new(BTreeMap::new()));
     let relay_next_request_id = server.relay_next_request_id.clone();
     let connection = session_request.accept().await?;
 
     let request_maps = RequestMaps {
-      fetch_requests,
+      relay_fetch_requests,
+      client_fetch_requests,
       relay_subscribe_requests,
       client_subscribe_requests,
     };

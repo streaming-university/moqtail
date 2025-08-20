@@ -224,12 +224,8 @@ pub async fn handle_fetch_messages(
 
       // TODO: When the relay sends a fetch request to the publisher,
       // it will wait for Fetch OK. However this is not implemented yet.
-      // Here is just a preliminary attempt for this, checking reqeust id
-      // Also, this requests object is used to hold the incoming fetch requests
-      // and also can be used to hold relay's requests
-      // Question: What about two relays communicate with each other,
-      // they will use odd numbers...
-      let requests = context.fetch_requests.read().await;
+      // Here is just a preliminary attempt for this, validating request id
+      let requests = context.relay_fetch_requests.read().await;
       if !requests.contains_key(&msg.request_id) {
         error!("handle_fetch_messages | FetchOk | request_id does not exist");
         return Err(TerminationCode::InternalError);
