@@ -7,7 +7,7 @@
     ["moqtail-rs", "relay", "client-rs", "catalog-server"],
     ["moqtail-ts", "client-js"]
   ],
-  "access": "restricted",
+  "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "privatePackages": {
