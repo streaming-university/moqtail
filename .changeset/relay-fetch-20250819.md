@@ -1,5 +1,5 @@
 ---
-'moqtail-rs': major
+'moqtail-rs': minor
 ---
 
-Implement standalone fetch support for track retrieval
+Implement standalone fetch support for track retrieval.

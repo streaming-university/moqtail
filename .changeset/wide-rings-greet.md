@@ -3,4 +3,4 @@
 'moqtail-ts': minor
 ---
 
-Media stream subscription management added with independend video/audio control.
+Media stream subscription management added with independent video/audio control.
