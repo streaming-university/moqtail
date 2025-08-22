@@ -35,7 +35,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci --workspaces=false
+        run: npm ci
 
       - name: Create Release Pull Request or Publish
         id: changesets
