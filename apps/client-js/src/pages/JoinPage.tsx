@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { JoinResponse, ErrorResponse } from '../types/types'
-import { useSession } from '../contexts/SessionContext'
-import { useSocket } from '../sockets/SocketContext'
-import { SocketClock } from '../util/socketClock'
-import { setClock } from '../composables/useVideoPipeline'
+import { JoinResponse, ErrorResponse } from '@/types/types'
+import { useSession } from '@/contexts/SessionContext'
+import { useSocket } from '@/sockets/SocketContext'
+import { SocketClock } from '@/util/socketClock'
+import { setClock } from '@/composables/useVideoPipeline'
 
 export default function JoinPage() {
   const [username, setUsername] = useState('')

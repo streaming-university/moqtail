@@ -22,7 +22,7 @@ import {
   VolumeX,
 } from 'lucide-react'
 
-import { useSession } from '../contexts/SessionContext'
+import { useSession } from '@/contexts/SessionContext'
 import {
   RoomUser,
   ChatMessage,
@@ -31,8 +31,8 @@ import {
   UserDisconnectedMessage,
   UpdateTrackRequest,
   RoomTimeoutMessage,
-} from '../types/types'
-import { useSocket } from '../sockets/SocketContext'
+} from '@/types/types'
+import { useSocket } from '@/sockets/SocketContext'
 import {
   FullTrackName,
   ObjectForwardingPreference,
@@ -41,7 +41,7 @@ import {
   FetchType,
   Location,
   FetchError,
-} from '../../../../libs/moqtail-ts/src/model'
+} from 'moqtail-ts/model'
 import {
   announceNamespaces,
   initializeChatMessageSender,
@@ -52,12 +52,11 @@ import {
   subscribeToChatTrack,
   onlyUseVideoSubscriber,
   onlyUseAudioSubscriber,
-} from '../composables/useVideoPipeline'
-import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client'
-import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
-import { ClockNormalizer } from '../../../../libs/moqtail-ts/src/util/clock_normalizer'
+} from '@/composables/useVideoPipeline'
+import { MoqtailClient } from 'moqtail-ts/client'
+import { NetworkTelemetry, ClockNormalizer } from 'moqtail-ts/util'
 import { RewindPlayer } from './RewindPlayer'
-import { BufferedMoqtObject } from '../composables/rewindBuffer'
+import { BufferedMoqtObject } from '@/composables/rewindBuffer'
 
 function SessionPage() {
   // initialize the MOQTail client

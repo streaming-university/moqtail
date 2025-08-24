@@ -1,7 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Play, Pause, X, RotateCcw } from 'lucide-react'
-import { RewindBuffer, BufferedMoqtObject } from '../composables/rewindBuffer'
-import { MoqtObject } from '../../../../libs/moqtail-ts/src/model/data'
+import { RewindBuffer, BufferedMoqtObject } from '@/composables/rewindBuffer'
+import { MoqtObject } from 'moqtail-ts/model'
+
+import RewindDecoderWorker from '@/workers/rewindDecoderWorker?worker'
+import PCMPlayerProcessorURL from '@/workers/pcmPlayerProcessor?url'
 
 interface RewindPlayerProps {
   isOpen: boolean
@@ -220,7 +223,7 @@ export const RewindPlayer: React.FC<RewindPlayerProps> = ({
         if (canvasRef.current && !workerRef.current) {
           console.log('RewindPlayer: Initializing dedicated worker and canvas')
 
-          const worker = new Worker(new URL('@app/workers/rewindDecoderWorker.ts', import.meta.url), { type: 'module' })
+          const worker = new RewindDecoderWorker()
 
           // Transfer control of our dedicated canvas to worker
           const offscreen = canvasRef.current.transferControlToOffscreen()
@@ -262,7 +265,7 @@ export const RewindPlayer: React.FC<RewindPlayerProps> = ({
           const audioContext = new AudioContext({ sampleRate: 48000 })
 
           // Use a different worklet processor name to avoid conflicts with live pipeline
-          await audioContext.audioWorklet.addModule(new URL('@app/workers/pcmPlayerProcessor.js', import.meta.url))
+          await audioContext.audioWorklet.addModule(PCMPlayerProcessorURL)
 
           // Create audio node with rewind-specific processor name
           const audioNode = new AudioWorkletNode(audioContext, 'pcm-player-processor')

@@ -18,7 +18,16 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* Paths */
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "moqtail-ts/client": ["../../libs/moqtail-ts/src/client/index.ts"],
+      "moqtail-ts/model": ["../../libs/moqtail-ts/src/model/index.ts"],
+      "moqtail-ts/util": ["../../libs/moqtail-ts/src/util/index.ts"]
+    }
   },
   "include": ["src"]
 }

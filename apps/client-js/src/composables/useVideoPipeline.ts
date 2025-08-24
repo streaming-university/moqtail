@@ -1,16 +1,21 @@
-import { ExtensionHeaders } from '../../../../libs/moqtail-ts/src/model/extension_header/extension_header'
-import { ObjectForwardingPreference } from '../../../../libs/moqtail-ts/src/model/data/constant'
-import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client'
-import { FilterType, GroupOrder, SubscribeError } from '../../../../libs/moqtail-ts/src/model/control'
-import { Tuple } from '../../../../libs/moqtail-ts/src/model/common/tuple'
-import { LiveTrackSource } from '../../../../libs/moqtail-ts/src/client/track/content_source'
-import { FullTrackName, MoqtObject } from '../../../../libs/moqtail-ts/src/model/data'
-import { Location } from '../../../../libs/moqtail-ts/src/model/common/location'
-import { PlayoutBuffer } from '../../../../libs/moqtail-ts/src/util/playout_buffer'
-import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
+import {
+  ExtensionHeaders,
+  ObjectForwardingPreference,
+  FilterType,
+  GroupOrder,
+  SubscribeError,
+  Tuple,
+  FullTrackName,
+  MoqtObject,
+  Location,
+} from 'moqtail-ts/model'
+import { MoqtailClient, LiveTrackSource, SubscribeOptions } from 'moqtail-ts/client'
+import { PlayoutBuffer, NetworkTelemetry } from 'moqtail-ts/util'
 import { RefObject } from 'react'
-import { SubscribeOptions } from '../../../../libs/moqtail-ts/src/client/types'
-import { SocketClock } from '../util/socketClock'
+import { SocketClock } from '@/util/socketClock'
+
+import DecodeWorker from '@/workers/decoderWorker?worker'
+import PCMPlayerProcessorURL from '@/workers/pcmPlayerProcessor?url'
 
 let clock: SocketClock
 export function setClock(c: SocketClock) {
@@ -160,7 +165,7 @@ export async function startAudioEncoder({
   }, 2000)
 
   const audioContext = new AudioContext({ sampleRate: 48000 })
-  await audioContext.audioWorklet.addModule(new URL('@app/workers/pcmPlayerProcessor.js', import.meta.url))
+  await audioContext.audioWorklet.addModule(PCMPlayerProcessorURL)
 
   const source = audioContext.createMediaStreamSource(stream) // same stream as video
   const audioNode = new AudioWorkletNode(audioContext, 'audio-encoder-processor')
@@ -595,7 +600,7 @@ function getOrCreateWorkerAndCanvas(canvas: HTMLCanvasElement) {
   }
 
   try {
-    const worker = new Worker(new URL('@app/workers/decoderWorker.ts', import.meta.url), { type: 'module' })
+    const worker = new DecodeWorker()
     const offscreen = canvas.transferControlToOffscreen()
     worker.postMessage({ type: 'init', canvas: offscreen, decoderConfig: window.appSettings.videoDecoderConfig }, [
       offscreen,
@@ -619,7 +624,7 @@ function getOrCreateWorkerAndCanvas(canvas: HTMLCanvasElement) {
 }
 
 async function setupAudioPlayback(audioContext: AudioContext) {
-  await audioContext.audioWorklet.addModule(new URL('@app/workers/pcmPlayerProcessor.js', import.meta.url))
+  await audioContext.audioWorklet.addModule(PCMPlayerProcessorURL)
   const audioNode = new AudioWorkletNode(audioContext, 'pcm-player-processor')
   audioNode.connect(audioContext.destination)
   return audioNode
@@ -891,7 +896,7 @@ export function onlyUseAudioSubscriber(
   const setup = async (): Promise<{ audioRequestId?: bigint; cleanup: () => void }> => {
     console.log('Setting up audio-only subscription')
 
-    const worker = new Worker(new URL('@app/workers/decoderWorker.ts', import.meta.url), { type: 'module' })
+    const worker = new DecodeWorker()
     worker.postMessage({ type: 'init-audio-only', decoderConfig: window.appSettings.audioDecoderConfig })
 
     const audioNode = await setupAudioPlayback(new AudioContext({ sampleRate: 48000 }))
