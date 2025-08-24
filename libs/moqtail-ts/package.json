@@ -42,6 +42,36 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
+    },
+    "./client": {
+      "import": {
+        "types": "./dist/client/index.d.ts",
+        "default": "./dist/client/index.js"
+      },
+      "require": {
+        "types": "./dist/client/index.d.cts",
+        "default": "./dist/client/index.cjs"
+      }
+    },
+    "./model": {
+      "import": {
+        "types": "./dist/model/index.d.ts",
+        "default": "./dist/model/index.js"
+      },
+      "require": {
+        "types": "./dist/model/index.d.cts",
+        "default": "./dist/model/index.cjs"
+      }
+    },
+    "./util": {
+      "import": {
+        "types": "./dist/util/index.d.ts",
+        "default": "./dist/util/index.js"
+      },
+      "require": {
+        "types": "./dist/util/index.d.cts",
+        "default": "./dist/util/index.cjs"
+      }
     }
   },
   "scripts": {
@@ -50,7 +80,7 @@
     "format": "prettier --check .",
     "test:run": "vitest run",
     "clean": "rimraf dist",
-    "docs": "typedoc --out docs ./src"
+    "docs": "typedoc"
   },
   "devDependencies": {
     "@microsoft/api-extractor": "^7.52.11",
