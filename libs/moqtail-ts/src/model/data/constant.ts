@@ -86,8 +86,19 @@ export namespace SubgroupHeaderType {
   }
 }
 
+/**
+ * Publisher's preferred object delivery mechanism for a track.
+ *
+ * Semantics:
+ * - `Subgroup`: Objects are forwarded inside ordered subgroups (reliable / ordered within subgroup semantics per protocol).
+ * - `Datagram`: Objects are forwarded as unreliable datagrams when possible (may be lost / reordered) – best effort, lower overhead.
+ *
+ * The preference is advisory: the relay / transport layer MAY override based on negotiated capabilities.
+ */
 export enum ObjectForwardingPreference {
+  /** Use ordered subgroups (reliable) */
   Subgroup = 'Subgroup',
+  /** Use unreliable datagrams when feasible */
   Datagram = 'Datagram',
 }
 export namespace ObjectForwardingPreference {

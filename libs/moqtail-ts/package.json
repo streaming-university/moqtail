@@ -49,12 +49,14 @@
     "test": "vitest",
     "format": "prettier --check .",
     "test:run": "vitest run",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "docs": "typedoc --out docs ./src"
   },
   "devDependencies": {
     "@tsconfig/strictest": "^2.0.5",
     "tslib": "^2.8.1",
     "tsup": "^8.5.0",
+    "typedoc": "^0.28.10",
     "typescript": "^5.1.0",
     "vitest": "^3.1.4"
   },
