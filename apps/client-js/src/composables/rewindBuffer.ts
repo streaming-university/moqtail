@@ -1,5 +1,5 @@
-import { MoqtObject } from '../../../../libs/moqtail-ts/src/model/data'
-import { PullPlayoutBuffer } from '../../../../libs/moqtail-ts/src/util/pull_playout_buffer'
+import { MoqtObject } from 'moqtail-ts/model'
+import { PullPlayoutBuffer } from 'moqtail-ts/util'
 
 export interface BufferedMoqtObject {
   object: MoqtObject

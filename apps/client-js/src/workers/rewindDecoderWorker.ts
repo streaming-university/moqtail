@@ -1,7 +1,4 @@
-import {
-  ExtensionHeader,
-  ExtensionHeaders,
-} from '../../../../libs/moqtail-ts/src/model/extension_header/extension_header'
+import { ExtensionHeader, ExtensionHeaders } from 'moqtail-ts/model'
 
 let ctx: OffscreenCanvasRenderingContext2D | null = null
 let videoDecoder: VideoDecoder | null = null

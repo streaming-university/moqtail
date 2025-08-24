@@ -1,5 +1,5 @@
 import { Socket } from 'socket.io-client'
-import { Clock } from '../../../../libs/moqtail-ts/src/util/playout_buffer'
+import { Clock } from 'moqtail-ts/util'
 
 export class SocketClock implements Clock {
   private offset: number | undefined

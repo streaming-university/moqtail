@@ -12,7 +12,7 @@ import {
   Smile,
   RotateCcw,
 } from 'lucide-react'
-import { useSession } from '../contexts/SessionContext'
+import { useSession } from '@/contexts/SessionContext'
 import {
   RoomUser,
   ChatMessage,
@@ -21,9 +21,9 @@ import {
   UserDisconnectedMessage,
   TrackType,
   UpdateTrackRequest,
-} from '../types/types'
-import { useSocket } from '../sockets/SocketContext'
-import { FullTrackName, ObjectForwardingPreference, Tuple } from '../../../../libs/moqtail-ts/src/model'
+} from '@/types/types'
+import { useSocket } from '@/sockets/SocketContext'
+import { FullTrackName, ObjectForwardingPreference, Tuple } from 'moqtail-ts/model'
 import {
   announceNamespaces,
   initializeChatMessageSender,
@@ -38,10 +38,9 @@ import {
   getRewindBuffer,
   clearRewindBuffer,
   clearAllRewindBuffers,
-} from '../composables/useVideoPipeline'
-import { MoqtailClient } from '../../../../libs/moqtail-ts/src/client/client'
-import { AkamaiOffset } from '../../../../libs/moqtail-ts/src/util/get_akamai_offset'
-import { NetworkTelemetry } from '../../../../libs/moqtail-ts/src/util/telemetry'
+} from '@/composables/useVideoPipeline'
+import { MoqtailClient } from 'moqtail-ts/client'
+import { AkamaiOffset, NetworkTelemetry } from 'moqtail-ts/util'
 import { RewindPlayer } from './RewindPlayer'
 
 function SessionPage() {
