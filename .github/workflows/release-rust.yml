@@ -1,0 +1,31 @@
+name: Release Rust
+
+on:
+  push:
+    tags:
+      - 'moqtail-rs@*'
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  FORCE_COLOR: true
+
+jobs:
+  release:
+    name: Release Rust
+    if: ${{ github.repository_owner == 'streaming-university' }}
+    runs-on: ubuntu-latest
+    environment: crates
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Cache Rust Workspace
+        uses: Swatinem/rust-cache@v2
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+        run: cargo publish -p moqtail

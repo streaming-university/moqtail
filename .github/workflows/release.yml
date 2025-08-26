@@ -13,7 +13,7 @@ env:
   FORCE_COLOR: true
 
 jobs:
-  changelog:
+  release:
     name: Changelog PR or Release
     if: ${{ github.repository_owner == 'streaming-university' }}
     runs-on: ubuntu-latest
@@ -37,6 +37,12 @@ jobs:
       - run: npm clean-install
       - run: npm install --global corepack@latest
       - run: corepack npm audit signatures
+
+      - name: Cache Rust Workspace
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build -p moqtail --release
 
       - name: Create Release Pull Request or Publish
         id: changesets
