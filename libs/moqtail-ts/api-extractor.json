@@ -4,5 +4,12 @@
   "apiReport": { "enabled": false },
   "docModel": { "enabled": false },
   "dtsRollup": { "enabled": false },
-  "tsdocMetadata": { "enabled": false }
+  "tsdocMetadata": { "enabled": false },
+  "messages": {
+    "extractorMessageReporting": {
+      "ae-missing-release-tag": {
+        "logLevel": "none"
+      }
+    }
+  }
 }
