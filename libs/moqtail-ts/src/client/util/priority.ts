@@ -1,7 +1,7 @@
 export function getTransportPriority(priority: number): number {
   // Round to nearest integer and clamp between 0-255
   priority = Math.max(0, Math.min(255, Math.round(priority)))
-  // Invert then map over 0-Number.MAX_SAFE_INTEGER so 0-\>MAX_SAFE_INTEGER and 255-\>0
+  // Invert then map over 0-Number.MAX_SAFE_INTEGER so 0->MAX_SAFE_INTEGER and 255->0
   if (priority === 0) return Number.MAX_SAFE_INTEGER
   if (priority === 255) return 0
   // Due to floating-point precision below formula returns Number.MAX_SAFE_INTEGER + 1 for 0

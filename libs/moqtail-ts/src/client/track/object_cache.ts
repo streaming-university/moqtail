@@ -9,7 +9,7 @@ import { MoqtObject } from '../../model/data/object'
  * locate insertion points / range bounds efficiently. Subgroup ordinality is currently ignored for ordering
  * (adjust if protocol semantics require finer granularity later).
  *
- * Typical usage:
+ * @example Typical usage
  * ```ts
  * const cache: ObjectCache = new MemoryObjectCache()
  * cache.add(obj)

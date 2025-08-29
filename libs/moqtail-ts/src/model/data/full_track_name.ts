@@ -56,10 +56,12 @@ export class FullTrackName {
    * 3. Encode name string to UTF-8 if needed.
    * 4. Reject if total serialized length (namespace tuple + name bytes) \> {@link MAX_FULL_TRACK_NAME_LENGTH}.
    *
-   * @throws {@link TrackNameError} on any constraint violation.
+   * @throws :{@link TrackNameError} on any constraint violation.
    * @example
+   * ```ts
    * const full = FullTrackName.tryNew('media/video', 'keyframe')
    * console.log(full.toString()) // media/video:6b65796672616d65
+   * ```
    */
   static tryNew(namespace: string | Tuple, name: string | Uint8Array): FullTrackName {
     const nsTuple = typeof namespace === 'string' ? Tuple.fromUtf8Path(namespace) : namespace
@@ -95,7 +97,7 @@ export class FullTrackName {
   /**
    * Parse a serialized full track name. Performs the same validations as {@link FullTrackName.tryNew}.
    * The provided buffer's read cursor advances accordingly.
-   * @throws {@link TrackNameError} if constraints are violated.
+   * @throws :{@link TrackNameError} if constraints are violated.
    */
   static deserialize(buf: BaseByteBuffer): FullTrackName {
     const namespace = buf.getTuple()

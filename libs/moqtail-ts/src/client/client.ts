@@ -261,7 +261,7 @@ export class MoqtailClient {
    *
    * @returns Promise resolving to a ready {@link MoqtailClient} instance.
    *
-   * @throws : {@link ProtocolViolationError} If the server sends an unexpected or invalid message during setup.
+   * @throws :{@link ProtocolViolationError} If the server sends an unexpected or invalid message during setup.
    *
    * @example Minimal connection
    * ```ts
@@ -346,28 +346,24 @@ export class MoqtailClient {
    *
    * @returns Promise that resolves once shutdown logic completes. Subsequent calls are safe no-ops.
    *
-   * @example
+   * @example Basic usage
    * ```ts
-   * // Basic usage
    * await client.disconnect();
    * ```
    *
-   * @example
+   * @example With reason
    * ```ts
-   * // With reason
    * await client.disconnect('user logout');
    * ```
    *
-   * @example
+   * @example Idempotent double call
    * ```ts
-   * // Idempotent double call
    * await client.disconnect();
    * await client.disconnect(); // no error
    * ```
    *
-   * @example
+   * @example Page unload safety
    * ```ts
-   * // Page unload safety
    * window.addEventListener('beforeunload', () => {
    *   client.disconnect('page unload');
    * });
@@ -397,9 +393,8 @@ export class MoqtailClient {
    * @returns void
    * @throws : {@link MoqtailError} If the client has been destroyed.
    *
-   * @example
+   * @example Create a live video track from getUserMedia
    * ```ts
-   * // Create a live video track from getUserMedia
    * const stream = await navigator.mediaDevices.getUserMedia({ video: true });
    * const videoTrack = stream.getVideoTracks()[0];
    *
@@ -481,9 +476,8 @@ export class MoqtailClient {
    * @throws : {@link ProtocolViolationError} If required fields are missing or inconsistent.
    * @throws : {@link InternalError} On transport/protocol failure (disconnect is triggered before rethrow).
    *
-   * @example
+   * @example Subscribe to the latest object and receive future objects as they arrive
    * ```ts
-   * // Subscribe to the latest object and receive future objects as they arrive
    * const result = await client.subscribe({
    *   fullTrackName,
    *   filterType: FilterType.LatestObject,
@@ -498,9 +492,8 @@ export class MoqtailClient {
    * }
    * ```
    *
-   * @example
+   * @example Subscribe to a future range (waits for those objects to arrive)
    * ```ts
-   * // Subscribe to a future range (waits for those objects to arrive)
    * const result = await client.subscribe({
    *   fullTrackName,
    *   filterType: FilterType.AbsoluteRange,
@@ -636,9 +629,8 @@ export class MoqtailClient {
    * - Only targets SUBSCRIBE requests, not fetches. Passing a fetch request id is ignored (no-op).
    * - Safe to call multiple times; extra calls have no effect.
    *
-   * @example
+   * @example Subscribe and later unsubscribe
    * ```ts
-   * // Subscribe and later unsubscribe
    * const sub = await client.subscribe({ fullTrackName, filterType: FilterType.LatestObject, forward: true, groupOrder: GroupOrder.Original, priority: 0 });
    * if (!(sub instanceof SubscribeError)) {
    *   // ...consume objects...
@@ -646,9 +638,8 @@ export class MoqtailClient {
    * }
    * ```
    *
-   * @example
+   * @example Idempotent usage
    * ```ts
-   * // Idempotent usage
    * await client.unsubscribe(123n);
    * await client.unsubscribe(123n); // no error
    * ```
@@ -711,15 +702,18 @@ export class MoqtailClient {
    * - Setting `forward: false` stops relay forwarding new objects after the current window drains.
    * - Safe to call multiple times; extra calls with unchanged bounds have no effect.
    *
-   * @example
+   * @example Trim start forward
    * ```ts
-   * // Trim start forward
    * await client.subscribeUpdate({ requestId, startLocation: laterLoc, endGroup, forward: true, priority });
+   * ```
    *
-   * // Convert tailing subscription into bounded slice
+   * @example Convert tailing subscription into bounded slice
+   * ```ts
    * await client.subscribeUpdate({ requestId, startLocation: origStart, endGroup: cutoffGroup, forward: false, priority });
+   * ```
    *
-   * // Lower priority only
+   * @example Lower priority only
+   * ```ts
    * await client.subscribeUpdate({ requestId, startLocation: currentStart, endGroup: currentEnd, forward: true, priority: 200 });
    * ```
    */
