@@ -18,7 +18,7 @@ import { SubscribeAnnouncesRequest } from './request/subscribe_announces'
  * Discriminated union of every in‑flight MOQ‑tail control request tracked by the {@link MoqtailClient}.
  *
  * Each concrete request type encapsulates the original control message plus coordination primitives
- * (e.g. a {@link Promise} facade / stream controller) that resolve when a terminal protocol response
+ * (e.g. a {@link https://developer.mozilla.org/docs/Web/API/Promise | Promise} facade / stream controller) that resolve when a terminal protocol response
  * (OK / ERROR / CANCEL) is received.
  *
  * Used internally in maps like `MoqtailClient.requests` to look up state by request id without needing
@@ -55,10 +55,10 @@ export type MoqtailRequest =
  * Options for {@link MoqtailClient.new} controlling connection target, protocol negotiation, timeouts,
  * and lifecycle callbacks.
  *
- * @property url Relay / server endpoint for the underlying {@link WebTransport} session (can be absolute {@link URL} or string).
+ * @property url Relay / server endpoint for the underlying {@link https://developer.mozilla.org/docs/Web/API/WebTransport | WebTransport} session (can be absolute {@link https://developer.mozilla.org/docs/Web/API/URL | URL} or string).
  * @property supportedVersions Ordered preference list of MOQ‑tail protocol version numbers (e.g. `0xff00000b`).
  * @property setupParameters Optional {@link SetupParameters} customizations; if omitted a default instance is built.
- * @property transportOptions Passed directly to the browser's {@link WebTransport} constructor for QUIC options.
+ * @property transportOptions Passed directly to the browser's {@link https://developer.mozilla.org/docs/Web/API/WebTransport | WebTransport} constructor for QUIC options.
  * @property dataStreamTimeoutMs Optional per *data* uni-stream idle timeout in milliseconds.
  * @property controlStreamTimeoutMs Optional control stream read timeout in milliseconds.
  * @property callbacks Hook object for observability (all optional):

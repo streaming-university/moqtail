@@ -20,7 +20,7 @@ export interface PastObjectSource {
 }
 
 /**
- * Push-oriented live object feed. Wraps a {@link ReadableStream} plus lightweight event subscription helpers.
+ * Push-oriented live object feed. Wraps a {@link https://developer.mozilla.org/docs/Web/API/ReadableStream | ReadableStream} plus lightweight event subscription helpers.
  * Implementations advance {@link largestLocation} monotonically as objects arrive.
  */
 export interface LiveObjectSource {

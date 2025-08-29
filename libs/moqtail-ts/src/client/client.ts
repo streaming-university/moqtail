@@ -261,7 +261,7 @@ export class MoqtailClient {
    *   - `url`: Relay/server endpoint (string or URL).
    *   - `supportedVersions`: Array of protocol versions (number[]).
    *   - `setupParameters`: Optional {@link SetupParameters} for protocol negotiation.
-   *   - `transportOptions`: Optional {@link WebTransportOptions} for session configuration.
+   *   - `transportOptions`: Optional {@link https://developer.mozilla.org/docs/Web/API/WebTransportOptions | WebTransportOptions} for session configuration.
    *   - `dataStreamTimeoutMs`: Optional timeout (ms) for data streams.
    *   - `controlStreamTimeoutMs`: Optional timeout (ms) for control streams.
    *   - `callbacks`: Optional hooks for logging and lifecycle events.
@@ -347,7 +347,7 @@ export class MoqtailClient {
 
   /**
    * @description
-   * Gracefully terminates this {@link MoqtailClient} session and releases underlying {@link WebTransport} resources.
+   * Gracefully terminates this {@link MoqtailClient} session and releases underlying {@link https://developer.mozilla.org/docs/Web/API/WebTransport | WebTransport} resources.
    *
    * @param reason Optional application-level reason (string or error) recorded and wrapped in an {@link InternalError}
    * passed to the {@link MoqtailClient.onSessionTerminated | onSessionTerminated} callback.
