@@ -22,7 +22,7 @@ import { MoqtObject } from '../../model/data/object'
 export interface ObjectCache {
   /** Insert a new {@link MoqtObject}, preserving sorted order (duplicates allowed or replaced impl‑defined). */
   add(obj: MoqtObject): void
-  /** Return a shallow copy array of objects whose Location is >= start and < end (end exclusive). */
+  /** Return a shallow copy array of objects whose Location is \>= start and \< end (end exclusive). */
   getRange(start?: Location, end?: Location): MoqtObject[]
   /** Return the object whose Location exactly matches (group & object) or undefined if absent. */
   getByLocation(location: Location): MoqtObject | undefined

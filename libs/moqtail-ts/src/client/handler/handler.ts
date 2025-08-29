@@ -45,7 +45,7 @@ import {
   SubscribeOk,
   SubscribeUpdate,
   TrackStatus,
-  TrackStatusRequest as TrackStatusRequestMessage,
+  TrackStatusRequestMessage,
   Unannounce,
   Unsubscribe,
   UnsubscribeAnnounces,

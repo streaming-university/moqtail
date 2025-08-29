@@ -1,3 +1,7 @@
 export * from './client'
 export * from './types'
 export * from './track'
+export * from './publication'
+export * from './request'
+export * from './control_stream'
+export * from './data_stream'

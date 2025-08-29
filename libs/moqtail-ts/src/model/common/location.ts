@@ -1,14 +1,41 @@
 import { BaseByteBuffer, ByteBuffer, FrozenByteBuffer } from './byte_buffer'
 import { NotEnoughBytesError } from '../error/error'
 
+/**
+ * @public
+ * Represents a position in a MOQT track, consisting of a group and object index.
+ *
+ * Used for specifying start/end positions in subscription and fetch requests.
+ * - `group`: The group index (e.g. segment, GOP, or logical group).
+ * - `object`: The object index within the group (e.g. frame, chunk).
+ */
 export class Location {
+  /**
+   * The group index for this location.
+   */
   public readonly group: bigint
+
+  /**
+   * The object index within the group for this location.
+   */
   public readonly object: bigint
+
+  /**
+   * Constructs a new Location.
+   * @param group - The group index (number or bigint).
+   * @param object - The object index (number or bigint).
+   */
   constructor(group: bigint | number, object: bigint | number) {
     this.group = BigInt(group)
     this.object = BigInt(object)
   }
 
+  /**
+   * Serializes this Location to a FrozenByteBuffer.
+   * @returns The serialized buffer.
+   * @throws CastingError if group or object is negative.
+   * @throws VarIntOverflowError if group or object exceeds varint encoding limits.
+   */
   serialize(): FrozenByteBuffer {
     const buf = new ByteBuffer()
     buf.putVI(this.group)
@@ -16,16 +43,32 @@ export class Location {
     return buf.freeze()
   }
 
+  /**
+   * Deserializes a Location from a buffer.
+   * @param buf - The buffer to read from.
+   * @returns The deserialized Location.
+   * @throws NotEnoughBytesError if buffer does not contain enough bytes.
+   */
   static deserialize(buf: BaseByteBuffer): Location {
     const group = buf.getVI()
     const object = buf.getVI()
     return new Location(group, object)
   }
 
+  /**
+   * Checks if this Location is equal to another.
+   * @param other - The other Location to compare.
+   * @returns True if both group and object are equal.
+   */
   equals(other: Location): boolean {
     return this.group === other.group && this.object === other.object
   }
 
+  /**
+   * Compares this Location to another for ordering.
+   * @param other - The other Location to compare.
+   * @returns -1 if this \< other, 1 if this \> other, 0 if equal.
+   */
   compare(other: Location): number {
     if (this.group < other.group) return -1
     if (this.group > other.group) return 1

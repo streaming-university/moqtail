@@ -3,13 +3,30 @@ import { Tuple } from '../common/tuple'
 import { ControlMessageType } from './constant'
 import { LengthExceedsMaxError } from '../error/error'
 
+/**
+ * @public
+ * Represents a protocol Unannounce message, used to unannounce a track namespace.
+ */
 export class Unannounce {
+  /**
+   * Constructs an Unannounce message.
+   * @param trackNamespace - The track namespace to unannounce.
+   */
   constructor(public readonly trackNamespace: Tuple) {}
 
+  /**
+   * Gets the control message type for this Unannounce message.
+   * @returns The ControlMessageType.Unannounce enum value.
+   */
   getType(): ControlMessageType {
     return ControlMessageType.Unannounce
   }
 
+  /**
+   * Serializes the Unannounce message to a frozen byte buffer.
+   * @returns The serialized message as a FrozenByteBuffer.
+   * @throws :{@link LengthExceedsMaxError} If the payload exceeds 65535 bytes.
+   */
   serialize(): FrozenByteBuffer {
     const buf = new ByteBuffer()
     buf.putVI(ControlMessageType.Unannounce)
@@ -24,6 +41,11 @@ export class Unannounce {
     return buf.freeze()
   }
 
+  /**
+   * Parses an Unannounce message payload from a buffer.
+   * @param buf - The buffer containing the payload.
+   * @returns The parsed Unannounce message.
+   */
   static parsePayload(buf: BaseByteBuffer): Unannounce {
     const trackNamespace = buf.getTuple()
     return new Unannounce(trackNamespace)

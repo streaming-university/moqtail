@@ -3,17 +3,39 @@ import { NotEnoughBytesError, CastingError } from '../error/error'
 
 const PATH_SEPARATOR = '/'
 
+/**
+ * @public
+ * Represents a single field in a Tuple, storing a value as a UTF-8 encoded byte array.
+ *
+ * Used for path segments or protocol fields in MOQT.
+ */
 export class TupleField {
+  /**
+   * The raw value of the field as a byte array.
+   */
   constructor(public readonly value: Uint8Array) {}
 
+  /**
+   * Creates a TupleField from a UTF-8 string.
+   * @param str - The string to encode.
+   * @returns A new TupleField containing the encoded value.
+   */
   static fromUtf8(str: string): TupleField {
     return new TupleField(new TextEncoder().encode(str))
   }
 
+  /**
+   * Decodes the field value to a UTF-8 string.
+   * @returns The decoded string.
+   */
   toUtf8(): string {
     return new TextDecoder().decode(this.value)
   }
 
+  /**
+   * Serializes this field to a length-prefixed byte array.
+   * @returns The serialized bytes.
+   */
   serialize(): Uint8Array {
     const buf = new ByteBuffer()
     buf.putVI(this.value.length)
@@ -21,6 +43,13 @@ export class TupleField {
     return buf.toUint8Array()
   }
 
+  /**
+   * Deserializes a TupleField from a buffer.
+   * @param buf - The buffer to read from.
+   * @returns The deserialized TupleField.
+   * @throws CastingError if the length cannot be safely cast to number.
+   * @throws NotEnoughBytesError if buffer does not contain enough bytes.
+   */
   static deserialize(buf: BaseByteBuffer): TupleField {
     const lenBig = buf.getVI()
     const len = Number(lenBig)
@@ -34,37 +63,75 @@ export class TupleField {
   }
 }
 
+/**
+ * @public
+ * Represents a sequence of TupleFields, typically used for hierarchical paths or protocol tuples in MOQT.
+ */
 export class Tuple {
+  /**
+   * The ordered list of fields in this tuple.
+   */
   constructor(public readonly fields: TupleField[] = []) {}
 
+  /**
+   * Creates a Tuple from a path string, splitting on '/'.
+   * @param path - The path string (e.g. '/foo/bar').
+   * @returns A Tuple with each segment as a field.
+   */
   static fromUtf8Path(path: string): Tuple {
     const parts = path.split(PATH_SEPARATOR).filter(Boolean)
     const fields = parts.map(TupleField.fromUtf8)
     return new Tuple(fields)
   }
 
+  /**
+   * Converts the tuple to a path string, joining fields with '/'.
+   * @returns The path string (e.g. '/foo/bar').
+   */
   toUtf8Path(): string {
     return this.fields.map((f) => PATH_SEPARATOR + f.toUtf8()).join('')
   }
 
+  /**
+   * Adds a field to the tuple.
+   * @param field - The TupleField to add.
+   */
   add(field: TupleField): void {
     this.fields.push(field)
   }
 
+  /**
+   * Gets the field at the specified index.
+   * @param index - The field index.
+   * @returns The TupleField at the index.
+   * @throws Error if no field exists at the index.
+   */
   get(index: number): TupleField {
     const field = this.fields[index]
     if (!field) throw new Error('Field not found at index')
     return field
   }
 
+  /**
+   * Sets the field at the specified index.
+   * @param index - The field index.
+   * @param field - The TupleField to set.
+   */
   set(index: number, field: TupleField): void {
     this.fields[index] = field
   }
 
+  /**
+   * Clears all fields from the tuple.
+   */
   clear(): void {
     this.fields.length = 0
   }
 
+  /**
+   * Serializes the tuple to a FrozenByteBuffer.
+   * @returns The serialized buffer.
+   */
   serialize(): FrozenByteBuffer {
     const buf = new ByteBuffer()
     buf.putVI(this.fields.length)
@@ -74,6 +141,13 @@ export class Tuple {
     return buf.freeze()
   }
 
+  /**
+   * Deserializes a Tuple from a buffer.
+   * @param buf - The buffer to read from.
+   * @returns The deserialized Tuple.
+   * @throws CastingError if the count cannot be safely cast to number.
+   * @throws NotEnoughBytesError if buffer does not contain enough bytes.
+   */
   static deserialize(buf: BaseByteBuffer): Tuple {
     const countBig = buf.getVI()
     const count = Number(countBig)
@@ -91,6 +165,11 @@ export class Tuple {
     return new Tuple(fields)
   }
 
+  /**
+   * Checks if this tuple is equal to another.
+   * @param other - The other Tuple to compare.
+   * @returns True if all fields are equal.
+   */
   equals(other: Tuple): boolean {
     if (this.fields.length !== other.fields.length) return false
     return this.fields.every((f, i) => f.value.toString() === other.fields[i]!.value.toString())

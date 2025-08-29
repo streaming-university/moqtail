@@ -14,23 +14,95 @@ import { SubgroupHeader } from '@/model/data/subgroup_header'
 import { MoqtObject } from '@/model/data/object'
 import { SimpleLock } from '../../util/simple_lock'
 import { getTransportPriority } from '../util/priority'
+
+/**
+ * @public
+ * Manages the publication of MOQT objects to a subscriber for a specific track.
+ * Handles live object streaming, subscription lifecycle, and stream management.
+ */
 export class SubscribePublication {
-  latestLocation: Location | undefined
+  /**
+   * The latest location that was published to the subscriber.
+   */
+  public latestLocation: Location | undefined
+
+  /**
+   * The alias for the track being published.
+   */
   #trackAlias: bigint
+
+  /**
+   * The starting location for the subscription.
+   */
   #startLocation: Location
+
+  /**
+   * The end group for AbsoluteRange subscriptions, if specified.
+   */
   #endGroup: bigint | undefined
+
+  /**
+   * The priority of the subscriber.
+   */
   #subscriberPriority: number
+
+  /**
+   * The priority of the publisher.
+   */
   #publisherPriority: number
+
+  /**
+   * Whether objects should be forwarded to the subscriber.
+   */
   #forward: boolean
+
+  /**
+   * The subscription parameters for this publication.
+   */
   #subscribeParameters: VersionSpecificParameter[]
+
+  /**
+   * The number of streams opened for this subscription.
+   */
   #streamsOpened: bigint = 0n
+
+  /**
+   * Function to cancel publishing, if set.
+   */
   #cancelPublishing?: () => void
+
+  /**
+   * Whether publishing has started.
+   */
   #isStarted = false
+
+  /**
+   * Whether publishing is completed.
+   */
   #isCompleted = false
+
+  /**
+   * Lock for synchronizing stream operations.
+   */
   #lock: SimpleLock = new SimpleLock()
+
+  /**
+   * Map of group IDs to their corresponding send streams.
+   */
   #streams: Map<bigint, SendStream> = new Map()
+
+  /**
+   * Unique identifier for this publication instance.
+   */
   #id = Math.floor(Math.random() * 1000000)
 
+  /**
+   * Creates a new SubscribePublication instance.
+   * @param client - The MOQT client managing the subscription.
+   * @param track - The track being published.
+   * @param subscribeMsg - The subscribe message containing subscription details.
+   * @param largestLocation - The largest location seen so far, used for determining start location.
+   */
   constructor(
     private readonly client: MoqtailClient,
     readonly track: Track,
@@ -67,12 +139,18 @@ export class SubscribePublication {
     this.#subscribeParameters = VersionSpecificParameters.fromKeyValuePairs(subscribeMsg.subscribeParameters)
     this.publish()
   }
-  // TODO: Properly determine the weights
+
+  /**
+   * Calculates the stream priority based on publisher and subscriber priorities.
+   */
   get #streamPriority(): number {
     return 0.4 * getTransportPriority(this.#publisherPriority) + 0.6 * getTransportPriority(this.#subscriberPriority)
   }
 
-  // When unsubscribe is received
+  /**
+   * Cancels the publication and cleans up resources.
+   * Removes the publication from the client's publication map.
+   */
   cancel(): void {
     if (this.#cancelPublishing) {
       this.#cancelPublishing()
@@ -81,6 +159,11 @@ export class SubscribePublication {
     this.#isCompleted = true
   }
 
+  /**
+   * Marks the publication as done and sends a SubscribeDone message to the client.
+   * @param statusCode - The status code indicating why the subscription ended.
+   * @throws :{@link InternalError} If sending the message fails.
+   */
   async done(statusCode: SubscribeDoneStatusCode): Promise<void> {
     this.#isCompleted = true
     const subscribeDone = new SubscribeDone(
@@ -89,11 +172,14 @@ export class SubscribePublication {
       BigInt(this.#streamsOpened),
       new ReasonPhrase('Subscription ended'),
     )
-    // TODO: Handle track completion, there might be ongoing streams. Wait for all to finish before
-    // cleaning the state
+    // TODO: Handle track completion, there might be ongoing streams. Wait for all to finish before cleaning the state
     await this.client.controlStream.send(subscribeDone)
   }
 
+  /**
+   * Updates the subscription parameters and locations based on a SubscribeUpdate message.
+   * @param msg - The update message containing new subscription details.
+   */
   update(msg: SubscribeUpdate): void {
     // TODO: Control checks on update rules e.g only narrowing, end>start either here or in update handler
     this.#startLocation = msg.startLocation
@@ -103,11 +189,16 @@ export class SubscribePublication {
     this.#subscribeParameters = VersionSpecificParameters.fromKeyValuePairs(msg.subscribeParameters)
   }
 
+  /**
+   * Publishes MOQT objects to the subscriber as they become available.
+   * Handles stream creation, object writing, and stream closure based on subscription parameters.
+   * @throws :{@link InternalError} If the track does not support live content.
+   */
   async publish(): Promise<void> {
     if (!this.track.trackSource.live)
       throw new InternalError('SubscribePublication.publish', 'Track does not support live content')
 
-    //TODO: HybridContent is also allowed
+    // TODO: HybridContent is also allowed
     this.track.trackSource.live.onDone(() => {
       this.done(SubscribeDoneStatusCode.TrackEnded)
     })

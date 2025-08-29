@@ -17,7 +17,7 @@ import {
   SubscribeAnnounces,
   SubscribeError,
   SubscribeUpdate,
-  TrackStatusRequest as TrackStatusRequestMessage,
+  TrackStatusRequestMessage,
   Unannounce,
   Unsubscribe,
   UnsubscribeAnnounces,
@@ -54,6 +54,7 @@ import { random60bitId } from './util/random_id'
 import { MoqtailRequest, SubscribeOptions, SubscribeUpdateOptions, FetchOptions, MoqtailClientOptions } from './types'
 
 /**
+ * @public
  * Represents a Media Over QUIC Transport (MOQT) client session.
  *
  * Use {@link MoqtailClient.new} to establish a connection and perform MOQT operations such as subscribing to tracks,
@@ -127,12 +128,12 @@ export class MoqtailClient {
    */
   readonly publications: Map<bigint, SubscribePublication | FetchPublication> = new Map()
   /**
-   * Active SUBSCRIBE request wrappers keyed by track alias for rapid alias -> subscription resolution during
+   * Active SUBSCRIBE request wrappers keyed by track alias for rapid alias -\> subscription resolution during
    * incoming unidirectional data handling.
    */
   readonly subscriptions: Map<bigint, SubscribeRequest> = new Map()
   /**
-   * Bidirectional alias <-> full track name mapping to reconstruct metadata for incoming objects that reference aliases only.
+   * Bidirectional alias \<-\> full track name mapping to reconstruct metadata for incoming objects that reference aliases only.
    */
   readonly trackAliasMap: TrackAliasMap = new TrackAliasMap()
   /** Underlying WebTransport session (set after successful construction in MoqtailClient.new). */
@@ -141,9 +142,9 @@ export class MoqtailClient {
   #serverSetup!: ServerSetup
   /** Outgoing / incoming control message bidirectional stream wrapper. */
   controlStream!: ControlStream
-  /** Timeout (ms) applied to reading incoming data streams; undefined => no explicit timeout. */
+  /** Timeout (ms) applied to reading incoming data streams; undefined =\> no explicit timeout. */
   dataStreamTimeoutMs?: number
-  /** Timeout (ms) for control stream read operations; undefined => no explicit timeout. */
+  /** Timeout (ms) for control stream read operations; undefined =\> no explicit timeout. */
   controlStreamTimeoutMs?: number
   /** Optional highest request id allowed (enforced externally / via configuration). */
   maxRequestId?: bigint
@@ -254,21 +255,13 @@ export class MoqtailClient {
 
   private constructor() {}
   /**
-   * @description
    * Establishes a new {@link MoqtailClient} session over WebTransport and performs the MOQT setup handshake.
    *
-   * @param args {@link MoqtailClientOptions}:
-   *   - `url`: Relay/server endpoint (string or URL).
-   *   - `supportedVersions`: Array of protocol versions (number[]).
-   *   - `setupParameters`: Optional {@link SetupParameters} for protocol negotiation.
-   *   - `transportOptions`: Optional {@link https://developer.mozilla.org/docs/Web/API/WebTransportOptions | WebTransportOptions} for session configuration.
-   *   - `dataStreamTimeoutMs`: Optional timeout (ms) for data streams.
-   *   - `controlStreamTimeoutMs`: Optional timeout (ms) for control streams.
-   *   - `callbacks`: Optional hooks for logging and lifecycle events.
+   * @param args - {@link MoqtailClientOptions}
    *
    * @returns Promise resolving to a ready {@link MoqtailClient} instance.
    *
-   * @throws: {@link ProtocolViolationError} If the server sends an unexpected or invalid message during setup.
+   * @throws : {@link ProtocolViolationError} If the server sends an unexpected or invalid message during setup.
    *
    * @example Minimal connection
    * ```ts
@@ -346,32 +339,39 @@ export class MoqtailClient {
   }
 
   /**
-   * @description
    * Gracefully terminates this {@link MoqtailClient} session and releases underlying {@link https://developer.mozilla.org/docs/Web/API/WebTransport | WebTransport} resources.
    *
-   * @param reason Optional application-level reason (string or error) recorded and wrapped in an {@link InternalError}
+   * @param reason - Optional application-level reason (string or error) recorded and wrapped in an {@link InternalError}
    * passed to the {@link MoqtailClient.onSessionTerminated | onSessionTerminated} callback.
    *
    * @returns Promise that resolves once shutdown logic completes. Subsequent calls are safe no-ops.
    *
    * @example
+   * ```ts
    * // Basic usage
    * await client.disconnect();
+   * ```
    *
    * @example
+   * ```ts
    * // With reason
    * await client.disconnect('user logout');
+   * ```
    *
    * @example
+   * ```ts
    * // Idempotent double call
    * await client.disconnect();
    * await client.disconnect(); // no error
+   * ```
    *
    * @example
+   * ```ts
    * // Page unload safety
    * window.addEventListener('beforeunload', () => {
    *   client.disconnect('page unload');
    * });
+   * ```
    */
   async disconnect(reason?: unknown) {
     console.log('disconnect', reason)
@@ -386,7 +386,6 @@ export class MoqtailClient {
   }
 
   /**
-   * @description
    * Registers or updates a {@link Track} definition for local publishing or serving.
    *
    * A {@link Track} describes a logical media/data stream, identified by a unique name and namespace.
@@ -394,9 +393,9 @@ export class MoqtailClient {
    * - If `trackSource.past` is present, the track can be fetched for historical data.
    * - If both are present, the track supports both live and historical access.
    *
-   * @param track The {@link Track} instance to add or update. See {@link TrackSource} for live/past source options.
+   * @param track - The {@link Track} instance to add or update. See {@link TrackSource} for live/past source options.
    * @returns void
-   * @throws: {@link MoqtailError} If the client has been destroyed.
+   * @throws : {@link MoqtailError} If the client has been destroyed.
    *
    * @example
    * ```ts
@@ -433,19 +432,18 @@ export class MoqtailClient {
   }
 
   /**
-   * @description
    * Removes a previously registered {@link Track} from this client's local catalog.
    *
-   * This deletes the in-memory entry inserted via {@link addOrUpdateTrack}, so future lookups by its {@link Track.fullTrackName} will fail.
+   * This deletes the in-memory entry inserted via {@link MoqtailClient.addOrUpdateTrack}, so future lookups by its {@link Track.fullTrackName} will fail.
    * Does **not** automatically:
-   * - Send an {@link Unannounce} (call {@link unannounce} separately if you want to inform peers)
+   * - Send an {@link Unannounce} (call {@link MoqtailClient.unannounce} separately if you want to inform peers)
    * - Cancel active subscriptions or fetches (they continue until normal completion)
    * - Affect already-sent objects.
    *
    * If the track was not present, the call is a silent no-op (idempotent removal).
    *
-   * @param track The exact {@link Track} instance (its canonical name is used as the key).
-   * @throws: {@link MoqtailError} If the client has been destroyed.
+   * @param track - The exact {@link Track} instance (its canonical name is used as the key).
+   * @throws : {@link MoqtailError} If the client has been destroyed.
    *
    * @example
    * ```ts
@@ -465,24 +463,23 @@ export class MoqtailClient {
   }
 
   /**
-   * @description
    * Subscribes to a track and returns a stream of {@link MoqtObject}s matching the requested window and relay forwarding mode.
    *
    * - `forward: true` tells the relay to forward objects to this subscriber as they arrive.
    * - `forward: false` means the relay subscribes upstream but buffers objects locally, not forwarding them to you.
-   * - `filterType: AbsoluteStart` lets you specify a start position in the future; the stream waits for that object. If the start location is < the latest object
+   * - `filterType: AbsoluteStart` lets you specify a start position in the future; the stream waits for that object. If the start location is \< the latest object
    * observed at the publisher then it behaves as `filterType: LatestObject`
-   * - `filterType: AbsoluteRange` lets you specify a start and end group, both of should be in the future; the stream waits for those objects. If the start location is < the latest object
+   * - `filterType: AbsoluteRange` lets you specify a start and end group, both of should be in the future; the stream waits for those objects. If the start location is \< the latest object
    * observed at the publisher then it behaves as `filterType: LatestObject`.
    *
    * The method returns either a {@link SubscribeError} (on refusal) or an object with the subscription `requestId` and a `ReadableStream` of {@link MoqtObject}s.
-   * Use the `requestId` for {@link unsubscribe} or {@link subscribeUpdate}. Use the `stream` to decode and display objects.
+   * Use the `requestId` for {@link MoqtailClient.unsubscribe} or {@link MoqtailClient.subscribeUpdate}. Use the `stream` to decode and display objects.
    *
-   * @param args {@link SubscribeOptions} describing the subscription window and relay forwarding behavior.
+   * @param args - {@link SubscribeOptions} describing the subscription window and relay forwarding behavior.
    * @returns Either a {@link SubscribeError} or `{ requestId, stream }` for consuming objects.
-   * @throws: {@link MoqtailError} If the client is destroyed.
-   * @throws: {@link ProtocolViolationError} If required fields are missing or inconsistent.
-   * @throws: {@link InternalError} On transport/protocol failure (disconnect is triggered before rethrow).
+   * @throws : {@link MoqtailError} If the client is destroyed.
+   * @throws : {@link ProtocolViolationError} If required fields are missing or inconsistent.
+   * @throws : {@link InternalError} On transport/protocol failure (disconnect is triggered before rethrow).
    *
    * @example
    * ```ts
@@ -622,7 +619,6 @@ export class MoqtailClient {
   }
 
   /**
-   * @description
    * Stops an active subscription identified by its original SUBSCRIBE `requestId`.
    *
    * Sends an {@link Unsubscribe} control frame if the subscription is still active. If the id is unknown or already
@@ -631,7 +627,7 @@ export class MoqtailClient {
    * Use this when you no longer want incoming objects for a track (e.g. user navigated away, switching quality).
    * Canceling the consumer stream reader does **not** auto-unsubscribe; call this explicitly for prompt cleanup.
    *
-   * @param requestId The id returned from {@link subscribe}.
+   * @param requestId - The id returned from {@link MoqtailClient.subscribe}.
    * @returns Promise that resolves when the unsubscribe control frame is sent.
    * @throws :{@link MoqtailError} If the client is destroyed.
    * @throws :{@link InternalError} Wrapped lower-level failure while attempting to send (session will be disconnected first).
@@ -692,7 +688,6 @@ export class MoqtailClient {
   }
 
   /**
-   * @description
    * Narrows or updates an active subscription window and/or relay forwarding behavior.
    *
    * Use this to:
@@ -704,7 +699,7 @@ export class MoqtailClient {
    * Only narrowing is allowed: you cannot move the start earlier or the end group later than the original subscription.
    * Forwarding and priority can be changed at any time.
    *
-   * @param args {@link SubscribeUpdateOptions} referencing the original subscription `requestId` and new bounds.
+   * @param args - {@link SubscribeUpdateOptions} referencing the original subscription `requestId` and new bounds.
    * @returns Promise that resolves when the update control frame is sent.
    * @throws :{@link MoqtailError} If the client is destroyed.
    * @throws :{@link ProtocolViolationError} If the update would widen the window (earlier start, later end group, or invalid ordering).
@@ -796,7 +791,7 @@ export class MoqtailClient {
    * @remarks
    * - Relative / Absolute require an existing active SUBSCRIBE `joiningRequestId`; if not found a {@link ProtocolViolationError} is thrown.
    * - Result stream is finite; reader close occurs automatically when last object delivered.
-   * - Use {@link MoqtailClient.fetchCancel | fetchCancel} only for early termination (not yet fully implemented: see TODO in code).
+   * - Use {@link MoqtailClient.fetchCancel} only for early termination (not yet fully implemented: see TODO in code).
    *
    * @example Standalone window
    * ```ts
@@ -933,7 +928,7 @@ export class MoqtailClient {
    * Sends a {@link FetchCancel} control frame if the id currently maps to an active fetch; otherwise silent no-op (idempotent).
    *
    * Parameter semantics:
-   * - requestId: bigint returned from {@link MoqtailClient.fetch | fetch}. Numbers auto-converted to bigint.
+   * - requestId: bigint returned from {@link MoqtailClient.fetch}. Numbers auto-converted to bigint.
    *
    * Current behavior / limitations:
    * - Data stream closure after cancel is TODO (objects may still arrive briefly).
@@ -1000,17 +995,17 @@ export class MoqtailClient {
   // TODO: Each announced track should checked against ongoing subscribe_announces
   // If matches it should send an announce to that peer automatically
   /**
-   * Declare (publish) a track namespace to the peer so subscribers using matching prefixes (via {@link subscribeAnnounces})
+   * Declare (publish) a track namespace to the peer so subscribers using matching prefixes (via {@link MoqtailClient.subscribeAnnounces})
    * can discover and begin subscribing/fetching its tracks.
    *
    * Typical flow (publisher side):
-   * 1. Prepare / register one or more {@link Track} objects locally (see {@link addOrUpdateTrack}).
+   * 1. Prepare / register one or more {@link Track} objects locally (see {@link MoqtailClient.addOrUpdateTrack}).
    * 2. Call `announce(namespace)` once per namespace prefix to expose those tracks.
-   * 3. Later, call {@link unannounce} when no longer publishing under that namespace.
+   * 3. Later, call {@link MoqtailClient.unannounce} when no longer publishing under that namespace.
    *
    * Parameter semantics:
    * - trackNamespace: Tuple representing the namespace prefix (e.g. ["camera","main"]). All tracks whose full names start with this tuple are considered within the announce scope.
-   * - parameters: Optional {@link VersionSpecificParameters}; omitted => default instance.
+   * - parameters: Optional {@link VersionSpecificParameters}; omitted =\> default instance.
    *
    * Returns: {@link AnnounceOk} on success (namespace added to `announcedNamespaces`) or {@link AnnounceError} explaining refusal.
    *
@@ -1024,8 +1019,8 @@ export class MoqtailClient {
    *
    * @remarks
    * - Duplicate announce detection is TODO (currently a second call will still send another ANNOUNCE; receiver behavior may vary).
-   * - Successful announces are tracked in `announcedNamespaces`; manual removal occurs via {@link unannounce}.
-   * - Discovery subscribers (those who issued {@link subscribeAnnounces}) will receive the resulting {@link Announce} message.
+   * - Successful announces are tracked in `announcedNamespaces`; manual removal occurs via {@link MoqtailClient.unannounce}.
+   * - Discovery subscribers (those who issued {@link MoqtailClient.subscribeAnnounces}) will receive the resulting {@link Announce} message.
    *
    * @example Minimal announce
    * ```ts
@@ -1069,7 +1064,7 @@ export class MoqtailClient {
    * Removes the namespace from `announcedNamespaces` locally and sends an {@link Unannounce} control frame.
    *
    * Parameter semantics:
-   * - trackNamespace: Exact tuple used during {@link announce}. Must match to be removed from internal set.
+   * - trackNamespace: Exact tuple used during {@link MoqtailClient.announce}. Must match to be removed from internal set.
    *
    * Behavior:
    * - Does not delete locally registered {@link Track} objects (they remain in `trackSources`).
@@ -1080,8 +1075,8 @@ export class MoqtailClient {
    * @throws (rethrows original error) Any lower-level failure while sending results in a disconnect (unwrapped TODO: future wrap with InternalError for consistency).
    *
    * @remarks
-   * Peers that issued {@link subscribeAnnounces} for a matching prefix should receive the resulting {@link Unannounce}.
-   * Consider calling this before {@link disconnect} to give consumers prompt notice.
+   * Peers that issued {@link MoqtailClient.subscribeAnnounces} for a matching prefix should receive the resulting {@link Unannounce}.
+   * Consider calling this before {@link MoqtailClient.disconnect} to give consumers prompt notice.
    *
    * @example Basic usage
    * ```ts
@@ -1117,7 +1112,7 @@ export class MoqtailClient {
    * - msg: Pre-constructed {@link AnnounceCancel} referencing the original announce request id / namespace (builder provided elsewhere).
    *
    * Behavior:
-   * - Simply forwards the control frame; does not modify `announcedNamespaces` (call {@link unannounce} for local bookkeeping removal).
+   * - Simply forwards the control frame; does not modify `announcedNamespaces` (call {@link MoqtailClient.unannounce} for local bookkeeping removal).
    * - Safe to send even if the announce already succeeded; peer may ignore duplicates per spec guidance.
    *
    * @throws MoqtailError If client is destroyed.

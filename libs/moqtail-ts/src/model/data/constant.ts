@@ -1,8 +1,25 @@
+/**
+ * @public
+ * Object datagram status types for MOQT objects.
+ * - `WithoutExtensions`: Object datagram without extensions.
+ * - `WithExtensions`: Object datagram with extensions.
+ */
 export enum ObjectDatagramStatusType {
   WithoutExtensions = 0x02,
   WithExtensions = 0x03,
 }
+
+/**
+ * @public
+ * Namespace for ObjectDatagramStatusType utilities.
+ */
 export namespace ObjectDatagramStatusType {
+  /**
+   * Converts a number or bigint to ObjectDatagramStatusType.
+   * @param value - The value to convert.
+   * @returns The corresponding ObjectDatagramStatusType.
+   * @throws Error if the value is not valid.
+   */
   export function tryFrom(value: number | bigint): ObjectDatagramStatusType {
     const v = typeof value === 'bigint' ? Number(value) : value
     switch (v) {
@@ -16,11 +33,28 @@ export namespace ObjectDatagramStatusType {
   }
 }
 
+/**
+ * @public
+ * Object datagram types for MOQT objects.
+ * - `WithoutExtensions`: Object datagram without extensions.
+ * - `WithExtensions`: Object datagram with extensions.
+ */
 export enum ObjectDatagramType {
   WithoutExtensions = 0x00,
   WithExtensions = 0x01,
 }
+
+/**
+ * @public
+ * Namespace for ObjectDatagramType utilities.
+ */
 export namespace ObjectDatagramType {
+  /**
+   * Converts a number or bigint to ObjectDatagramType.
+   * @param value - The value to convert.
+   * @returns The corresponding ObjectDatagramType.
+   * @throws Error if the value is not valid.
+   */
   export function tryFrom(value: number | bigint): ObjectDatagramType {
     const v = typeof value === 'bigint' ? Number(value) : value
     switch (v) {
@@ -34,10 +68,24 @@ export namespace ObjectDatagramType {
   }
 }
 
+/**
+ * @public
+ * Fetch header types for MOQT fetch requests.
+ */
 export enum FetchHeaderType {
   Type0x05 = 0x05,
 }
+
+/**
+ * Namespace for FetchHeaderType utilities.
+ */
 export namespace FetchHeaderType {
+  /**
+   * Converts a number or bigint to FetchHeaderType.
+   * @param value - The value to convert.
+   * @returns The corresponding FetchHeaderType.
+   * @throws Error if the value is not valid.
+   */
   export function tryFrom(value: number | bigint): FetchHeaderType {
     const v = typeof value === 'bigint' ? Number(value) : value
     switch (v) {
@@ -49,6 +97,10 @@ export namespace FetchHeaderType {
   }
 }
 
+/**
+ * @public
+ * Subgroup header types for MOQT subgroups.
+ */
 export enum SubgroupHeaderType {
   Type0x08 = 0x08,
   Type0x09 = 0x09,
@@ -58,13 +110,30 @@ export enum SubgroupHeaderType {
   Type0x0D = 0x0d,
 }
 
+/**
+ * Namespace for SubgroupHeaderType utilities.
+ */
 export namespace SubgroupHeaderType {
+  /**
+   * Returns true if the header type has an explicit subgroup ID.
+   * @param t - The SubgroupHeaderType.
+   */
   export function hasExplicitSubgroupId(t: SubgroupHeaderType): boolean {
     return t === SubgroupHeaderType.Type0x0C || t === SubgroupHeaderType.Type0x0D
   }
+  /**
+   * Returns true if the header type has extensions.
+   * @param t - The SubgroupHeaderType.
+   */
   export function hasExtensions(t: SubgroupHeaderType): boolean {
     return t === SubgroupHeaderType.Type0x09 || t === SubgroupHeaderType.Type0x0B || t === SubgroupHeaderType.Type0x0D
   }
+  /**
+   * Converts a number or bigint to SubgroupHeaderType.
+   * @param value - The value to convert.
+   * @returns The corresponding SubgroupHeaderType.
+   * @throws Error if the value is not valid.
+   */
   export function tryFrom(value: number | bigint): SubgroupHeaderType {
     const v = typeof value === 'bigint' ? Number(value) : value
     switch (v) {
@@ -87,21 +156,28 @@ export namespace SubgroupHeaderType {
 }
 
 /**
+ * @public
  * Publisher's preferred object delivery mechanism for a track.
+ * - `Subgroup`: Use ordered subgroups (reliable).
+ * - `Datagram`: Use unreliable datagrams when feasible.
  *
- * Semantics:
- * - `Subgroup`: Objects are forwarded inside ordered subgroups (reliable / ordered within subgroup semantics per protocol).
- * - `Datagram`: Objects are forwarded as unreliable datagrams when possible (may be lost / reordered) – best effort, lower overhead.
- *
- * The preference is advisory: the relay / transport layer MAY override based on negotiated capabilities.
+ * The preference is advisory: the relay/transport layer MAY override based on negotiated capabilities.
  */
 export enum ObjectForwardingPreference {
-  /** Use ordered subgroups (reliable) */
   Subgroup = 'Subgroup',
-  /** Use unreliable datagrams when feasible */
   Datagram = 'Datagram',
 }
+
+/**
+ * Namespace for ObjectForwardingPreference utilities.
+ */
 export namespace ObjectForwardingPreference {
+  /**
+   * Converts a number, bigint, or string to ObjectForwardingPreference.
+   * @param value - The value to convert.
+   * @returns The corresponding ObjectForwardingPreference.
+   * @throws Error if the value is not valid.
+   */
   export function tryFrom(value: number | bigint | string): ObjectForwardingPreference {
     if (value === 'Subgroup') return ObjectForwardingPreference.Subgroup
     if (value === 'Datagram') return ObjectForwardingPreference.Datagram
@@ -109,13 +185,31 @@ export namespace ObjectForwardingPreference {
   }
 }
 
+/**
+ * @public
+ * Object status codes for MOQT objects.
+ * - `Normal`: Object exists and is available.
+ * - `DoesNotExist`: Object does not exist.
+ * - `EndOfGroup`: End of group marker.
+ * - `EndOfTrack`: End of track marker.
+ */
 export enum ObjectStatus {
   Normal = 0x0,
   DoesNotExist = 0x1,
   EndOfGroup = 0x3,
   EndOfTrack = 0x4,
 }
+
+/**
+ * Namespace for ObjectStatus utilities.
+ */
 export namespace ObjectStatus {
+  /**
+   * Converts a number or bigint to ObjectStatus.
+   * @param value - The value to convert.
+   * @returns The corresponding ObjectStatus.
+   * @throws Error if the value is not valid.
+   */
   export function tryFrom(value: number | bigint): ObjectStatus {
     const v = typeof value === 'bigint' ? Number(value) : value
     switch (v) {

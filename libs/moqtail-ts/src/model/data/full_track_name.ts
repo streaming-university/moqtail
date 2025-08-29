@@ -2,15 +2,15 @@ import { Tuple } from '../common/tuple'
 import { ByteBuffer, BaseByteBuffer, FrozenByteBuffer } from '../common/byte_buffer'
 import { TrackNameError } from '../error/error'
 
-const MAX_NAMESPACE_TUPLE_COUNT = 32
-const MAX_FULL_TRACK_NAME_LENGTH = 4096
+export const MAX_NAMESPACE_TUPLE_COUNT = 32
+export const MAX_FULL_TRACK_NAME_LENGTH = 4096
 
 /**
  * Fully-qualified track identifier = hierarchical namespace (tuple) + leaf name bytes.
  *
  * Constraints enforced (throws {@link TrackNameError}):
  * - Namespace tuple field count: 1 .. {@link MAX_NAMESPACE_TUPLE_COUNT} (must not be empty).
- * - Total serialized length (namespace tuple + raw name bytes) <= {@link MAX_FULL_TRACK_NAME_LENGTH} bytes.
+ * - Total serialized length (namespace tuple + raw name bytes) less than or equals {@link MAX_FULL_TRACK_NAME_LENGTH} bytes.
  *
  * Namespace input may be:
  * - `string` path with segments separated by `/` (converted via {@link Tuple.fromUtf8Path}). Empty segments are preserved
@@ -34,7 +34,7 @@ export class FullTrackName {
   ) {}
 
   /**
-   * Human-readable representation: `<namespace path joined by '/'>:<name as lowercase hex>`.
+   * Human-readable representation: `\<namespace path joined by '/'\>:\<name as lowercase hex\>`.
    * If the underlying {@link Tuple} exposes `toUtf8Path`, it's used; otherwise the raw fields are joined.
    * This is lossy only in the sense that name bytes are hex encoded; round-tripping requires serialization.
    */
@@ -51,10 +51,10 @@ export class FullTrackName {
    * Construct a validated full track name.
    *
    * Validation steps:
-   * 1. Convert namespace string -> {@link Tuple} (split on '/') if needed.
-   * 2. Reject if namespace tuple field count is 0 or > {@link MAX_NAMESPACE_TUPLE_COUNT}.
+   * 1. Convert namespace string -\> {@link Tuple} (split on '/') if needed.
+   * 2. Reject if namespace tuple field count is 0 or \> {@link MAX_NAMESPACE_TUPLE_COUNT}.
    * 3. Encode name string to UTF-8 if needed.
-   * 4. Reject if total serialized length (namespace tuple + name bytes) > {@link MAX_FULL_TRACK_NAME_LENGTH}.
+   * 4. Reject if total serialized length (namespace tuple + name bytes) \> {@link MAX_FULL_TRACK_NAME_LENGTH}.
    *
    * @throws {@link TrackNameError} on any constraint violation.
    * @example
@@ -93,7 +93,7 @@ export class FullTrackName {
   }
 
   /**
-   * Parse a serialized full track name (inverse of {@link serialize}). Performs the same validations as {@link tryNew}.
+   * Parse a serialized full track name. Performs the same validations as {@link FullTrackName.tryNew}.
    * The provided buffer's read cursor advances accordingly.
    * @throws {@link TrackNameError} if constraints are violated.
    */

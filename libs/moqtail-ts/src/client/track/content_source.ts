@@ -21,7 +21,7 @@ export interface PastObjectSource {
 
 /**
  * Push-oriented live object feed. Wraps a {@link https://developer.mozilla.org/docs/Web/API/ReadableStream | ReadableStream} plus lightweight event subscription helpers.
- * Implementations advance {@link largestLocation} monotonically as objects arrive.
+ * Implementations advance {@link LiveObjectSource.largestLocation | largestLocation} monotonically as objects arrive.
  */
 export interface LiveObjectSource {
   /** Continuous stream yielding objects as they are produced */
@@ -37,10 +37,10 @@ export interface LiveObjectSource {
 }
 
 /**
- * Aggregates optional historical (`past`) and live (`live`) sources for a single track.
+ * Aggregates optional historical (`past`) and (`live`) sources for a single track.
  * Either facet may be omitted:
- * - VOD / static content: supply only {@link past}
- * - Pure live: supply only {@link live}
+ * - VOD / static content: supply only {@link TrackSource.past | past}
+ * - Pure live: supply only {@link TrackSource.live | live}
  * - Hybrid (catch-up + live tail): supply both.
  *
  * Priority handling note: publisher priority is defined on the Track metadata (see `Track.publisherPriority`).

@@ -1,5 +1,4 @@
 import {
-  TrackStatusRequest,
   FullTrackName,
   GroupOrder,
   FilterType,
@@ -13,7 +12,8 @@ import { AnnounceRequest } from './request/announce'
 import { FetchRequest } from './request/fetch'
 import { SubscribeRequest } from './request/subscribe'
 import { SubscribeAnnouncesRequest } from './request/subscribe_announces'
-
+import { TrackStatusRequest } from './request'
+import { MoqtailClient } from './client'
 /**
  * Discriminated union of every in‑flight MOQ‑tail control request tracked by the {@link MoqtailClient}.
  *
@@ -55,17 +55,6 @@ export type MoqtailRequest =
  * Options for {@link MoqtailClient.new} controlling connection target, protocol negotiation, timeouts,
  * and lifecycle callbacks.
  *
- * @property url Relay / server endpoint for the underlying {@link https://developer.mozilla.org/docs/Web/API/WebTransport | WebTransport} session (can be absolute {@link https://developer.mozilla.org/docs/Web/API/URL | URL} or string).
- * @property supportedVersions Ordered preference list of MOQ‑tail protocol version numbers (e.g. `0xff00000b`).
- * @property setupParameters Optional {@link SetupParameters} customizations; if omitted a default instance is built.
- * @property transportOptions Passed directly to the browser's {@link https://developer.mozilla.org/docs/Web/API/WebTransport | WebTransport} constructor for QUIC options.
- * @property dataStreamTimeoutMs Optional per *data* uni-stream idle timeout in milliseconds.
- * @property controlStreamTimeoutMs Optional control stream read timeout in milliseconds.
- * @property callbacks Hook object for observability (all optional):
- * - {@link MoqtailClientOptions.callbacks.onMessageSent | onMessageSent}: invoked after a control {@link ControlMessage} leaves the client.
- * - {@link MoqtailClientOptions.callbacks.onMessageReceived | onMessageReceived}: invoked upon each incoming control {@link ControlMessage}.
- * - {@link MoqtailClientOptions.callbacks.onSessionTerminated | onSessionTerminated}: invoked exactly once when {@link MoqtailClient.disconnect | disconnect} finalizes.
- *
  * @example Minimal
  * ```ts
  * const opts: MoqtailClientOptions = {
@@ -90,37 +79,31 @@ export type MoqtailRequest =
  * ```
  */
 export type MoqtailClientOptions = {
+  /** Relay / server endpoint for the underlying {@link https://developer.mozilla.org/docs/Web/API/WebTransport | WebTransport} session (can be absolute {@link https://developer.mozilla.org/en-US/docs/Web/API/URL | URL} or string).*/
   url: string | URL
+  /** Ordered preference list of MOQT protocol version numbers (e.g. `0xff00000b`).   */
   supportedVersions: number[]
+  /**  {@link SetupParameters} customizations; if omitted a default instance is built.*/
   setupParameters?: SetupParameters
+  /**  Passed directly to the browser's {@link https://developer.mozilla.org/docs/Web/API/WebTransport | WebTransport} constructor for {@link https://developer.mozilla.org/docs/Web/API/WebTransportOptions | WebTransportOptions}. */
   transportOptions?: WebTransportOptions
+  /** Per *data* uni-stream idle timeout in milliseconds. */
   dataStreamTimeoutMs?: number
+  /** Control stream read timeout in milliseconds. */
   controlStreamTimeoutMs?: number
+  /** callbacks for observability and logging purposes: */
   callbacks?: {
-    /** Called after a control {@link ControlMessage} is successfully written to the {@link ControlStream}. */
+    /** Called after a control message is successfully written to the {@link ControlStream}. */
     onMessageSent?: (msg: ControlMessage) => void
-    /** Called for each incoming control {@link ControlMessage} before protocol handling. */
+    /** Called for each incoming control message before protocol handling. */
     onMessageReceived?: (msg: ControlMessage) => void
-    /**
-     * Fired once when the session ends (normal or error). Receives the reason passed to
-     * {@link MoqtailClient.disconnect | disconnect} or an internal {@link Error}.
-     */
+    /** Fired once when the session ends (normal or error). Receives the reason passed to {@link MoqtailClient.disconnect | disconnect}. */
     onSessionTerminated?: (reason?: unknown) => void
   }
 }
 
 /**
  * Parameters for {@link MoqtailClient.subscribe | subscribing} to a track's live objects.
- *
- * @property fullTrackName Fully qualified track identifier ({@link FullTrackName}).
- * @property priority Subscriber priority (0 = highest, 255 = lowest). Values outside range are clamped. Fractional values are rounded.
- * @property groupOrder Desired {@link GroupOrder} (e.g. {@link GroupOrder.Original}) specifying delivery ordering semantics.
- * @property forward If true, deliver objects forward (ascending); if false, reverse/backward semantics (implementation dependent).
- * @property filterType {@link FilterType} variant controlling starting subset (e.g. {@link FilterType.LatestObject}).
- * @property parameters Optional extension {@link VersionSpecificParameters} appended to the SUBSCRIBE control message.
- * @property trackAlias Caller supplied alias for the track (else auto-generated); may be number or bigint.
- * @property startLocation Required for {@link FilterType.AbsoluteStart} / {@link FilterType.AbsoluteRange}; earliest {@link Location} to include.
- * @property endGroup Required for {@link FilterType.AbsoluteRange}; exclusive upper group boundary (coerced to bigint if number provided).
  *
  * @example Latest object
  * ```ts
@@ -146,14 +129,23 @@ export type MoqtailClientOptions = {
  * ```
  */
 export type SubscribeOptions = {
+  /** Fully qualified track identifier ({@link FullTrackName}). */
   fullTrackName: FullTrackName
-  priority: number // 0 is highest, 255 is lowest. Values are rounded then clamped
+  /** Subscriber priority (0 = highest, 255 = lowest). Values outside range are clamped. Fractional values are rounded. */
+  priority: number
+  /** Desired {@link GroupOrder} (e.g. {@link GroupOrder.Original}) specifying delivery ordering semantics. */
   groupOrder: GroupOrder
+  /** If true, deliver objects forward (ascending); if false, reverse/backward semantics (implementation dependent). */
   forward: boolean
+  /** {@link FilterType} variant controlling starting subset (e.g. {@link FilterType.LatestObject}). */
   filterType: FilterType
+  /** Optional extension {@link VersionSpecificParameters} appended to the SUBSCRIBE control message. */
   parameters?: VersionSpecificParameters
+  /** Caller supplied alias for the track (else auto-generated); may be number or bigint. */
   trackAlias?: bigint | number
+  /** Required for {@link FilterType.AbsoluteStart} / {@link FilterType.AbsoluteRange}; earliest {@link Location} to include. */
   startLocation?: Location
+  /** Required for {@link FilterType.AbsoluteRange}; exclusive upper group boundary (coerced to bigint if number provided). */
   endGroup?: bigint | number
 }
 
@@ -161,13 +153,6 @@ export type SubscribeOptions = {
  * Narrowing update constraints applied to an existing SUBSCRIBE via {@link MoqtailClient.subscribeUpdate}.
  *
  * Rules: start can only move forward (increase) and endGroup can only move backward (decrease) narrowing the window.
- *
- * @property requestId The original SUBSCRIBE request id (bigint) being updated.
- * @property startLocation New narrowed {@link Location} start.
- * @property endGroup New narrowed end group (inclusive / protocol defined) must be > start group.
- * @property priority Updated subscriber priority (same constraints as initial subscribe).
- * @property forward Updated direction flag.
- * @property parameters Optional additional {@link VersionSpecificParameters}; existing parameters persist if omitted.
  *
  * @example Narrowing a live window
  * ```ts
@@ -181,23 +166,22 @@ export type SubscribeOptions = {
  * ```
  */
 export type SubscribeUpdateOptions = {
+  /** The original SUBSCRIBE request id (bigint) being updated. */
   requestId: bigint
+  /** New narrowed {@link Location} start. */
   startLocation: Location
+  /** New narrowed end group (inclusive / protocol defined) must be \> start group. */
   endGroup: bigint
-  priority: number // 0 is highest, 255 is lowest
+  /** Updated subscriber priority (same constraints as initial subscribe). 0 is highest, 255 is lowest. */
+  priority: number
+  /** Updated direction flag. */
   forward: boolean
+  /** Optional additional {@link VersionSpecificParameters}; existing parameters persist if omitted. */
   parameters?: VersionSpecificParameters
 }
 
 /**
  * Options for {@link MoqtailClient.fetch | performing a FETCH} operation for historical or relative object ranges.
- *
- * @property priority Request priority (0 = highest, 255 = lowest). Rounded & clamped.
- * @property groupOrder {@link GroupOrder} governing sequencing.
- * @property typeAndProps Discriminated union selecting the {@link FetchType} mode and its specific properties:
- *  - StandAlone: full explicit range on a {@link FullTrackName} with start/end {@link Location}s.
- *  - Relative / Absolute: join an existing {@link SubscribeRequest} (identified by `joiningRequestId`) with starting position `joiningStart`.
- * @property parameters Optional {@link VersionSpecificParameters} block.
  *
  * @example Standalone fetch
  * ```ts
@@ -232,23 +216,34 @@ export type SubscribeUpdateOptions = {
 // TODO: Define BaseOptions and extend it with StandAloneOptions, RelativeOptions etc.
 // Move the type to top level
 export type FetchOptions = {
-  priority: number // 0 is highest, 255 is lowest
+  /** Request priority (0 = highest, 255 = lowest). Rounded & clamped. */
+  priority: number
+  /** {@link GroupOrder} governing sequencing. */
   groupOrder: GroupOrder
+  /**
+   * Discriminated union selecting the {@link FetchType} mode and its specific properties:
+   * - StandAlone: full explicit range on a {@link FullTrackName} with start/end {@link Location}s.
+   * - Relative / Absolute: join an existing {@link SubscribeRequest} (identified by `joiningRequestId`) with starting position `joiningStart`.
+   */
   typeAndProps:
     | {
         /** Standalone historical/segment fetch for a specific {@link FullTrackName}. */
         type: FetchType.StandAlone
+        /** Properties for standalone fetch: explicit track and range. */
         props: { fullTrackName: FullTrackName; startLocation: Location; endLocation: Location }
       }
     | {
         /** Fetch a range relative to an existing {@link SubscribeRequest} identified by `joiningRequestId`. */
         type: FetchType.Relative
+        /** Properties for relative fetch: subscription id and starting position. */
         props: { joiningRequestId: bigint; joiningStart: bigint }
       }
     | {
         /** Fetch an absolute group/object range relative to a {@link SubscribeRequest}. */
         type: FetchType.Absolute
+        /** Properties for absolute fetch: subscription id and starting position. */
         props: { joiningRequestId: bigint; joiningStart: bigint }
       }
+  /** Optional {@link VersionSpecificParameters} block. */
   parameters?: VersionSpecificParameters
 }

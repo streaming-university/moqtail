@@ -22,8 +22,9 @@ export enum TerminationCode {
 export namespace TerminationCode {
   /**
    * Tries to convert a number to a TerminationCode enum member.
-   * @param code The numeric code.
-   * @returns The corresponding TerminationCode member, or undefined if the code is not valid.
+   *
+   * @param code - The numeric code to convert.
+   * @returns The corresponding TerminationCode member, or throws InvalidTypeError if the code is not valid.
    */
   export function tryFrom(code: number): TerminationCode {
     switch (code) {

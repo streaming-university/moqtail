@@ -1,7 +1,15 @@
 import { CastingError } from '../error'
-
+import { ClientSetup, ServerSetup } from '../control'
+/**
+ * 32 bit MOQT Draft-11 version number exchanged in {@link ClientSetup} and {@link ServerSetup}
+ */
 export const DRAFT_11 = 0xff00000b
 
+/**
+ * @public
+ * Control message types for MOQT protocol.
+ * Each value corresponds to a specific control frame.
+ */
 export enum ControlMessageType {
   ReservedSetupV00 = 0x01,
   ReservedClientSetupV10 = 0x40,
@@ -34,6 +42,12 @@ export enum ControlMessageType {
   UnsubscribeAnnounces = 0x14,
 }
 
+/**
+ * Converts a bigint value to a ControlMessageType enum.
+ * @param v - The bigint value.
+ * @returns The corresponding ControlMessageType.
+ * @throws Error if the value is not a valid control message type.
+ */
 export function controlMessageTypeFromBigInt(v: bigint): ControlMessageType {
   switch (v) {
     case 0x01n:
@@ -99,6 +113,10 @@ export function controlMessageTypeFromBigInt(v: bigint): ControlMessageType {
   }
 }
 
+/**
+ * @public
+ * Error codes for Announce control messages.
+ */
 export enum AnnounceErrorCode {
   InternalError = 0x0,
   Unauthorized = 0x1,
@@ -110,6 +128,12 @@ export enum AnnounceErrorCode {
   ExpiredAuthToken = 0x12,
 }
 
+/**
+ * Converts a bigint value to an AnnounceErrorCode enum.
+ * @param v - The bigint value.
+ * @returns The corresponding AnnounceErrorCode.
+ * @throws Error if the value is not a valid announce error code.
+ */
 export function announceErrorCodeFromBigInt(v: bigint): AnnounceErrorCode {
   switch (v) {
     case 0x0n:
@@ -133,12 +157,23 @@ export function announceErrorCodeFromBigInt(v: bigint): AnnounceErrorCode {
   }
 }
 
+/**
+ * @public
+ * Filter types for subscription requests.
+ */
 export enum FilterType {
   NextGroupStart = 0x1,
   LatestObject = 0x2,
   AbsoluteStart = 0x3,
   AbsoluteRange = 0x4,
 }
+
+/**
+ * Converts a bigint value to a FilterType enum.
+ * @param v - The bigint value.
+ * @returns The corresponding FilterType.
+ * @throws Error if the value is not a valid filter type.
+ */
 export function filterTypeFromBigInt(v: bigint): FilterType {
   switch (v) {
     case 0x1n:
@@ -154,11 +189,22 @@ export function filterTypeFromBigInt(v: bigint): FilterType {
   }
 }
 
+/**
+ * @public
+ * Fetch request types for MOQT protocol.
+ */
 export enum FetchType {
   StandAlone = 0x1,
   Relative = 0x2,
   Absolute = 0x3,
 }
+
+/**
+ * Converts a bigint value to a FetchType enum.
+ * @param v - The bigint value.
+ * @returns The corresponding FetchType.
+ * @throws CastingError if the value is not a valid fetch type.
+ */
 export function fetchTypeFromBigInt(v: bigint): FetchType {
   switch (v) {
     case 0x1n:
@@ -172,11 +218,22 @@ export function fetchTypeFromBigInt(v: bigint): FetchType {
   }
 }
 
+/**
+ * @public
+ * Group ordering options for object delivery.
+ */
 export enum GroupOrder {
   Original = 0x0,
   Ascending = 0x1,
   Descending = 0x2,
 }
+
+/**
+ * Converts a number value to a GroupOrder enum.
+ * @param v - The number value.
+ * @returns The corresponding GroupOrder.
+ * @throws CastingError if the value is not a valid group order.
+ */
 export function groupOrderFromNumber(v: number): GroupOrder {
   switch (v) {
     case 0x0:
@@ -190,6 +247,10 @@ export function groupOrderFromNumber(v: number): GroupOrder {
   }
 }
 
+/**
+ * @public
+ * Error codes for Subscribe control messages.
+ */
 export enum SubscribeErrorCode {
   InternalError = 0x0,
   Unauthorized = 0x1,
@@ -202,6 +263,13 @@ export enum SubscribeErrorCode {
   UnknownAuthTokenAlias = 0x11,
   ExpiredAuthToken = 0x12,
 }
+
+/**
+ * Converts a bigint value to a SubscribeErrorCode enum.
+ * @param v - The bigint value.
+ * @returns The corresponding SubscribeErrorCode.
+ * @throws Error if the value is not a valid subscribe error code.
+ */
 export function subscribeErrorCodeFromBigInt(v: bigint): SubscribeErrorCode {
   switch (v) {
     case 0x0n:
@@ -229,6 +297,10 @@ export function subscribeErrorCodeFromBigInt(v: bigint): SubscribeErrorCode {
   }
 }
 
+/**
+ * @public
+ * Error codes for Fetch control messages.
+ */
 export enum FetchErrorCode {
   InternalError = 0x0,
   Unauthorized = 0x1,
@@ -243,6 +315,13 @@ export enum FetchErrorCode {
   MalformedAuthToken = 0x10,
   ExpiredAuthToken = 0x12,
 }
+
+/**
+ * Converts a bigint value to a FetchErrorCode enum.
+ * @param v - The bigint value.
+ * @returns The corresponding FetchErrorCode.
+ * @throws CastingError if the value is not a valid fetch error code.
+ */
 export function fetchErrorCodeFromBigInt(v: bigint): FetchErrorCode {
   switch (v) {
     case 0x0n:
@@ -274,6 +353,10 @@ export function fetchErrorCodeFromBigInt(v: bigint): FetchErrorCode {
   }
 }
 
+/**
+ * @public
+ * Status codes for track status responses.
+ */
 export enum TrackStatusCode {
   InProgress = 0x00,
   DoesNotExist = 0x01,
@@ -281,6 +364,13 @@ export enum TrackStatusCode {
   Finished = 0x03,
   RelayUnavailable = 0x04,
 }
+
+/**
+ * Converts a bigint value to a TrackStatusCode enum.
+ * @param v - The bigint value.
+ * @returns The corresponding TrackStatusCode.
+ * @throws Error if the value is not a valid track status code.
+ */
 export function trackStatusCodeFromBigInt(v: bigint): TrackStatusCode {
   switch (v) {
     case 0x00n:
@@ -298,6 +388,10 @@ export function trackStatusCodeFromBigInt(v: bigint): TrackStatusCode {
   }
 }
 
+/**
+ * @public
+ * Error codes for SubscribeAnnounces control messages.
+ */
 export enum SubscribeAnnouncesErrorCode {
   InternalError = 0x0,
   Unauthorized = 0x1,
@@ -309,6 +403,13 @@ export enum SubscribeAnnouncesErrorCode {
   UnknownAuthTokenAlias = 0x11,
   ExpiredAuthToken = 0x12,
 }
+
+/**
+ * Converts a bigint value to a SubscribeAnnouncesErrorCode enum.
+ * @param v - The bigint value.
+ * @returns The corresponding SubscribeAnnouncesErrorCode.
+ * @throws Error if the value is not a valid subscribe announces error code.
+ */
 export function subscribeAnnouncesErrorCodeFromBigInt(v: bigint): SubscribeAnnouncesErrorCode {
   switch (v) {
     case 0x0n:
@@ -334,6 +435,10 @@ export function subscribeAnnouncesErrorCodeFromBigInt(v: bigint): SubscribeAnnou
   }
 }
 
+/**
+ * @public
+ * Status codes for SubscribeDone control messages.
+ */
 export enum SubscribeDoneStatusCode {
   InternalError = 0x0,
   Unauthorized = 0x1,
@@ -343,6 +448,13 @@ export enum SubscribeDoneStatusCode {
   Expired = 0x5,
   TooFarBehind = 0x6,
 }
+
+/**
+ * Converts a bigint value to a SubscribeDoneStatusCode enum.
+ * @param v - The bigint value.
+ * @returns The corresponding SubscribeDoneStatusCode.
+ * @throws Error if the value is not a valid subscribe done status code.
+ */
 export function subscribeDoneStatusCodeFromBigInt(v: bigint): SubscribeDoneStatusCode {
   switch (v) {
     case 0x0n:
