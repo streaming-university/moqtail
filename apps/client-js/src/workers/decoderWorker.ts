@@ -72,8 +72,22 @@ self.onmessage = async (e) => {
     //console.debug('[WORKER]Received the extension headers:', extensionHeaders)
     const headers = ExtensionHeaders.fromKeyValuePairs(extensionHeaders ?? [])
     const timestamp = Number(headers.find((h) => ExtensionHeader.isCaptureTimestamp(h))?.timestamp ?? 0n)
+    const ptsTimestamp = Number(headers.find((h) => ExtensionHeader.isTimestampPts(h))?.timestamp ?? 0n)
     const configHeader = headers.find((h) => ExtensionHeader.isVideoConfig(h))
     const isKey = headers.some((h) => ExtensionHeader.isVideoFrameMarking(h) && h.value === 1n)
+
+    // Log PTS timestamp for debugging
+    if (ptsTimestamp > 0) {
+      const ptsSeconds = ptsTimestamp / 1_000_000
+      const captureSeconds = timestamp / 1000
+      console.debug('[DECODER] Video Frame timing:', {
+        ptsTimestamp,
+        captureTimestamp: timestamp,
+        ptsSeconds: ptsSeconds.toFixed(3),
+        captureSeconds: captureSeconds.toFixed(3),
+        encodingDelay: timestamp - ptsTimestamp / 1000,
+      })
+    }
 
     if (frameTimeoutId) {
       clearTimeout(frameTimeoutId)
@@ -153,6 +167,17 @@ self.onmessage = async (e) => {
 
     const headers = ExtensionHeaders.fromKeyValuePairs(extensionHeaders ?? [])
     const timestamp = Number(headers.find((h) => ExtensionHeader.isCaptureTimestamp(h))?.timestamp ?? 0n)
+    const ptsTimestamp = Number(headers.find((h) => ExtensionHeader.isTimestampPts(h))?.timestamp ?? 0n)
+
+    // Always log audio PTS for debugging (not just when > 0)
+    console.log('[DECODER] Audio Frame timing info:', {
+      ptsTimestamp,
+      captureTimestamp: timestamp,
+      ptsSeconds: ptsTimestamp > 0 ? (ptsTimestamp / 1_000_000).toFixed(3) : 'N/A',
+      captureSeconds: timestamp > 0 ? (timestamp / 1000).toFixed(3) : 'N/A',
+      encodingDelay: timestamp > 0 && ptsTimestamp > 0 ? timestamp - ptsTimestamp / 1000 : 'N/A',
+      extensionHeadersCount: extensionHeaders?.length || 0,
+    })
 
     if (!audioDecoder) {
       // console.log('[DECODER] Creating new audio decoder at', new Date().toISOString())

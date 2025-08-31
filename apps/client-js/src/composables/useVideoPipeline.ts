@@ -19,8 +19,8 @@ export function setClock(c: SocketClock) {
 setInterval(() => {
   const localTime = Date.now()
   const serverTime = clock.now()
-  const diff = localTime - serverTime
-  //console.log(`Local Time:${localTime} | Estimated Server Time:${serverTime}\nDifference:${diff}`)
+  // Log timing difference for debugging
+  //console.debug(`Local Time:${localTime} | Estimated Server Time:${serverTime}\nDifference:${localTime - serverTime}`)
 }, 2000)
 export async function connectToRelay(url: string) {
   return await MoqtailClient.new({ url, supportedVersions: [0xff00000b] })
@@ -153,6 +153,7 @@ export async function startAudioEncoder({
   let audioObjectId = 0n
   let currentAudioGroupId = audioGroupId
   let shouldEncode = true
+  let audioStartTime = performance.now() * 1000 // Start time in microseconds for PTS calculation
 
   setInterval(() => {
     currentAudioGroupId += 1
@@ -178,7 +179,17 @@ export async function startAudioEncoder({
         chunk.copyTo(payload)
 
         const captureTime = Math.round(clock!.now())
-        const locHeaders = new ExtensionHeaders().addCaptureTimestamp(captureTime)
+        const ptsTimestamp = chunk.timestamp
+
+        // Debug: Log audio PTS information
+        console.log('[AUDIO ENCODER] Audio chunk PTS:', {
+          chunkTimestamp: chunk.timestamp,
+          ptsTimestamp,
+          captureTime,
+          ptsSeconds: ptsTimestamp / 1_000_000,
+        })
+
+        const locHeaders = new ExtensionHeaders().addCaptureTimestamp(captureTime).addTimestampPts(ptsTimestamp) // Add PTS timestamp for audio
 
         console.warn('Audio Group ID is:', currentAudioGroupId)
         // console.log('AudioEncoder output chunk:', chunk);
@@ -201,6 +212,7 @@ export async function startAudioEncoder({
 
   let pcmBuffer: Float32Array[] = []
   const AUDIO_PACKET_SAMPLES = 960
+  let sampleCounter = 0 // Track processed samples for PTS calculation
 
   audioNode.port.onmessage = (event) => {
     // console.log('Received audio data from AudioWorkletNode:', event.data);
@@ -228,12 +240,25 @@ export async function startAudioEncoder({
           offset += needed
         }
       }
+
+      // Calculate PTS timestamp based on sample timing
+      const ptsMicroseconds = audioStartTime + (sampleCounter * 1_000_000) / 48000
+      sampleCounter += AUDIO_PACKET_SAMPLES
+
+      // Debug: Log audio PTS calculation
+      console.log('[AUDIO PROCESSING] Audio PTS calculation:', {
+        audioStartTime,
+        sampleCounter: sampleCounter - AUDIO_PACKET_SAMPLES, // show the value before increment
+        ptsMicroseconds,
+        ptsSeconds: ptsMicroseconds / 1_000_000,
+      })
+
       const audioData = new AudioData({
         format: 'f32',
         sampleRate: 48000,
         numberOfFrames: AUDIO_PACKET_SAMPLES,
         numberOfChannels: 1,
-        timestamp: performance.now() * 1000,
+        timestamp: ptsMicroseconds, // Use calculated PTS timestamp
         data: out.buffer,
       })
       audioEncoder.encode(audioData)
@@ -249,6 +274,8 @@ export async function startAudioEncoder({
       shouldEncode = enabled
       if (!enabled) {
         pcmBuffer = []
+        sampleCounter = 0 // Reset sample counter when encoding is disabled
+        audioStartTime = performance.now() * 1000 // Reset start time
       }
     },
   }
@@ -273,6 +300,7 @@ export function initializeVideoEncoder({
   let videoConfig: ArrayBuffer | null = null
   let frameCounter = 0
   const pendingVideoTimestamps: number[] = []
+  const pendingVideoPtsTimestamps: number[] = [] // Store PTS timestamps
   let videoReader: ReadableStreamDefaultReader<any> | null = null
 
   const createVideoEncoder = () => {
@@ -281,6 +309,7 @@ export function initializeVideoEncoder({
     videoObjectId = 0n
     frameCounter = 0
     pendingVideoTimestamps.length = 0
+    pendingVideoPtsTimestamps.length = 0 // Clear PTS timestamps
     //videoConfig = null
 
     videoEncoder = new VideoEncoder({
@@ -291,14 +320,22 @@ export function initializeVideoEncoder({
         }
 
         let captureTime = pendingVideoTimestamps.shift()
+        let ptsTimestamp = pendingVideoPtsTimestamps.shift() // Get PTS timestamp
+
         if (captureTime === undefined) {
           console.warn('No capture time available for video frame, skipping')
           captureTime = Math.round(clock!.now())
         }
 
+        if (ptsTimestamp === undefined) {
+          console.warn('No PTS timestamp available for video frame, using capture time')
+          ptsTimestamp = captureTime
+        }
+
         const locHeaders = new ExtensionHeaders()
           .addCaptureTimestamp(captureTime)
           .addVideoFrameMarking(chunk.type === 'key' ? 1 : 0)
+          .addTimestampPts(ptsTimestamp) // Add PTS timestamp
 
         const desc = meta?.decoderConfig?.description
         if (!isFirstKeyframeSent && desc instanceof ArrayBuffer) {
@@ -392,6 +429,9 @@ export function initializeVideoEncoder({
 
             const captureTime = Math.round(clock!.now())
             pendingVideoTimestamps.push(captureTime)
+
+            const ptsTimestamp = result.value?.timestamp
+            pendingVideoPtsTimestamps.push(ptsTimestamp)
 
             try {
               let insert_keyframe = false

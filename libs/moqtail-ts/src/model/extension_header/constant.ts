@@ -5,6 +5,7 @@ export enum LOCHeaderExtensionId {
   VideoFrameMarking = 4,
   AudioLevel = 6,
   VideoConfig = 13,
+  TimestampPts = 14,
 }
 
 export function locHeaderExtensionIdFromNumber(value: number): LOCHeaderExtensionId {
@@ -17,6 +18,8 @@ export function locHeaderExtensionIdFromNumber(value: number): LOCHeaderExtensio
       return LOCHeaderExtensionId.AudioLevel
     case 13:
       return LOCHeaderExtensionId.VideoConfig
+    case 14:
+      return LOCHeaderExtensionId.TimestampPts
     default:
       throw new InvalidTypeError('locHeaderExtensionIdFromNumber', `Invalid LOC header extension id: ${value}`)
   }

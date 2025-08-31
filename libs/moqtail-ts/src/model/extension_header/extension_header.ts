@@ -3,8 +3,9 @@ import { CaptureTimestamp } from './capture_time_stamp'
 import { VideoFrameMarking } from './video_frame_marking'
 import { AudioLevel } from './audio_level'
 import { VideoConfig } from './video_config'
+import { TimestampPts } from './timestamp_pts'
 
-export type ExtensionHeader = CaptureTimestamp | VideoFrameMarking | AudioLevel | VideoConfig
+export type ExtensionHeader = CaptureTimestamp | VideoFrameMarking | AudioLevel | VideoConfig | TimestampPts
 
 export namespace ExtensionHeader {
   export function fromKeyValuePair(pair: KeyValuePair): ExtensionHeader | undefined {
@@ -12,7 +13,8 @@ export namespace ExtensionHeader {
       CaptureTimestamp.fromKeyValuePair(pair) ||
       VideoFrameMarking.fromKeyValuePair(pair) ||
       AudioLevel.fromKeyValuePair(pair) ||
-      VideoConfig.fromKeyValuePair(pair)
+      VideoConfig.fromKeyValuePair(pair) ||
+      TimestampPts.fromKeyValuePair(pair)
     )
   }
 
@@ -31,6 +33,9 @@ export namespace ExtensionHeader {
   }
   export function isVideoConfig(header: ExtensionHeader): header is VideoConfig {
     return header instanceof VideoConfig
+  }
+  export function isTimestampPts(header: ExtensionHeader): header is TimestampPts {
+    return header instanceof TimestampPts
   }
 }
 
@@ -51,6 +56,10 @@ export class ExtensionHeaders {
   }
   addVideoConfig(config: Uint8Array): this {
     this.kvps.push(new VideoConfig(config).toKeyValuePair())
+    return this
+  }
+  addTimestampPts(timestamp: bigint | number): this {
+    this.kvps.push(new TimestampPts(BigInt(timestamp)).toKeyValuePair())
     return this
   }
   addRaw(pair: KeyValuePair): this {
@@ -78,18 +87,21 @@ if (import.meta.vitest) {
       const marking = 99887766n
       const audioLevel = 99n
       const videoConfig = new Uint8Array([3, 1, 2, 4, 5, 6, 2, 5, 3])
+      const ptsTimestamp = 5566778899n
       const kvps = new ExtensionHeaders()
         .addCaptureTimestamp(timestamp)
         .addVideoFrameMarking(marking)
         .addAudioLevel(audioLevel)
         .addVideoConfig(videoConfig)
+        .addTimestampPts(ptsTimestamp)
         .build()
       const parsed = ExtensionHeaders.fromKeyValuePairs(kvps)
-      expect(parsed.length).toBe(4)
+      expect(parsed.length).toBe(5)
       expect(parsed[0] && ExtensionHeader.isCaptureTimestamp(parsed[0]) && parsed[0].timestamp === timestamp).toBe(true)
       expect(parsed[1] && ExtensionHeader.isVideoFrameMarking(parsed[1]) && parsed[1].value === marking).toBe(true)
       expect(parsed[2] && ExtensionHeader.isAudioLevel(parsed[2]) && parsed[2].audioLevel === audioLevel).toBe(true)
       expect(parsed[3] && ExtensionHeader.isVideoConfig(parsed[3]) && parsed[3].config === videoConfig).toBe(true)
+      expect(parsed[4] && ExtensionHeader.isTimestampPts(parsed[4]) && parsed[4].timestamp === ptsTimestamp).toBe(true)
     })
 
     test('fromKeyValuePairs skips unknown parameter', () => {

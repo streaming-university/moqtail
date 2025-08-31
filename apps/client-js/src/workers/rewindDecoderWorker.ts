@@ -98,15 +98,16 @@ self.onmessage = (e) => {
 
     console.log(
       'Rewind worker received video frame, payload size:',
-      moqtObj?.payload?.length,
-      'headers:',
-      extensionHeaders?.length,
+      moqtObj?.byteLength || 0,
+      'extension headers:',
+      extensionHeaders?.length || 0,
     )
 
     try {
       // Safely parse extension headers with error handling
       let headers: ExtensionHeader[] = []
       let timestamp = 0
+      let ptsTimestamp = 0
       let configHeader: ExtensionHeader | undefined = undefined
       let isKey = false
 
@@ -114,8 +115,22 @@ self.onmessage = (e) => {
         try {
           headers = ExtensionHeaders.fromKeyValuePairs(extensionHeaders)
           timestamp = Number(headers.find((h) => ExtensionHeader.isCaptureTimestamp(h))?.timestamp ?? 0n)
+          ptsTimestamp = Number(headers.find((h) => ExtensionHeader.isTimestampPts(h))?.timestamp ?? 0n)
           configHeader = headers.find((h) => ExtensionHeader.isVideoConfig(h))
           isKey = headers.some((h) => ExtensionHeader.isVideoFrameMarking(h) && h.value === 1n)
+
+          // Log PTS timestamp for debugging in rewind player
+          if (ptsTimestamp > 0) {
+            const ptsSeconds = ptsTimestamp / 1_000_000
+            const captureSeconds = timestamp / 1000
+            console.debug('[REWIND DECODER] Frame timing:', {
+              ptsTimestamp,
+              captureTimestamp: timestamp,
+              ptsSeconds: ptsSeconds.toFixed(3),
+              captureSeconds: captureSeconds.toFixed(3),
+              encodingDelay: timestamp - ptsTimestamp / 1000,
+            })
+          }
         } catch (headerError) {
           console.warn('Error parsing extension headers in rewind worker:', headerError)
           // Fallback: assume it's a key frame if we can't parse headers
