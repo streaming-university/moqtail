@@ -8,7 +8,7 @@ let theDecoderConfig: VideoDecoderConfig | null = null
 
 self.onmessage = (e) => {
   console.log('Rewind worker received message:', e.data.type)
-  const { type, canvas, payload, extentions, decoderConfig } = e.data
+  const { type, canvas, payload, extensions, decoderConfig } = e.data
 
   if (type === 'init') {
     ctx = canvas?.getContext?.('2d') ?? null
@@ -91,7 +91,7 @@ self.onmessage = (e) => {
 
   if (type === 'moq') {
     const moqtObj = payload
-    const extensionHeaders = extentions
+    const extensionHeaders = extensions
 
     console.log(
       'Rewind worker received video frame, payload size:',
@@ -201,7 +201,7 @@ self.onmessage = (e) => {
 
   if (type === 'moq-audio') {
     const moqtObj = payload
-    const extensionHeaders = extentions
+    const extensionHeaders = extensions
 
     console.log(
       'Rewind worker received audio frame, payload size:',

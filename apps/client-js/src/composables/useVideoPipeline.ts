@@ -661,7 +661,7 @@ function subscribeAndPipeToWorker(
         worker.postMessage(
           {
             type,
-            extentions: obj.extensionHeaders,
+            extensions: obj.extensionHeaders,
             payload: obj,
             serverTimestamp: clock!.now(),
             frameTimeoutMs: window.appSettings.frameTimeoutMs,

@@ -43,7 +43,7 @@ impl FetchObject {
       buf.put_vi(payload.len() as u64)?;
       buf.extend_from_slice(payload);
     } else {
-      return Err(ParseError::ProcotolViolation {
+      return Err(ParseError::ProtocolViolation {
         context: "FetchObject::serialize",
         details: "No object status, no payload".to_string(),
       });
@@ -88,7 +88,7 @@ impl FetchObject {
       let mut headers: Vec<KeyValuePair> = Vec::new();
       while header_bytes.has_remaining() {
         let h = KeyValuePair::deserialize(&mut header_bytes).map_err(|_| {
-          ParseError::ProcotolViolation {
+          ParseError::ProtocolViolation {
             context: "ObjectDatagram::deserialize(headers)",
             details: "Can't parse headers".to_string(),
           }

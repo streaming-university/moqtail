@@ -1438,7 +1438,7 @@ function SessionPage() {
     try {
       const the_client = client ? client : moqClient!
       //console.log('subscribeToTrack', roomName, userId, videoTrackAlias, audioTrackAlias, canvasRef)
-      // TODO: sub to audio and video seperately
+      // TODO: sub to audio and video separately
       // for now, we just check the video announced date
       if (canvasRef.current && !canvasRef.current.dataset.status) {
         //console.log("subscribeToTrack - Now will try to subscribe")

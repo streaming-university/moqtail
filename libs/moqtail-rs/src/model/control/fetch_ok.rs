@@ -89,7 +89,7 @@ impl ControlMessageTrait for FetchOk {
     let group_order_raw = payload.get_u8();
     let group_order = GroupOrder::try_from(group_order_raw)?;
     if let GroupOrder::Original = group_order {
-      return Err(ParseError::ProcotolViolation {
+      return Err(ParseError::ProtocolViolation {
         context: "FetchOk::parse_payload(group_order)",
         details: "Group order must be Ascending(0x01) or Descending(0x02)".to_string(),
       });
@@ -110,7 +110,7 @@ impl ControlMessageTrait for FetchOk {
         end_of_track = true;
       }
       _ => {
-        return Err(ParseError::ProcotolViolation {
+        return Err(ParseError::ProtocolViolation {
           context: "FetchOk::parse_payload(end_of_track)",
           details: format!("Invalid value for end of track {end_of_track_raw}"),
         });

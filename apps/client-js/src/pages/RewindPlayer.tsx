@@ -471,7 +471,7 @@ export const RewindPlayer: React.FC<RewindPlayerProps> = ({
 
           workerRef.current!.postMessage({
             type: 'moq',
-            extentions: extensionHeaders,
+            extensions: extensionHeaders,
             payload: {
               payload: payloadCopy,
               extensionHeaders: extensionHeaders,
@@ -508,7 +508,7 @@ export const RewindPlayer: React.FC<RewindPlayerProps> = ({
           // Payload should already be valid since we filtered during initialization
           workerRef.current!.postMessage({
             type: 'moq-audio',
-            extentions: extensionHeaders,
+            extensions: extensionHeaders,
             payload: {
               payload: payloadCopy,
               extensionHeaders: extensionHeaders,

@@ -71,7 +71,7 @@ impl ControlStreamHandler {
 
             return Ok(msg);
           }
-          Err(ParseError::ProcotolViolation { .. }) => {
+          Err(ParseError::ProtocolViolation { .. }) => {
             return Err(TerminationCode::ProtocolViolation);
           }
 

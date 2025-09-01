@@ -107,7 +107,7 @@ impl DatagramStatus {
       let ext_len = bytes.get_vi()?;
 
       if ext_len == 0 {
-        return Err(ParseError::ProcotolViolation {
+        return Err(ParseError::ProtocolViolation {
           context: "ObjectDatagramStatus::deserialize(ext_len)",
           details: "Extension headers present (Type=0x03) but length is 0".to_string(),
         });
@@ -133,7 +133,7 @@ impl DatagramStatus {
       let mut headers: Vec<KeyValuePair> = Vec::new();
       while header_bytes.has_remaining() {
         let h = KeyValuePair::deserialize(&mut header_bytes).map_err(|_| {
-          ParseError::ProcotolViolation {
+          ParseError::ProtocolViolation {
             context: "ObjectDatagramStatus::deserialize(headers)",
             details: "Should be able to parse headers".to_string(),
           }

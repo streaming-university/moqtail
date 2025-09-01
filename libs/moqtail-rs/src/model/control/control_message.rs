@@ -162,13 +162,13 @@ impl ControlMessage {
         UnsubscribeAnnounces::parse_payload(&mut payload).map(ControlMessage::UnsubscribeAnnounces)
       }
     }
-    .map_err(|err| ParseError::ProcotolViolation {
+    .map_err(|err| ParseError::ProtocolViolation {
       context: "ControlMessage::deserialize(payload)",
       details: err.to_string(),
     })?;
 
     if payload.has_remaining() {
-      return Err(ParseError::ProcotolViolation {
+      return Err(ParseError::ProtocolViolation {
         context: "ControlMessage::deserialize(final_check)",
         details: format!(
           "Extra {} bytes remaining in payload after parsing",

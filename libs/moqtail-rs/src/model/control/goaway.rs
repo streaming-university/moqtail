@@ -49,13 +49,13 @@ impl ControlMessageTrait for GoAway {
 
   // TODO: If the URI is zero bytes long, the current URI is reused instead.
   // The new session URI SHOULD use the same scheme as the current URL to ensure compatibility.
-  // The maxmimum length of the New Session URI is 8,192 bytes.
+  // The maximum length of the New Session URI is 8,192 bytes.
   // If an endpoint receives a length exceeding the maximum, it MUST close the session with a Protocol Violation.
   // If a server receives a GOAWAY with a non-zero New Session URI Length it MUST terminate the session with a Protocol Violation.
 
   fn parse_payload(payload: &mut Bytes) -> Result<Box<Self>, ParseError> {
-    let uri_lenght = payload.get_vi()?;
-    let uri_lenght: usize = uri_lenght
+    let uri_length = payload.get_vi()?;
+    let uri_length: usize = uri_length
       .try_into()
       .map_err(|e: std::num::TryFromIntError| ParseError::CastingError {
         context: "GoAway::parse_payload(uri_length)",
@@ -64,21 +64,21 @@ impl ControlMessageTrait for GoAway {
         details: e.to_string(),
       })?;
 
-    if uri_lenght == 0 {
+    if uri_length == 0 {
       return Ok(Box::new(GoAway {
         new_session_uri: None,
       }));
     }
 
-    if payload.remaining() < uri_lenght {
+    if payload.remaining() < uri_length {
       return Err(ParseError::NotEnoughBytes {
         context: "GoAway::parse_payload(uri_length)",
-        needed: uri_lenght,
+        needed: uri_length,
         available: payload.remaining(),
       });
     }
 
-    let new_session_uri = payload.copy_to_bytes(uri_lenght);
+    let new_session_uri = payload.copy_to_bytes(uri_length);
     let new_session_uri =
       String::from_utf8(new_session_uri.to_vec()).map_err(|e| ParseError::InvalidUTF8 {
         context: "GoAway::parse_payload(new_session_uri)",

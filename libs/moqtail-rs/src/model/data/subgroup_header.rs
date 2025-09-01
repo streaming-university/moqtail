@@ -98,7 +98,7 @@ impl SubgroupHeader {
       if let Some(id) = self.subgroup_id {
         buf.put_vi(id)?;
       } else {
-        return Err(ParseError::ProcotolViolation {
+        return Err(ParseError::ProtocolViolation {
           context: "SubgroupHeader::serialize(header_type)",
           details: "Subgroup_id field is required for this header type".to_string(),
         });

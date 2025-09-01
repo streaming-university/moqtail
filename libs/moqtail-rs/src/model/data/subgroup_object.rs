@@ -29,7 +29,7 @@ impl SubgroupObject {
         buf.put_vi(ext_buf.len())?;
         buf.extend_from_slice(&ext_buf);
       } else {
-        return Err(ParseError::ProcotolViolation {
+        return Err(ParseError::ProtocolViolation {
           context: "SubgroupObject::serialize(ext)",
           details: "Has extensions but length 0".to_string(),
         });
@@ -43,7 +43,7 @@ impl SubgroupObject {
       buf.put_vi(payload.len())?;
       buf.extend_from_slice(payload);
     } else {
-      return Err(ParseError::ProcotolViolation {
+      return Err(ParseError::ProtocolViolation {
         context: "SubgroupObject::serialize",
         details: "No object status, no payload".to_string(),
       });
@@ -84,7 +84,7 @@ impl SubgroupObject {
           match KeyValuePair::deserialize(&mut header_bytes) {
             Ok(header) => headers.push(header),
             Err(_) => {
-              return Err(ParseError::ProcotolViolation {
+              return Err(ParseError::ProtocolViolation {
                 context: "SubgroupObject::deserialize",
                 details: "Failed to parse extension header".to_string(),
               });

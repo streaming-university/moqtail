@@ -146,7 +146,7 @@ impl ControlMessageTrait for SubscribeOk {
     let group_order_raw = payload.get_u8();
     let group_order = GroupOrder::try_from(group_order_raw)?;
     if let GroupOrder::Original = group_order {
-      return Err(ParseError::ProcotolViolation {
+      return Err(ParseError::ProtocolViolation {
         context: "SubscribeOk::parse_payload(group_order_validation)",
         details: "Group order must be Ascending(0x01) or Descending(0x02)".to_string(),
       });
@@ -163,7 +163,7 @@ impl ControlMessageTrait for SubscribeOk {
       0 => false,
       1 => true,
       _ => {
-        return Err(ParseError::ProcotolViolation {
+        return Err(ParseError::ProtocolViolation {
           context: "SubscribeOk::parse_payload(content_exists)",
           details: format!("Invalid Content Exists value: {content_exists_raw}"),
         });

@@ -95,7 +95,7 @@ impl ControlMessageTrait for SubscribeUpdate {
       0 => false,
       1 => true,
       _ => {
-        return Err(ParseError::ProcotolViolation {
+        return Err(ParseError::ProtocolViolation {
           context: "Subscribe::parse_payload(forward)",
           details: format!("Invalid value: {forward_raw}"),
         });

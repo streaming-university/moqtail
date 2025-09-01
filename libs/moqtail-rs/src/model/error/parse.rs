@@ -43,7 +43,7 @@ pub enum ParseError {
   },
 
   #[error("Protocol violation: [{context}], [{details}]")]
-  ProcotolViolation {
+  ProtocolViolation {
     context: &'static str,
     details: String,
   },

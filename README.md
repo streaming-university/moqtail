@@ -94,7 +94,7 @@ apps/client-js-demo/
 │   │   └── SocketContext.tsx
 │   ├── startup.ts
 │   ├── types
-│   │   ├── AppSettins.ts
+│   │   ├── AppSettings.ts
 │   │   └── types.ts
 │   ├── videoUtils.ts
 │   ├── vite-env.d.ts

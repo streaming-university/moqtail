@@ -34,7 +34,7 @@ pub enum HeaderInfo {
   },
   Subgroup {
     header: SubgroupHeader,
-    // TODO: the following cannot be guaranteed and obtained properly just by track aliase
+    // TODO: the following cannot be guaranteed and obtained properly just by track alias
     /*subscribe_request: Subscribe,*/ // Store the original request for context
   },
 }
@@ -199,8 +199,8 @@ pub enum RecvDataStreamReadError {
 /// # Pseudocode
 /// ```rust
 /// accept-uni
-/// let pending_fetchs: &mut BTreeMap<u64, Fetch> = Session.fetch_requests;
-/// let data_Stream = RecvDataStream::new(head, pending_fetchs).await?;
+/// let pending_fetches: &mut BTreeMap<u64, Fetch> = Session.fetch_requests;
+/// let data_Stream = RecvDataStream::new(head, pending_fetches).await?;
 /// loop{
 /// //get the object
 /// let object = data_stream.next_object().await;
@@ -209,22 +209,22 @@ pub enum RecvDataStreamReadError {
 pub struct RecvDataStream {
   recv_stream: Arc<Mutex<RecvStream>>,
   header_info: Arc<Mutex<Option<HeaderInfo>>>,
-  pending_fetchs: Arc<RwLock<BTreeMap<u64, FetchRequest>>>, // Mutable borrow to potentially remove entry
-  objects: Arc<RwLock<VecDeque<Object>>>,                   // Buffer for parsed objects
-  is_closed: Arc<RwLock<bool>>,                             // Track if the stream is closed
-  started_read_task: Arc<Mutex<bool>>,                      // Track if read task has started
+  pending_fetches: Arc<RwLock<BTreeMap<u64, FetchRequest>>>, // Mutable borrow to potentially remove entry
+  objects: Arc<RwLock<VecDeque<Object>>>,                    // Buffer for parsed objects
+  is_closed: Arc<RwLock<bool>>,                              // Track if the stream is closed
+  started_read_task: Arc<Mutex<bool>>,                       // Track if read task has started
   notify: Arc<Notify>,
 }
 
 impl RecvDataStream {
   pub fn new(
     recv_stream: RecvStream,
-    pending_fetchs: Arc<RwLock<BTreeMap<u64, FetchRequest>>>, // Mutable borrow to potentially remove entry
+    pending_fetches: Arc<RwLock<BTreeMap<u64, FetchRequest>>>, // Mutable borrow to potentially remove entry
   ) -> Self {
     Self {
       recv_stream: Arc::new(Mutex::new(recv_stream)),
       header_info: Arc::new(Mutex::new(None)), // Initially no header info
-      pending_fetchs,
+      pending_fetches,
       objects: Arc::new(RwLock::new(VecDeque::new())), // Initialize the object buffer
       is_closed: Arc::new(RwLock::new(false)),         // Track if the stream is closed
       started_read_task: Arc::new(Mutex::new(false)),
@@ -242,7 +242,7 @@ impl RecvDataStream {
     recv_stream: Arc<Mutex<RecvStream>>,
     is_closed: Arc<RwLock<bool>>,
     the_header_info: Arc<Mutex<Option<HeaderInfo>>>,
-    pending_fetchs: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
+    pending_fetches: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
     objects: Arc<RwLock<VecDeque<Object>>>,
     notify: Arc<Notify>,
   ) -> Result<(), RecvDataStreamReadError> {
@@ -259,7 +259,7 @@ impl RecvDataStream {
           bytes_cursor,
           is_fetch,
           is_closed.clone(),
-          pending_fetchs.clone(),
+          pending_fetches.clone(),
         )
         .await
         .map_err(|e| {
@@ -357,15 +357,15 @@ impl RecvDataStream {
     mut bytes_cursor: bytes::Bytes,
     is_fetch: bool,
     is_closed: Arc<RwLock<bool>>,
-    pending_fetchs: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
+    pending_fetches: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
   ) -> Result<Option<(usize, HeaderInfo)>, ParseError> {
     debug!("RecvDataStream::read_header() called");
     let original_remaining = bytes_cursor.remaining();
     if is_fetch {
       match FetchHeader::deserialize(&mut bytes_cursor) {
         Ok(fetch_header) => {
-          let pending_fetchs = pending_fetchs.read().await;
-          if let Some(fetch_request) = pending_fetchs.get(&fetch_header.request_id) {
+          let pending_fetches = pending_fetches.read().await;
+          if let Some(fetch_request) = pending_fetches.get(&fetch_header.request_id) {
             let consumed = original_remaining - bytes_cursor.remaining();
 
             let header_info = HeaderInfo::Fetch {
@@ -379,10 +379,10 @@ impl RecvDataStream {
             Ok(Some((consumed, header_info)))
           } else {
             // Drop the immutable borrow before calling the async method
-            drop(pending_fetchs);
+            drop(pending_fetches);
             // self.close_stream().await;
             *is_closed.write().await = true;
-            Err(ParseError::ProcotolViolation {
+            Err(ParseError::ProtocolViolation {
               context: "RecvDataStream::new(FetchHeader validation)",
               details: format!(
                 "Received FetchHeader for unknown request_id: {}",
@@ -396,7 +396,7 @@ impl RecvDataStream {
         }
         Err(e) => {
           *is_closed.write().await = true;
-          Err(ParseError::ProcotolViolation {
+          Err(ParseError::ProtocolViolation {
             context: "RecvDataStream::new(FetchHeader validation)",
             details: e.to_string(),
           })
@@ -417,7 +417,7 @@ impl RecvDataStream {
         }
         Err(e) => {
           *is_closed.write().await = true;
-          Err(ParseError::ProcotolViolation {
+          Err(ParseError::ProtocolViolation {
             context: "RecvDataStream::new(SubgroupHeader validation)",
             details: e.to_string(),
           })
@@ -485,7 +485,7 @@ impl RecvDataStream {
         }
         Err(e) => {
           *is_closed.write().await = true;
-          Err(ParseError::ProcotolViolation {
+          Err(ParseError::ProtocolViolation {
             context: "RecvDataStream::next_object(parse_result)",
             details: e.to_string(),
           })
@@ -506,7 +506,7 @@ impl RecvDataStream {
       *started = true;
       let recv_stream = self.recv_stream.clone();
       let is_closed = self.is_closed.clone();
-      let pending_fetchs = self.pending_fetchs.clone();
+      let pending_fetches = self.pending_fetches.clone();
       let objects = self.objects.clone();
       let header_info = self.header_info.clone();
       let notify = self.notify.clone();
@@ -515,7 +515,7 @@ impl RecvDataStream {
           recv_stream,
           is_closed,
           header_info,
-          pending_fetchs,
+          pending_fetches,
           objects,
           notify,
         )
@@ -826,8 +826,8 @@ mod tests {
   async fn test_send_recv_fetch_object_success() {
     let (send, recv) = setup_stream_pair().await;
     let (fetch_header, fetch_req) = make_fetch_header_and_request();
-    let mut pending_fetchs: BTreeMap<u64, FetchRequest> = BTreeMap::new();
-    pending_fetchs.insert(
+    let mut pending_fetches: BTreeMap<u64, FetchRequest> = BTreeMap::new();
+    pending_fetches.insert(
       fetch_req.request_id,
       FetchRequest {
         original_request_id: fetch_req.request_id,
@@ -851,10 +851,10 @@ mod tests {
     let fetch_obj = make_fetch_object();
     let object = make_object_from_fetch(&fetch_obj);
 
-    let pending_fetchs = Arc::new(RwLock::new(pending_fetchs));
+    let pending_fetches = Arc::new(RwLock::new(pending_fetches));
 
     // Receiver
-    let receiver = RecvDataStream::new(Arc::new(Mutex::new(recv)), pending_fetchs.clone());
+    let receiver = RecvDataStream::new(Arc::new(Mutex::new(recv)), pending_fetches.clone());
 
     sender.send_object(&object).await.unwrap();
     let received = receiver.next_object().await.1.unwrap();
@@ -868,7 +868,7 @@ mod tests {
   async fn test_send_recv_subgroup_object_success() {
     let (send, recv) = setup_stream_pair().await;
     let (subgroup_header, _) = make_subgroup_header_and_request();
-    let pending_fetchs = BTreeMap::new();
+    let pending_fetches = BTreeMap::new();
 
     let mut sender = SendDataStream::new(
       Arc::new(Mutex::new(send)),
@@ -883,9 +883,9 @@ mod tests {
     let subgroup_obj = make_subgroup_object();
     let object = make_object_from_subgroup(&subgroup_obj, &subgroup_header);
 
-    let pending_fetchs = Arc::new(RwLock::new(pending_fetchs));
+    let pending_fetches = Arc::new(RwLock::new(pending_fetches));
 
-    let receiver = RecvDataStream::new(Arc::new(Mutex::new(recv)), pending_fetchs.clone());
+    let receiver = RecvDataStream::new(Arc::new(Mutex::new(recv)), pending_fetches.clone());
 
     sender.send_object(&object).await.unwrap();
     let received = receiver.next_object().await.1.unwrap();
@@ -898,12 +898,12 @@ mod tests {
   #[tokio::test]
   async fn test_timeout_on_header() {
     let (_send, recv) = setup_stream_pair().await;
-    let mut pending_fetchs = Arc::new(RwLock::new(BTreeMap::new()));
+    let mut pending_fetches = Arc::new(RwLock::new(BTreeMap::new()));
     let mut pending_subscribes = Arc::new(RwLock::new(BTreeMap::new()));
     // Don't send any header, just wait for timeout
     let result = RecvDataStream::new(
       Arc::new(Mutex::new(recv)),
-      pending_fetchs,
+      pending_fetches,
       pending_subscribes,
     );
     match result {
@@ -918,8 +918,8 @@ mod tests {
   async fn test_partial_object_timeout() {
     let (send, recv) = setup_stream_pair().await;
     let (fetch_header, fetch_req) = make_fetch_header_and_request();
-    let mut pending_fetchs = BTreeMap::new();
-    pending_fetchs.insert(
+    let mut pending_fetches = BTreeMap::new();
+    pending_fetches.insert(
       fetch_req.request_id,
       FetchRequest {
         request_id: fetch_req.request_id,
@@ -939,11 +939,11 @@ mod tests {
     )
     .await
     .unwrap();
-    let pending_fetchs = Arc::new(RwLock::new(pending_fetchs));
+    let pending_fetches = Arc::new(RwLock::new(pending_fetches));
     let pending_subscribes = Arc::new(RwLock::new(pending_subscribes));
     let mut receiver = RecvDataStream::new(
       Arc::new(Mutex::new(recv)),
-      pending_fetchs,
+      pending_fetches,
       pending_subscribes,
     );
     // Don't send any object, just wait for timeout
@@ -958,8 +958,8 @@ mod tests {
   async fn test_partial_object_completion() {
     let (send, recv) = setup_stream_pair().await;
     let (fetch_header, fetch_req) = make_fetch_header_and_request();
-    let mut pending_fetchs = BTreeMap::new();
-    pending_fetchs.insert(
+    let mut pending_fetches = BTreeMap::new();
+    pending_fetches.insert(
       fetch_req.request_id,
       FetchRequest {
         original_request_id: fetch_req.request_id,
@@ -982,9 +982,9 @@ mod tests {
     let fetch_obj = make_fetch_object();
     let object = make_object_from_fetch(&fetch_obj);
 
-    let pending_fetchs = Arc::new(RwLock::new(pending_fetchs));
+    let pending_fetches = Arc::new(RwLock::new(pending_fetches));
 
-    let receiver = RecvDataStream::new(recv, pending_fetchs);
+    let receiver = RecvDataStream::new(recv, pending_fetches);
 
     // Serialize object and send in two parts
     let bytes = fetch_obj.serialize().unwrap();

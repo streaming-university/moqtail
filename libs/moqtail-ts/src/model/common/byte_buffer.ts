@@ -190,7 +190,7 @@ export class ByteBuffer extends BaseByteBuffer {
     const need = this._length + add
     if (need <= this.buf.length) return
 
-    // TODO: Critical figure out and fix why buf.lenght is 0?
+    // TODO: Critical figure out and fix why buf.length is 0?
     let newSize = this.buf.length * 2 + 1
     while (newSize < need) newSize *= 2
 

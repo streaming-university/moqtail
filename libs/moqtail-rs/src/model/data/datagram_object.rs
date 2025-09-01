@@ -107,7 +107,7 @@ impl DatagramObject {
       let ext_len = bytes.get_vi()?;
 
       if ext_len == 0 {
-        return Err(ParseError::ProcotolViolation {
+        return Err(ParseError::ProtocolViolation {
           context: "ObjectDatagram::deserialize(extension_length)",
           details: "Extension headers present (Type=0x01) but length is 0".to_string(),
         });
@@ -135,7 +135,7 @@ impl DatagramObject {
       let mut headers: Vec<KeyValuePair> = Vec::new();
       while header_bytes.has_remaining() {
         let h = KeyValuePair::deserialize(&mut header_bytes).map_err(|e| {
-          ParseError::ProcotolViolation {
+          ParseError::ProtocolViolation {
             context: "ObjectDatagram::deserialize, can't parse headers",
             details: e.to_string(),
           }

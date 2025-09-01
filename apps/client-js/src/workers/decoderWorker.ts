@@ -14,7 +14,7 @@ let lastLogTime = performance.now()
 let moqObjectCount = 0
 
 self.onmessage = async (e) => {
-  const { type, canvas, payload, extentions, decoderConfig, serverTimestamp, frameTimeoutMs } = e.data
+  const { type, canvas, payload, extensions, decoderConfig, serverTimestamp, frameTimeoutMs } = e.data
 
   if (type === 'init') {
     ctx = canvas?.getContext?.('2d') ?? null
@@ -58,7 +58,7 @@ self.onmessage = async (e) => {
 
   if (type === 'moq') {
     const moqtObj = payload
-    const extensionHeaders = extentions
+    const extensionHeaders = extensions
 
     moqObjectCount++
     if (moqObjectCount % 50 === 0) {
@@ -146,7 +146,7 @@ self.onmessage = async (e) => {
 
   if (type === 'moq-audio') {
     const moqtObj = payload
-    const extensionHeaders = extentions
+    const extensionHeaders = extensions
 
     const headers = ExtensionHeaders.fromKeyValuePairs(extensionHeaders ?? [])
     const timestamp = Number(headers.find((h) => ExtensionHeader.isCaptureTimestamp(h))?.timestamp ?? 0n)

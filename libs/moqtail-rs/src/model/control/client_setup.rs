@@ -56,7 +56,7 @@ impl ControlMessageTrait for ClientSetup {
     let number_of_supported_versions = payload.get_vi()?;
 
     if number_of_supported_versions == 0 {
-      return Err(ParseError::ProcotolViolation {
+      return Err(ParseError::ProtocolViolation {
         context: "ClientSetup::parse_payload(number_of_supported_versions)",
         details: "Must support at least one version".to_string(),
       });

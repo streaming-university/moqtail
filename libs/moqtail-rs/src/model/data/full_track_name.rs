@@ -34,7 +34,7 @@ impl FullTrackName {
     if total_len > MAX_FULL_TRACK_NAME_LENGTH {
       return Err(ParseError::TrackNameError {
         context: "FullTrackName::new(total_length)",
-        details: format!("Total lenght cannot exceed {MAX_FULL_TRACK_NAME_LENGTH}"),
+        details: format!("Total length cannot exceed {MAX_FULL_TRACK_NAME_LENGTH}"),
       });
     }
     Ok(Self {
@@ -77,7 +77,7 @@ impl FullTrackName {
     if total_len > MAX_FULL_TRACK_NAME_LENGTH {
       return Err(ParseError::TrackNameError {
         context: "FullTrackName::deserialize(total_length)",
-        details: format!("Total lenght cannot exceed {MAX_FULL_TRACK_NAME_LENGTH}"),
+        details: format!("Total length cannot exceed {MAX_FULL_TRACK_NAME_LENGTH}"),
       });
     }
 

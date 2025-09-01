@@ -29,7 +29,7 @@
     - ControlStream tests: 3s → 1s timeouts
     - AkamaiOffset tests: mocked network calls instead of real ones
   - **CI**: Update husky hooks
-    - Remove exec < /dev/tty from pre-commit and prepare-commit-msg for windows compatability
+    - Remove exec < /dev/tty from pre-commit and prepare-commit-msg for windows compatibility
   - **FIX**: Track alias map
     - Track alias map was using number for track alias instead of bigint
     - Update the structure and relevant parts of the code
