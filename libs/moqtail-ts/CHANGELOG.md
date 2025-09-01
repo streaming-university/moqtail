@@ -1,5 +1,18 @@
 # moqtail-ts
 
+## 0.3.1
+
+### Patch Changes
+
+- [#48](https://github.com/streaming-university/moqtail/pull/48) [`b89e901`](https://github.com/streaming-university/moqtail/commit/b89e901bcce0d70d5d07ae9baaccafefbe757550) Thanks [@LeventAksakal](https://github.com/LeventAksakal)! - Add documentation for most of the public facing library api
+  - add api-extractor for document standardization
+  - add type-doc for static site generation based off tsdocs
+  - add documentation for the following items:
+    - moqtail client, client options
+    - track, track source and object cache
+    - some items under ./model (e.g reason phrase, full track name ...)
+  - update client-js library imports to use aliases
+
 ## 0.3.0
 
 ### Minor Changes
