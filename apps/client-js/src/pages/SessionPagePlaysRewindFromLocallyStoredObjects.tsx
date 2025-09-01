@@ -39,14 +39,14 @@ import {
   clearRewindBuffer,
   clearAllRewindBuffers,
 } from '@/composables/useVideoPipeline'
-import { MoqtailClient } from 'moqtail-ts/client'
+import { MOQtailClient } from 'moqtail-ts/client'
 import { AkamaiOffset, NetworkTelemetry } from 'moqtail-ts/util'
 import { RewindPlayer } from './RewindPlayer'
 
 function SessionPage() {
   // initialize the MOQTail client
   const relayUrl = window.appSettings.relayUrl
-  const [moqClient, setMoqClient] = useState<MoqtailClient | undefined>(undefined)
+  const [moqClient, setMoqClient] = useState<MOQtailClient | undefined>(undefined)
 
   // initialize the variables
   const { userId, username, roomState, setSession, clearSession } = useSession()
@@ -916,7 +916,7 @@ function SessionPage() {
     audioTrackAlias: number,
     chatTrackAlias: number,
     canvasRef: React.RefObject<HTMLCanvasElement>,
-    client: MoqtailClient | undefined = undefined,
+    client: MOQtailClient | undefined = undefined,
   ) {
     try {
       const the_client = client ? client : moqClient!

@@ -1,5 +1,5 @@
 import { FilterType, Subscribe, SubscribeDone, SubscribeDoneStatusCode, SubscribeUpdate } from '@/model/control'
-import { MoqtailClient } from '../client'
+import { MOQtailClient } from '../client'
 import { Track } from '../track/track'
 import {
   InternalError,
@@ -104,7 +104,7 @@ export class SubscribePublication {
    * @param largestLocation - The largest location seen so far, used for determining start location.
    */
   constructor(
-    private readonly client: MoqtailClient,
+    private readonly client: MOQtailClient,
     readonly track: Track,
     private readonly subscribeMsg: Subscribe,
     largestLocation?: Location,

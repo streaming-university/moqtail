@@ -5,10 +5,10 @@ import {
   FetchType,
   InternalError,
   Location,
-  MoqtailError,
+  MOQtailError,
   MoqtObject,
 } from '@/model'
-import { MoqtailClient } from '../client'
+import { MOQtailClient } from '../client'
 import { Track } from '../track/track'
 import { SubscribePublication } from './subscribe'
 
@@ -20,13 +20,13 @@ export class FetchPublication {
   readonly #startLocation: Location
   readonly #endLocation: Location
   readonly #msg: Fetch
-  readonly #client: MoqtailClient
+  readonly #client: MOQtailClient
   #stream: WritableStream | undefined
   #writer: WritableStreamDefaultWriter | undefined
   #objects: MoqtObject[] | undefined
   #isCanceled = false
 
-  constructor(client: MoqtailClient, track: Track, fetchRequest: Fetch) {
+  constructor(client: MOQtailClient, track: Track, fetchRequest: Fetch) {
     this.#client = client
     this.#requestId = fetchRequest.requestId
     this.#track = track
@@ -71,7 +71,7 @@ export class FetchPublication {
 
   async publish(): Promise<void> {
     if (this.#isCanceled) return
-    if (!this.#track.trackSource.past) throw new MoqtailError('FetchPublication.publish, Track does not support fetch')
+    if (!this.#track.trackSource.past) throw new MOQtailError('FetchPublication.publish, Track does not support fetch')
     try {
       this.#objects = await this.#track.trackSource.past.getRange(this.#startLocation, this.#endLocation)
       // TODO: Calculate and use stream priority from subscriber priority from the msg + publisher priority from the track

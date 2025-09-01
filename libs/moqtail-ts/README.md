@@ -6,7 +6,7 @@ MOQT (Media over QUIC Transport) is a protocol for media delivery over QUIC conn
 
 ## Overview
 
-The `MoqtailClient` serves as the main entry point for interacting with MoQ relays and other peers. A client can act as:
+The `MOQtailClient` serves as the main entry point for interacting with MoQ relays and other peers. A client can act as:
 
 - **Original Publisher**: Creates and announces tracks, making content available to subscribers
 - **End Subscriber**: Discovers and consumes content from publishers via track subscriptions
@@ -20,7 +20,7 @@ As a publisher, the MoqTail client allows you to create, manage, and distribute 
 Publishers can add or remove tracks using the `addOrUpdateTrack()` and `removeTrack()` methods:
 
 ```typescript
-const client = await MoqtailClient.new(clientSetup, webTransport)
+const client = await MOQtailClient.new(clientSetup, webTransport)
 
 // Add a new track
 client.addOrUpdateTrack(myTrack)
@@ -312,12 +312,12 @@ await client.subscribeUpdate(subscribeUpdate)
 ### Complete Subscriber Example
 
 ```typescript
-import { MoqtailClient } from './client/client'
+import { MOQtailClient } from './client/client'
 import { PullPlayoutBuffer } from './util/pull_playout_buffer'
 
 async function createSubscriber() {
   // Initialize client
-  const client = await MoqtailClient.new(clientSetup, webTransport)
+  const client = await MOQtailClient.new(clientSetup, webTransport)
 
   // Subscribe to live video
   const subscribe = new Subscribe(

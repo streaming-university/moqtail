@@ -1,7 +1,7 @@
 /**
- * Base class for all moqtail-TS errors.
+ * Base class for all MOQtail errors.
  */
-export class MoqtailError extends Error {
+export class MOQtailError extends Error {
   constructor(cause?: string) {
     super(cause)
     this.name = this.constructor.name
@@ -11,7 +11,7 @@ export class MoqtailError extends Error {
 /**
  * Not enough bytes in buffer to satisfy a read.
  */
-export class NotEnoughBytesError extends MoqtailError {
+export class NotEnoughBytesError extends MOQtailError {
   constructor(
     public context: string,
     public needed: number,
@@ -24,7 +24,7 @@ export class NotEnoughBytesError extends MoqtailError {
 /**
  * Cannot cast between two incompatible types.
  */
-export class CastingError extends MoqtailError {
+export class CastingError extends MOQtailError {
   constructor(
     public context: string,
     public fromType: string,
@@ -38,7 +38,7 @@ export class CastingError extends MoqtailError {
 /**
  * Value too large to encode as varint.
  */
-export class VarIntOverflowError extends MoqtailError {
+export class VarIntOverflowError extends MOQtailError {
   constructor(
     public context: string,
     public value: number,
@@ -50,7 +50,7 @@ export class VarIntOverflowError extends MoqtailError {
 /**
  * Length exceeds maximum allowed by protocol.
  */
-export class LengthExceedsMaxError extends MoqtailError {
+export class LengthExceedsMaxError extends MOQtailError {
   constructor(
     public context: string,
     public max: number,
@@ -63,7 +63,7 @@ export class LengthExceedsMaxError extends MoqtailError {
 /**
  * Key/value formatting error.
  */
-export class KeyValueFormattingError extends MoqtailError {
+export class KeyValueFormattingError extends MOQtailError {
   constructor(public context: string) {
     super(`[${context}] key value formatting error`)
   }
@@ -72,7 +72,7 @@ export class KeyValueFormattingError extends MoqtailError {
 /**
  * Invalid discriminant or type tag.
  */
-export class InvalidTypeError extends MoqtailError {
+export class InvalidTypeError extends MOQtailError {
   constructor(
     public context: string,
     public details: string,
@@ -84,7 +84,7 @@ export class InvalidTypeError extends MoqtailError {
 /**
  * Invalid UTF-8 encountered in a string or bytes field.
  */
-export class InvalidUTF8Error extends MoqtailError {
+export class InvalidUTF8Error extends MOQtailError {
   constructor(
     public context: string,
     public details: string,
@@ -96,7 +96,7 @@ export class InvalidUTF8Error extends MoqtailError {
 /**
  * Generic protocol violation.
  */
-export class ProtocolViolationError extends MoqtailError {
+export class ProtocolViolationError extends MOQtailError {
   constructor(
     public context: string,
     public details: string,
@@ -108,7 +108,7 @@ export class ProtocolViolationError extends MoqtailError {
 /**
  * Track naming error.
  */
-export class TrackNameError extends MoqtailError {
+export class TrackNameError extends MOQtailError {
   constructor(
     public context: string,
     public details: string,
@@ -120,7 +120,7 @@ export class TrackNameError extends MoqtailError {
 /**
  * Track alias error.
  */
-export class TrackAliasError extends MoqtailError {
+export class TrackAliasError extends MOQtailError {
   constructor(
     public context: string,
     public details: string,
@@ -132,7 +132,7 @@ export class TrackAliasError extends MoqtailError {
 /**
  * Operation timed out.
  */
-export class TimeoutError extends MoqtailError {
+export class TimeoutError extends MOQtailError {
   constructor(public context: string) {
     super(`Timeout: [${context}]`)
   }
@@ -141,7 +141,7 @@ export class TimeoutError extends MoqtailError {
 /**
  * Internal error.
  */
-export class InternalError extends MoqtailError {
+export class InternalError extends MOQtailError {
   constructor(
     public context: string,
     public details: string,
@@ -153,7 +153,7 @@ export class InternalError extends MoqtailError {
 /**
  * Connection terminated.
  */
-export class TerminationError extends MoqtailError {
+export class TerminationError extends MOQtailError {
   constructor(
     public context: string,
     public terminationCode: number,

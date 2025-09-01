@@ -13,15 +13,15 @@ import { FetchRequest } from './request/fetch'
 import { SubscribeRequest } from './request/subscribe'
 import { SubscribeAnnouncesRequest } from './request/subscribe_announces'
 import { TrackStatusRequest } from './request'
-import { MoqtailClient } from './client'
+import { MOQtailClient } from './client'
 /**
- * Discriminated union of every in‑flight MOQ‑tail control request tracked by the {@link MoqtailClient}.
+ * Discriminated union of every in‑flight MOQ‑tail control request tracked by the {@link MOQtailClient}.
  *
  * Each concrete request type encapsulates the original control message plus coordination primitives
  * (e.g. a {@link https://developer.mozilla.org/docs/Web/API/Promise | Promise} facade / stream controller) that resolve when a terminal protocol response
  * (OK / ERROR / CANCEL) is received.
  *
- * Used internally in maps like `MoqtailClient.requests` to look up state by request id without needing
+ * Used internally in maps like `MOQtailClient.requests` to look up state by request id without needing
  * multiple heterogeneous collections.
  *
  * Variants:
@@ -33,7 +33,7 @@ import { MoqtailClient } from './client'
  *
  * @example Looking up a request by id
  * ```ts
- * function isActive(requests: Map<bigint, MoqtailRequest>, id: bigint) {
+ * function isActive(requests: Map<bigint, MOQtailRequest>, id: bigint) {
  *   const req = requests.get(id)
  *   if (!req) return false
  *   // Narrow by instanceof, e.g. FetchRequest
@@ -44,7 +44,7 @@ import { MoqtailClient } from './client'
  * }
  * ```
  */
-export type MoqtailRequest =
+export type MOQtailRequest =
   | AnnounceRequest
   | SubscribeAnnouncesRequest
   | FetchRequest
@@ -52,20 +52,20 @@ export type MoqtailRequest =
   | TrackStatusRequest
 
 /**
- * Options for {@link MoqtailClient.new} controlling connection target, protocol negotiation, timeouts,
+ * Options for {@link MOQtailClient.new} controlling connection target, protocol negotiation, timeouts,
  * and lifecycle callbacks.
  *
  * @example Minimal
  * ```ts
- * const opts: MoqtailClientOptions = {
+ * const opts: MOQtailClientOptions = {
  *   url: 'https://relay.example.com/moq',
  *   supportedVersions: [0xff00000b]
  * }
- * const client = await MoqtailClient.new(opts)
+ * const client = await MOQtailClient.new(opts)
  * ```
  * @example With callbacks & timeouts
  * ```ts
- * const client = await MoqtailClient.new({
+ * const client = await MOQtailClient.new({
  *   url: relayUrl,
  *   supportedVersions: [0xff00000b],
  *   dataStreamTimeoutMs: 5000,
@@ -78,7 +78,7 @@ export type MoqtailRequest =
  * })
  * ```
  */
-export type MoqtailClientOptions = {
+export type MOQtailClientOptions = {
   /** Relay / server endpoint for the underlying {@link https://developer.mozilla.org/docs/Web/API/WebTransport | WebTransport} session (can be absolute {@link https://developer.mozilla.org/en-US/docs/Web/API/URL | URL} or string).*/
   url: string | URL
   /** Ordered preference list of MOQT protocol version numbers (e.g. `0xff00000b`).   */
@@ -97,13 +97,13 @@ export type MoqtailClientOptions = {
     onMessageSent?: (msg: ControlMessage) => void
     /** Called for each incoming control message before protocol handling. */
     onMessageReceived?: (msg: ControlMessage) => void
-    /** Fired once when the session ends (normal or error). Receives the reason passed to {@link MoqtailClient.disconnect | disconnect}. */
+    /** Fired once when the session ends (normal or error). Receives the reason passed to {@link MOQtailClient.disconnect | disconnect}. */
     onSessionTerminated?: (reason?: unknown) => void
   }
 }
 
 /**
- * Parameters for {@link MoqtailClient.subscribe | subscribing} to a track's live objects.
+ * Parameters for {@link MOQtailClient.subscribe | subscribing} to a track's live objects.
  *
  * @example Latest object
  * ```ts
@@ -150,7 +150,7 @@ export type SubscribeOptions = {
 }
 
 /**
- * Narrowing update constraints applied to an existing SUBSCRIBE via {@link MoqtailClient.subscribeUpdate}.
+ * Narrowing update constraints applied to an existing SUBSCRIBE via {@link MOQtailClient.subscribeUpdate}.
  *
  * Rules: start can only move forward (increase) and endGroup can only move backward (decrease) narrowing the window.
  *
@@ -181,7 +181,7 @@ export type SubscribeUpdateOptions = {
 }
 
 /**
- * Options for {@link MoqtailClient.fetch | performing a FETCH} operation for historical or relative object ranges.
+ * Options for {@link MOQtailClient.fetch | performing a FETCH} operation for historical or relative object ranges.
  *
  * @example Standalone fetch
  * ```ts

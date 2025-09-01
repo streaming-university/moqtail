@@ -50,10 +50,10 @@ import {
   Unsubscribe,
   UnsubscribeAnnounces,
 } from '../../model/control'
-import { MoqtailClient } from '../client'
+import { MOQtailClient } from '../client'
 import { ControlMessage } from '../../model/control'
 
-export type ControlMessageHandler<T> = (client: MoqtailClient, msg: T) => Promise<void>
+export type ControlMessageHandler<T> = (client: MOQtailClient, msg: T) => Promise<void>
 
 export function getHandlerForControlMessage(msg: ControlMessage): ControlMessageHandler<any> | undefined {
   if (msg instanceof Announce) return handlerAnnounce

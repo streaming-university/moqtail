@@ -35,7 +35,7 @@ import {
 import { RecvStream } from './data_stream'
 import {
   InternalError,
-  MoqtailError,
+  MOQtailError,
   ProtocolViolationError,
   SetupParameters,
   Tuple,
@@ -51,13 +51,13 @@ import { getHandlerForControlMessage } from './handler/handler'
 import { SubscribePublication } from './publication/subscribe'
 import { FetchPublication } from './publication/fetch'
 import { random60bitId } from './util/random_id'
-import { MoqtailRequest, SubscribeOptions, SubscribeUpdateOptions, FetchOptions, MoqtailClientOptions } from './types'
+import { MOQtailRequest, SubscribeOptions, SubscribeUpdateOptions, FetchOptions, MOQtailClientOptions } from './types'
 
 /**
  * @public
  * Represents a Media Over QUIC Transport (MOQT) client session.
  *
- * Use {@link MoqtailClient.new} to establish a connection and perform MOQT operations such as subscribing to tracks,
+ * Use {@link MOQtailClient.new} to establish a connection and perform MOQT operations such as subscribing to tracks,
  * fetching historical data, announcing tracks for publication, and managing session lifecycle.
  *
  * Once initialized, the client provides high-level methods for MOQT requests and publishing. If a protocol violation
@@ -67,7 +67,7 @@ import { MoqtailRequest, SubscribeOptions, SubscribeUpdateOptions, FetchOptions,
  *
  * ### Connect and Subscribe to a Track
  * ```ts
- * const client = await MoqtailClient.new({ url, supportedVersions: [0xff00000b] });
+ * const client = await MOQtailClient.new({ url, supportedVersions: [0xff00000b] });
  * const result = await client.subscribe({
  *   fullTrackName,
  *   filterType: FilterType.LatestObject,
@@ -84,7 +84,7 @@ import { MoqtailRequest, SubscribeOptions, SubscribeUpdateOptions, FetchOptions,
  *
  * ### Announce a Track for Publishing
  * ```ts
- * const client = await MoqtailClient.new({ url, supportedVersions: [0xff00000b] });
+ * const client = await MOQtailClient.new({ url, supportedVersions: [0xff00000b] });
  * const announceResult = await client.announce(["camera", "main"]);
  * if (!(announceResult instanceof AnnounceError)) {
  *   // Ready to publish objects under this namespace
@@ -96,7 +96,7 @@ import { MoqtailRequest, SubscribeOptions, SubscribeUpdateOptions, FetchOptions,
  * await client.disconnect();
  * ```
  */
-export class MoqtailClient {
+export class MOQtailClient {
   /**
    * Namespace prefixes (tuples) the peer has requested announce notifications for via SUBSCRIBE_ANNOUNCES.
    * Used to decide which locally issued ANNOUNCE messages should be forwarded (future optimization: prefix trie).
@@ -121,7 +121,7 @@ export class MoqtailClient {
    * All in‑flight request objects keyed by requestId (SUBSCRIBE, FETCH, ANNOUNCE, etc). Facilitates lookup
    * when responses / data arrive. Entries are removed on completion or error.
    */
-  readonly requests: Map<bigint, MoqtailRequest> = new Map()
+  readonly requests: Map<bigint, MOQtailRequest> = new Map()
   /**
    * Active publications (SUBSCRIBE or FETCH) keyed by requestId to manage object stream controllers and lifecycle.
    * Subset / specialization view of `requests`.
@@ -136,7 +136,7 @@ export class MoqtailClient {
    * Bidirectional alias \<-\> full track name mapping to reconstruct metadata for incoming objects that reference aliases only.
    */
   readonly trackAliasMap: TrackAliasMap = new TrackAliasMap()
-  /** Underlying WebTransport session (set after successful construction in MoqtailClient.new). */
+  /** Underlying WebTransport session (set after successful construction in MOQtailClient.new). */
   webTransport!: WebTransport
   /** Validated ServerSetup message captured during handshake (protocol parameters negotiated). */
   #serverSetup!: ServerSetup
@@ -247,25 +247,25 @@ export class MoqtailClient {
   /**
    * Guard that throws if the client has been destroyed (disconnect already called). Used at start of public APIs
    * to fail fast rather than perform partial operations on a torn-down session.
-   * @throws MoqtailError when #isDestroyed is true.
+   * @throws MOQtailError when #isDestroyed is true.
    */
   #ensureActive() {
-    if (this.#isDestroyed) throw new MoqtailError('MoqtailClient is destroyed and cannot be used.')
+    if (this.#isDestroyed) throw new MOQtailError('MOQtailClient is destroyed and cannot be used.')
   }
 
   private constructor() {}
   /**
-   * Establishes a new {@link MoqtailClient} session over WebTransport and performs the MOQT setup handshake.
+   * Establishes a new {@link MOQtailClient} session over WebTransport and performs the MOQT setup handshake.
    *
-   * @param args - {@link MoqtailClientOptions}
+   * @param args - {@link MOQtailClientOptions}
    *
-   * @returns Promise resolving to a ready {@link MoqtailClient} instance.
+   * @returns Promise resolving to a ready {@link MOQtailClient} instance.
    *
    * @throws :{@link ProtocolViolationError} If the server sends an unexpected or invalid message during setup.
    *
    * @example Minimal connection
    * ```ts
-   * const client = await MoqtailClient.new({
+   * const client = await MOQtailClient.new({
    *   url: 'https://relay.example.com/transport',
    *   supportedVersions: [0xff00000b]
    * });
@@ -273,7 +273,7 @@ export class MoqtailClient {
    *
    * @example With callbacks and options
    * ```ts
-   * const client = await MoqtailClient.new({
+   * const client = await MOQtailClient.new({
    *   url,
    *   supportedVersions: [0xff00000b],
    *   setupParameters: new SetupParameters().addMaxRequestId(1000),
@@ -288,7 +288,7 @@ export class MoqtailClient {
    * });
    * ```
    */
-  static async new(args: MoqtailClientOptions): Promise<MoqtailClient> {
+  static async new(args: MOQtailClientOptions): Promise<MOQtailClient> {
     const {
       url,
       supportedVersions,
@@ -298,7 +298,7 @@ export class MoqtailClient {
       controlStreamTimeoutMs,
       callbacks,
     } = args
-    const client = new MoqtailClient()
+    const client = new MOQtailClient()
 
     client.webTransport = new WebTransport(url, transportOptions)
     await client.webTransport.ready
@@ -322,9 +322,9 @@ export class MoqtailClient {
       client.controlStream.send(clientSetup)
       const reader = client.controlStream.stream.getReader()
       const { value: response, done } = await reader.read()
-      if (done) throw new ProtocolViolationError('MoqtailClient.new', 'Stream closed after client setup')
+      if (done) throw new ProtocolViolationError('MOQtailClient.new', 'Stream closed after client setup')
       if (!(response instanceof ServerSetup))
-        throw new ProtocolViolationError('MoqtailClient.new', 'Expected server setup after client setup')
+        throw new ProtocolViolationError('MOQtailClient.new', 'Expected server setup after client setup')
       client.#serverSetup = response
       reader.releaseLock()
       client.#handleIncomingControlMessages()
@@ -332,17 +332,17 @@ export class MoqtailClient {
       return client
     } catch (error) {
       await client.disconnect(
-        new InternalError('MoqtailClient.new', error instanceof Error ? error.message : String(error)),
+        new InternalError('MOQtailClient.new', error instanceof Error ? error.message : String(error)),
       )
       throw error
     }
   }
 
   /**
-   * Gracefully terminates this {@link MoqtailClient} session and releases underlying {@link https://developer.mozilla.org/docs/Web/API/WebTransport | WebTransport} resources.
+   * Gracefully terminates this {@link MOQtailClient} session and releases underlying {@link https://developer.mozilla.org/docs/Web/API/WebTransport | WebTransport} resources.
    *
    * @param reason - Optional application-level reason (string or error) recorded and wrapped in an {@link InternalError}
-   * passed to the {@link MoqtailClient.onSessionTerminated | onSessionTerminated} callback.
+   * passed to the {@link MOQtailClient.onSessionTerminated | onSessionTerminated} callback.
    *
    * @returns Promise that resolves once shutdown logic completes. Subsequent calls are safe no-ops.
    *
@@ -377,7 +377,7 @@ export class MoqtailClient {
     if (!this.webTransport.closed) this.webTransport.close()
     if (this.onSessionTerminated)
       this.onSessionTerminated(
-        new InternalError('MoqtailClient.disconnect', reason instanceof Error ? reason.message : String(reason)),
+        new InternalError('MOQtailClient.disconnect', reason instanceof Error ? reason.message : String(reason)),
       )
   }
 
@@ -391,7 +391,7 @@ export class MoqtailClient {
    *
    * @param track - The {@link Track} instance to add or update. See {@link TrackSource} for live/past source options.
    * @returns void
-   * @throws : {@link MoqtailError} If the client has been destroyed.
+   * @throws : {@link MOQtailError} If the client has been destroyed.
    *
    * @example Create a live video track from getUserMedia
    * ```ts
@@ -399,7 +399,7 @@ export class MoqtailClient {
    * const videoTrack = stream.getVideoTracks()[0];
    *
    * // Convert video frames to MoqtObject instances using your chosen scheme (e.g. WARP, CMAF, etc.)
-   * // This part is application-specific and not provided by moqtail:
+   * // This part is application-specific and not provided by MOQtail:
    * const liveReadableStream: ReadableStream<MoqtObject> = ...
    *
    * // Register the track for live subscription
@@ -429,16 +429,16 @@ export class MoqtailClient {
   /**
    * Removes a previously registered {@link Track} from this client's local catalog.
    *
-   * This deletes the in-memory entry inserted via {@link MoqtailClient.addOrUpdateTrack}, so future lookups by its {@link Track.fullTrackName} will fail.
+   * This deletes the in-memory entry inserted via {@link MOQtailClient.addOrUpdateTrack}, so future lookups by its {@link Track.fullTrackName} will fail.
    * Does **not** automatically:
-   * - Send an {@link Unannounce} (call {@link MoqtailClient.unannounce} separately if you want to inform peers)
+   * - Send an {@link Unannounce} (call {@link MOQtailClient.unannounce} separately if you want to inform peers)
    * - Cancel active subscriptions or fetches (they continue until normal completion)
    * - Affect already-sent objects.
    *
    * If the track was not present, the call is a silent no-op (idempotent removal).
    *
    * @param track - The exact {@link Track} instance (its canonical name is used as the key).
-   * @throws : {@link MoqtailError} If the client has been destroyed.
+   * @throws : {@link MOQtailError} If the client has been destroyed.
    *
    * @example
    * ```ts
@@ -468,11 +468,11 @@ export class MoqtailClient {
    * observed at the publisher then it behaves as `filterType: LatestObject`.
    *
    * The method returns either a {@link SubscribeError} (on refusal) or an object with the subscription `requestId` and a `ReadableStream` of {@link MoqtObject}s.
-   * Use the `requestId` for {@link MoqtailClient.unsubscribe} or {@link MoqtailClient.subscribeUpdate}. Use the `stream` to decode and display objects.
+   * Use the `requestId` for {@link MOQtailClient.unsubscribe} or {@link MOQtailClient.subscribeUpdate}. Use the `stream` to decode and display objects.
    *
    * @param args - {@link SubscribeOptions} describing the subscription window and relay forwarding behavior.
    * @returns Either a {@link SubscribeError} or `{ requestId, stream }` for consuming objects.
-   * @throws : {@link MoqtailError} If the client is destroyed.
+   * @throws : {@link MOQtailError} If the client is destroyed.
    * @throws : {@link ProtocolViolationError} If required fields are missing or inconsistent.
    * @throws : {@link InternalError} On transport/protocol failure (disconnect is triggered before rethrow).
    *
@@ -553,7 +553,7 @@ export class MoqtailClient {
         case FilterType.AbsoluteStart:
           if (!startLocation)
             throw new ProtocolViolationError(
-              'MoqtailClient.subscribe',
+              'MOQtailClient.subscribe',
               'FilterType.AbsoluteStart must have a start location',
             )
           msg = Subscribe.newAbsoluteStart(
@@ -570,11 +570,11 @@ export class MoqtailClient {
         case FilterType.AbsoluteRange:
           if (!startLocation || !endGroup)
             throw new ProtocolViolationError(
-              'MoqtailClient.subscribe',
+              'MOQtailClient.subscribe',
               'FilterType.AbsoluteRange must have a start location and an end group',
             )
           if (startLocation.group >= endGroup)
-            throw new ProtocolViolationError('MoqtailClient.subscribe', 'End group must be greater than start group')
+            throw new ProtocolViolationError('MOQtailClient.subscribe', 'End group must be greater than start group')
 
           msg = Subscribe.newAbsoluteRange(
             this.#nextClientRequestId,
@@ -605,7 +605,7 @@ export class MoqtailClient {
       }
     } catch (error) {
       await this.disconnect(
-        new InternalError('MoqtailClient.subscribe', error instanceof Error ? error.message : String(error)),
+        new InternalError('MOQtailClient.subscribe', error instanceof Error ? error.message : String(error)),
       )
       throw error
     }
@@ -620,9 +620,9 @@ export class MoqtailClient {
    * Use this when you no longer want incoming objects for a track (e.g. user navigated away, switching quality).
    * Canceling the consumer stream reader does **not** auto-unsubscribe; call this explicitly for prompt cleanup.
    *
-   * @param requestId - The id returned from {@link MoqtailClient.subscribe}.
+   * @param requestId - The id returned from {@link MOQtailClient.subscribe}.
    * @returns Promise that resolves when the unsubscribe control frame is sent.
-   * @throws :{@link MoqtailError} If the client is destroyed.
+   * @throws :{@link MOQtailError} If the client is destroyed.
    * @throws :{@link InternalError} Wrapped lower-level failure while attempting to send (session will be disconnected first).
    *
    * @remarks
@@ -655,7 +655,7 @@ export class MoqtailClient {
         if (request instanceof SubscribeRequest) {
           const subscription = this.subscriptions.get(request.trackAlias)
           if (!subscription)
-            throw new InternalError('MoqtailClient.unsubscribe', 'Request exists but subscription does not')
+            throw new InternalError('MOQtailClient.unsubscribe', 'Request exists but subscription does not')
 
           cleanupData = { requestId, trackAlias: request.trackAlias, subscription }
 
@@ -666,7 +666,7 @@ export class MoqtailClient {
       // Q: Throw? Idempotent?
     } catch (error) {
       await this.disconnect(
-        new InternalError('MoqtailClient.unsubscribe', error instanceof Error ? error.message : String(error)),
+        new InternalError('MOQtailClient.unsubscribe', error instanceof Error ? error.message : String(error)),
       )
       throw error
     } finally {
@@ -692,7 +692,7 @@ export class MoqtailClient {
    *
    * @param args - {@link SubscribeUpdateOptions} referencing the original subscription `requestId` and new bounds.
    * @returns Promise that resolves when the update control frame is sent.
-   * @throws :{@link MoqtailError} If the client is destroyed.
+   * @throws :{@link MOQtailError} If the client is destroyed.
    * @throws :{@link ProtocolViolationError} If the update would widen the window (earlier start, later end group, or invalid ordering).
    * @throws :{@link InternalError} On transport/control failure (disconnect is triggered before rethrow).
    *
@@ -721,24 +721,24 @@ export class MoqtailClient {
     this.#ensureActive()
     let { requestId, priority, forward, parameters, startLocation, endGroup } = args
     if (startLocation.group >= endGroup)
-      throw new ProtocolViolationError('MoqtailClient.subscribeUpdate', 'End group must be greater than start group')
+      throw new ProtocolViolationError('MOQtailClient.subscribeUpdate', 'End group must be greater than start group')
     try {
       if (this.requests.has(requestId)) {
         const request = this.requests.get(requestId)!
         if (request instanceof SubscribeRequest) {
           if (request.startLocation && request.startLocation.compare(startLocation) != 1)
             throw new ProtocolViolationError(
-              'MoqtailClient.subscribeUpdate',
+              'MOQtailClient.subscribeUpdate',
               'Subscriptions can only become more narrow, not wider.  The start location must not decrease',
             )
           if (request.endGroup && request.endGroup < endGroup)
             throw new ProtocolViolationError(
-              'MoqtailClient.subscribeUpdate',
+              'MOQtailClient.subscribeUpdate',
               'Subscriptions can only become more narrow, not wider. The end group must not increase',
             )
           const subscription = this.subscriptions.get(requestId)
           if (!subscription)
-            throw new InternalError('MoqtailClient.subscribeUpdate', 'Request exists but subscription does not')
+            throw new InternalError('MOQtailClient.subscribeUpdate', 'Request exists but subscription does not')
           // TODO: If a parameter included in SUBSCRIBE is not present in SUBSCRIBE_UPDATE, its value remains unchanged.
           // There is no mechanism to remove a parameter from a subscription. We can add parameters but check for duplicate params
           if (!parameters) parameters = new VersionSpecificParameters()
@@ -750,7 +750,7 @@ export class MoqtailClient {
       // Q: Throw? Idempotent?
     } catch (error) {
       await this.disconnect(
-        new InternalError('MoqtailClient.subscribeUpdate', error instanceof Error ? error.message : String(error)),
+        new InternalError('MOQtailClient.subscribeUpdate', error instanceof Error ? error.message : String(error)),
       )
       throw error
     }
@@ -778,14 +778,14 @@ export class MoqtailClient {
    * - Late joiner fetching a short back-buffer then discarding the stream.
    * - Analytics batch job pulling a fixed slice without subscribing long-term.
    *
-   * @throws MoqtailError If client is destroyed.
+   * @throws MOQtailError If client is destroyed.
    * @throws ProtocolViolationError Priority out of [0-255] or missing/invalid joining subscription id for Relative/Absolute.
    * @throws InternalError Transport/control failure (the client disconnects first) then rethrows original error.
    *
    * @remarks
    * - Relative / Absolute require an existing active SUBSCRIBE `joiningRequestId`; if not found a {@link ProtocolViolationError} is thrown.
    * - Result stream is finite; reader close occurs automatically when last object delivered.
-   * - Use {@link MoqtailClient.fetchCancel} only for early termination (not yet fully implemented: see TODO in code).
+   * - Use {@link MOQtailClient.fetchCancel} only for early termination (not yet fully implemented: see TODO in code).
    *
    * @example Standalone window
    * ```ts
@@ -825,16 +825,16 @@ export class MoqtailClient {
       const { priority, groupOrder, typeAndProps, parameters } = args
       if (priority < 0 || priority > 255)
         throw new ProtocolViolationError(
-          'MoqtailClient.fetch',
+          'MOQtailClient.fetch',
           `subscriberPriority: ${priority} must be in range of [0-255]`,
         )
       const params = parameters ? parameters.build() : new VersionSpecificParameters().build()
       let msg: Fetch
-      let joiningRequest: MoqtailRequest | undefined
+      let joiningRequest: MOQtailRequest | undefined
       // Generate unique requestId at the beginning to ensure uniqueness
       const requestId = this.#nextClientRequestId
       console.log(
-        'MoqtailClient.fetch: generated requestId:',
+        'MOQtailClient.fetch: generated requestId:',
         requestId,
         'for fetch type:',
         typeAndProps.type,
@@ -856,7 +856,7 @@ export class MoqtailClient {
           joiningRequest = this.requests.get(typeAndProps.props.joiningRequestId)
           if (!(joiningRequest instanceof SubscribeRequest))
             throw new ProtocolViolationError(
-              'MoqtailClient.fetch',
+              'MOQtailClient.fetch',
               `No subscribe request for the given joiningRequestId: ${typeAndProps.props.joiningRequestId}`,
             )
           msg = new Fetch(
@@ -871,7 +871,7 @@ export class MoqtailClient {
           joiningRequest = this.requests.get(typeAndProps.props.joiningRequestId)
           if (!(joiningRequest instanceof SubscribeRequest))
             throw new ProtocolViolationError(
-              'MoqtailClient.fetch',
+              'MOQtailClient.fetch',
               `No subscribe request for the given joiningRequestId: ${typeAndProps.props.joiningRequestId}`,
             )
           msg = new Fetch(
@@ -885,20 +885,20 @@ export class MoqtailClient {
       }
       const request = new FetchRequest(msg)
       console.log(
-        'MoqtailClient.fetch: storing FetchRequest with requestId:',
+        'MOQtailClient.fetch: storing FetchRequest with requestId:',
         msg.requestId,
         'for fetch type:',
         typeAndProps.type,
       )
-      console.log('MoqtailClient.fetch: full fetch message:', {
+      console.log('MOQtailClient.fetch: full fetch message:', {
         requestId: msg.requestId,
         fetchType: typeAndProps.type,
         joiningRequestId: typeAndProps.type !== FetchType.StandAlone ? typeAndProps.props.joiningRequestId : 'N/A',
       })
       this.requests.set(msg.requestId, request)
-      console.log('MoqtailClient.fetch: about to send fetch message to server')
+      console.log('MOQtailClient.fetch: about to send fetch message to server')
       await this.controlStream.send(msg)
-      console.log('MoqtailClient.fetch: fetch message sent successfully, waiting for response')
+      console.log('MOQtailClient.fetch: fetch message sent successfully, waiting for response')
       const response = await request
       if (response instanceof FetchError) {
         this.requests.delete(msg.requestId)
@@ -909,7 +909,7 @@ export class MoqtailClient {
       }
     } catch (error) {
       await this.disconnect(
-        new InternalError('MoqtailClient.fetch', error instanceof Error ? error.message : String(error)),
+        new InternalError('MOQtailClient.fetch', error instanceof Error ? error.message : String(error)),
       )
       throw error
     }
@@ -922,14 +922,14 @@ export class MoqtailClient {
    * Sends a {@link FetchCancel} control frame if the id currently maps to an active fetch; otherwise silent no-op (idempotent).
    *
    * Parameter semantics:
-   * - requestId: bigint returned from {@link MoqtailClient.fetch}. Numbers auto-converted to bigint.
+   * - requestId: bigint returned from {@link MOQtailClient.fetch}. Numbers auto-converted to bigint.
    *
    * Current behavior / limitations:
    * - Data stream closure after cancel is TODO (objects may still arrive briefly).
    * - Unknown / already finished request: ignored without error.
    * - Only targets FETCH requests (not subscriptions).
    *
-   * @throws MoqtailError If client is destroyed.
+   * @throws MOQtailError If client is destroyed.
    * @throws InternalError Failure while sending the cancel (client disconnects first).
    *
    * @remarks
@@ -964,7 +964,7 @@ export class MoqtailClient {
       // No matching fetch request, idempotent
     } catch (error) {
       await this.disconnect(
-        new InternalError('MoqtailClient.fetchCancel', error instanceof Error ? error.message : String(error)),
+        new InternalError('MOQtailClient.fetchCancel', error instanceof Error ? error.message : String(error)),
       )
       throw error
     }
@@ -980,7 +980,7 @@ export class MoqtailClient {
       return await request
     } catch (error) {
       await this.disconnect(
-        new InternalError('MoqtailClient.trackStatusRequest', error instanceof Error ? error.message : String(error)),
+        new InternalError('MOQtailClient.trackStatusRequest', error instanceof Error ? error.message : String(error)),
       )
       throw error
     }
@@ -989,13 +989,13 @@ export class MoqtailClient {
   // TODO: Each announced track should checked against ongoing subscribe_announces
   // If matches it should send an announce to that peer automatically
   /**
-   * Declare (publish) a track namespace to the peer so subscribers using matching prefixes (via {@link MoqtailClient.subscribeAnnounces})
+   * Declare (publish) a track namespace to the peer so subscribers using matching prefixes (via {@link MOQtailClient.subscribeAnnounces})
    * can discover and begin subscribing/fetching its tracks.
    *
    * Typical flow (publisher side):
-   * 1. Prepare / register one or more {@link Track} objects locally (see {@link MoqtailClient.addOrUpdateTrack}).
+   * 1. Prepare / register one or more {@link Track} objects locally (see {@link MOQtailClient.addOrUpdateTrack}).
    * 2. Call `announce(namespace)` once per namespace prefix to expose those tracks.
-   * 3. Later, call {@link MoqtailClient.unannounce} when no longer publishing under that namespace.
+   * 3. Later, call {@link MOQtailClient.unannounce} when no longer publishing under that namespace.
    *
    * Parameter semantics:
    * - trackNamespace: Tuple representing the namespace prefix (e.g. ["camera","main"]). All tracks whose full names start with this tuple are considered within the announce scope.
@@ -1008,13 +1008,13 @@ export class MoqtailClient {
    * - Dynamically expose a newly created room / session namespace.
    * - Re-announce after reconnect to repopulate discovery state.
    *
-   * @throws MoqtailError If client is destroyed.
+   * @throws MOQtailError If client is destroyed.
    * @throws InternalError Transport/control failure while sending or awaiting response (client disconnects first).
    *
    * @remarks
    * - Duplicate announce detection is TODO (currently a second call will still send another ANNOUNCE; receiver behavior may vary).
-   * - Successful announces are tracked in `announcedNamespaces`; manual removal occurs via {@link MoqtailClient.unannounce}.
-   * - Discovery subscribers (those who issued {@link MoqtailClient.subscribeAnnounces}) will receive the resulting {@link Announce} message.
+   * - Successful announces are tracked in `announcedNamespaces`; manual removal occurs via {@link MOQtailClient.unannounce}.
+   * - Discovery subscribers (those who issued {@link MOQtailClient.subscribeAnnounces}) will receive the resulting {@link Announce} message.
    *
    * @example Minimal announce
    * ```ts
@@ -1045,7 +1045,7 @@ export class MoqtailClient {
       return response
     } catch (error) {
       await this.disconnect(
-        new InternalError('MoqtailClient.announce', error instanceof Error ? error.message : String(error)),
+        new InternalError('MOQtailClient.announce', error instanceof Error ? error.message : String(error)),
       )
       throw error
     }
@@ -1058,19 +1058,19 @@ export class MoqtailClient {
    * Removes the namespace from `announcedNamespaces` locally and sends an {@link Unannounce} control frame.
    *
    * Parameter semantics:
-   * - trackNamespace: Exact tuple used during {@link MoqtailClient.announce}. Must match to be removed from internal set.
+   * - trackNamespace: Exact tuple used during {@link MOQtailClient.announce}. Must match to be removed from internal set.
    *
    * Behavior:
    * - Does not delete locally registered {@link Track} objects (they remain in `trackSources`).
    * - Does not forcibly end active subscriptions that were already established; peers simply stop discovering it for new ones.
    * - Silent if the namespace was not currently recorded (idempotent style).
    *
-   * @throws MoqtailError If client is destroyed before sending.
+   * @throws MOQtailError If client is destroyed before sending.
    * @throws (rethrows original error) Any lower-level failure while sending results in a disconnect (unwrapped TODO: future wrap with InternalError for consistency).
    *
    * @remarks
-   * Peers that issued {@link MoqtailClient.subscribeAnnounces} for a matching prefix should receive the resulting {@link Unannounce}.
-   * Consider calling this before {@link MoqtailClient.disconnect} to give consumers prompt notice.
+   * Peers that issued {@link MOQtailClient.subscribeAnnounces} for a matching prefix should receive the resulting {@link Unannounce}.
+   * Consider calling this before {@link MOQtailClient.disconnect} to give consumers prompt notice.
    *
    * @example Basic usage
    * ```ts
@@ -1106,10 +1106,10 @@ export class MoqtailClient {
    * - msg: Pre-constructed {@link AnnounceCancel} referencing the original announce request id / namespace (builder provided elsewhere).
    *
    * Behavior:
-   * - Simply forwards the control frame; does not modify `announcedNamespaces` (call {@link MoqtailClient.unannounce} for local bookkeeping removal).
+   * - Simply forwards the control frame; does not modify `announcedNamespaces` (call {@link MOQtailClient.unannounce} for local bookkeeping removal).
    * - Safe to send even if the announce already succeeded; peer may ignore duplicates per spec guidance.
    *
-   * @throws MoqtailError If client is destroyed.
+   * @throws MOQtailError If client is destroyed.
    * @throws InternalError Wrapped transport/control send failure (client disconnects first) then rethrows.
    *
    * @remarks
@@ -1129,7 +1129,7 @@ export class MoqtailClient {
       await this.controlStream.send(msg)
     } catch (error) {
       await this.disconnect(
-        new InternalError('MoqtailClient.announceCancel', error instanceof Error ? error.message : String(error)),
+        new InternalError('MOQtailClient.announceCancel', error instanceof Error ? error.message : String(error)),
       )
       throw error
     }
@@ -1142,7 +1142,7 @@ export class MoqtailClient {
       await this.controlStream.send(msg)
     } catch (error) {
       await this.disconnect(
-        new InternalError('MoqtailClient.subscribeAnnounces', error instanceof Error ? error.message : String(error)),
+        new InternalError('MOQtailClient.subscribeAnnounces', error instanceof Error ? error.message : String(error)),
       )
       throw error
     }
@@ -1154,7 +1154,7 @@ export class MoqtailClient {
       await this.controlStream.send(msg)
     } catch (error) {
       await this.disconnect(
-        new InternalError('MoqtailClient.unsubscribeAnnounces', error instanceof Error ? error.message : String(error)),
+        new InternalError('MOQtailClient.unsubscribeAnnounces', error instanceof Error ? error.message : String(error)),
       )
       throw error
     }
@@ -1166,9 +1166,9 @@ export class MoqtailClient {
       const reader = this.controlStream.stream.getReader()
       while (true) {
         const { done, value: msg } = await reader.read()
-        if (done) throw new MoqtailError('WebTransport session is terminated')
+        if (done) throw new MOQtailError('WebTransport session is terminated')
         const handler = getHandlerForControlMessage(msg)
-        if (!handler) throw new ProtocolViolationError('MoqtailClient', 'No handler for the received message')
+        if (!handler) throw new ProtocolViolationError('MOQtailClient', 'No handler for the received message')
         await handler(this, msg)
       }
     } catch (error) {
@@ -1184,7 +1184,7 @@ export class MoqtailClient {
       const reader = uds.getReader()
       while (true) {
         const { value, done } = await reader.read()
-        if (done) throw new MoqtailError('WebTransport session is terminated')
+        if (done) throw new MOQtailError('WebTransport session is terminated')
         let uniStream = value as ReadableStream
         this.#handleRecvStreams(uniStream)
       }
@@ -1242,7 +1242,7 @@ export class MoqtailClient {
                   request.controller?.enqueue(moqtObject)
                   continue
                 }
-                throw new ProtocolViolationError('MoqtailClient', 'Received subgroup object after fetch header')
+                throw new ProtocolViolationError('MOQtailClient', 'Received subgroup object after fetch header')
               }
             }
           } finally {
@@ -1250,7 +1250,7 @@ export class MoqtailClient {
           }
           return
         }
-        throw new ProtocolViolationError('MoqtailClient', 'No request for received request id')
+        throw new ProtocolViolationError('MOQtailClient', 'No request for received request id')
       } else {
         const subscription = this.subscriptions.get(header.trackAlias)
         if (subscription) {
@@ -1297,7 +1297,7 @@ export class MoqtailClient {
                 subscription.controller?.enqueue(moqtObject)
                 continue
               }
-              throw new ProtocolViolationError('MoqtailClient', 'Received fetch object after subgroup header')
+              throw new ProtocolViolationError('MOQtailClient', 'Received fetch object after subgroup header')
             }
           }
 
@@ -1309,7 +1309,7 @@ export class MoqtailClient {
           }
           return
         }
-        throw new ProtocolViolationError('MoqtailClient', 'No subscription for received track alias')
+        throw new ProtocolViolationError('MOQtailClient', 'No subscription for received track alias')
       }
     } catch (error) {
       //this.disconnect()

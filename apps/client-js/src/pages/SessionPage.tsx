@@ -53,7 +53,7 @@ import {
   onlyUseVideoSubscriber,
   onlyUseAudioSubscriber,
 } from '@/composables/useVideoPipeline'
-import { MoqtailClient } from 'moqtail-ts/client'
+import { MOQtailClient } from 'moqtail-ts/client'
 import { NetworkTelemetry, ClockNormalizer } from 'moqtail-ts/util'
 import { RewindPlayer } from './RewindPlayer'
 import { BufferedMoqtObject } from '@/composables/rewindBuffer'
@@ -61,7 +61,7 @@ import { BufferedMoqtObject } from '@/composables/rewindBuffer'
 function SessionPage() {
   // initialize the MOQTail client
   const relayUrl = window.appSettings.relayUrl
-  const [moqClient, setMoqClient] = useState<MoqtailClient | undefined>(undefined)
+  const [moqClient, setMoqClient] = useState<MOQtailClient | undefined>(undefined)
 
   // initialize the variables
   const [maximizedUserId, setMaximizedUserId] = useState<string | null>(null)
@@ -1433,7 +1433,7 @@ function SessionPage() {
     audioTrackAlias: number,
     chatTrackAlias: number,
     canvasRef: React.RefObject<HTMLCanvasElement>,
-    client: MoqtailClient | undefined = undefined,
+    client: MOQtailClient | undefined = undefined,
   ) {
     try {
       const the_client = client ? client : moqClient!

@@ -9,7 +9,7 @@ import {
   MoqtObject,
   Location,
 } from 'moqtail-ts/model'
-import { MoqtailClient, LiveTrackSource, SubscribeOptions } from 'moqtail-ts/client'
+import { MOQtailClient, LiveTrackSource, SubscribeOptions } from 'moqtail-ts/client'
 import { PlayoutBuffer, NetworkTelemetry } from 'moqtail-ts/util'
 import { RefObject } from 'react'
 import { SocketClock } from '@/util/socketClock'
@@ -28,15 +28,15 @@ setInterval(() => {
   //console.log(`Local Time:${localTime} | Estimated Server Time:${serverTime}\nDifference:${diff}`)
 }, 2000)
 export async function connectToRelay(url: string) {
-  return await MoqtailClient.new({ url, supportedVersions: [0xff00000b] })
+  return await MOQtailClient.new({ url, supportedVersions: [0xff00000b] })
 }
 
-export async function announceNamespaces(moqClient: MoqtailClient, namespace: Tuple) {
+export async function announceNamespaces(moqClient: MOQtailClient, namespace: Tuple) {
   await moqClient.announce(namespace)
 }
 
 export function setupTracks(
-  moqClient: MoqtailClient,
+  moqClient: MOQtailClient,
   audioFullTrackName: FullTrackName,
   videoFullTrackName: FullTrackName,
   chatFullTrackName: FullTrackName,
@@ -631,7 +631,7 @@ async function setupAudioPlayback(audioContext: AudioContext) {
 }
 
 function subscribeAndPipeToWorker(
-  moqClient: MoqtailClient,
+  moqClient: MOQtailClient,
   subscribeArgs: SubscribeOptions,
   worker: Worker,
   type: 'moq' | 'moq-audio',
@@ -709,7 +709,7 @@ function handleWorkerMessages(
 }
 
 export function useVideoPublisher(
-  moqClient: MoqtailClient,
+  moqClient: MOQtailClient,
   videoRef: RefObject<HTMLVideoElement>,
   mediaStream: RefObject<MediaStream | null>,
   _roomId: string,
@@ -775,7 +775,7 @@ export function useVideoPublisher(
 }
 
 export function useVideoAndAudioSubscriber(
-  moqClient: MoqtailClient,
+  moqClient: MOQtailClient,
   canvasRef: RefObject<HTMLCanvasElement | null>,
   videoTrackAlias: number,
   audioTrackAlias: number,
@@ -837,7 +837,7 @@ export function useVideoAndAudioSubscriber(
 }
 
 export function onlyUseVideoSubscriber(
-  moqClient: MoqtailClient,
+  moqClient: MOQtailClient,
   canvasRef: RefObject<HTMLCanvasElement | null>,
   videoTrackAlias: number,
   videoFullTrackName: FullTrackName,
@@ -888,7 +888,7 @@ export function onlyUseVideoSubscriber(
 }
 
 export function onlyUseAudioSubscriber(
-  moqClient: MoqtailClient,
+  moqClient: MOQtailClient,
   audioTrackAlias: number,
   audioFullTrackName: FullTrackName,
   audioTelemetry?: NetworkTelemetry,
@@ -948,7 +948,7 @@ export async function subscribeToChatTrack({
   chatFullTrackName,
   onMessage,
 }: {
-  moqClient: MoqtailClient
+  moqClient: MOQtailClient
   chatTrackAlias: number
   chatFullTrackName: FullTrackName
   onMessage: (msg: any) => void
