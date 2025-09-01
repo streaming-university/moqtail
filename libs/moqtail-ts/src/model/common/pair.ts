@@ -3,12 +3,48 @@ import { NotEnoughBytesError, LengthExceedsMaxError, KeyValueFormattingError } f
 
 const MAX_VALUE_LENGTH = 2 ** 16 - 1 // 65535
 
+/**
+ * @public
+ * Represents a key-value pair for MOQT protocol parameters.
+ *
+ * - If `typeValue` is **even**, the value is a varint (`bigint`).
+ * - If `typeValue` is **odd**, the value is a binary blob (`Uint8Array`) with a maximum length of 65535 bytes.
+ *
+ * Use {@link KeyValuePair.tryNewVarInt} for varint pairs and {@link KeyValuePair.tryNewBytes} for blob pairs.
+ */
 export class KeyValuePair {
-  private constructor(
-    public readonly typeValue: bigint,
-    public readonly value: bigint | Uint8Array,
-  ) {}
+  /**
+   * The key/type identifier for this pair.
+   * - Even: value is a varint.
+   * - Odd: value is a blob.
+   */
+  public readonly typeValue: bigint
 
+  /**
+   * The value for this pair.
+   * - If `typeValue` is even: a varint (`bigint`).
+   * - If `typeValue` is odd: a binary blob (`Uint8Array`).
+   */
+  public readonly value: bigint | Uint8Array
+
+  /**
+   * Constructs a new KeyValuePair.
+   * @param typeValue - The key/type identifier.
+   * @param value - The value (varint or blob).
+   * @internal Use static factory methods instead.
+   */
+  private constructor(typeValue: bigint, value: bigint | Uint8Array) {
+    this.typeValue = typeValue
+    this.value = value
+  }
+
+  /**
+   * Creates a new varint KeyValuePair.
+   * @param typeValue - Must be even.
+   * @param value - The varint value.
+   * @returns A KeyValuePair with varint value.
+   * @throws KeyValueFormattingError if typeValue is not even.
+   */
   static tryNewVarInt(typeValue: bigint | number, value: bigint | number): KeyValuePair {
     const tv = typeof typeValue === 'number' ? BigInt(typeValue) : typeValue
     if (tv % 2n !== 0n) {
@@ -18,6 +54,14 @@ export class KeyValuePair {
     return new KeyValuePair(tv, v)
   }
 
+  /**
+   * Creates a new blob KeyValuePair.
+   * @param typeValue - Must be odd.
+   * @param value - The binary blob value.
+   * @returns A KeyValuePair with blob value.
+   * @throws KeyValueFormattingError if typeValue is not odd.
+   * @throws LengthExceedsMaxError if value length exceeds 65535 bytes.
+   */
   static tryNewBytes(typeValue: bigint | number, value: Uint8Array): KeyValuePair {
     const tv = typeof typeValue === 'number' ? BigInt(typeValue) : typeValue
     if (tv % 2n === 0n) {
@@ -30,6 +74,10 @@ export class KeyValuePair {
     return new KeyValuePair(tv, value)
   }
 
+  /**
+   * Serializes this key-value pair to a frozen byte buffer.
+   * @returns The serialized buffer.
+   */
   serialize(): FrozenByteBuffer {
     const buf = new ByteBuffer()
     buf.putVI(this.typeValue)
@@ -41,6 +89,13 @@ export class KeyValuePair {
     return buf.freeze()
   }
 
+  /**
+   * Deserializes a KeyValuePair from a buffer.
+   * @param buf - The buffer to read from.
+   * @returns The deserialized KeyValuePair.
+   * @throws LengthExceedsMaxError if blob length exceeds 65535 bytes.
+   * @throws NotEnoughBytesError if buffer does not contain enough bytes.
+   */
   static deserialize(buf: BaseByteBuffer): KeyValuePair {
     const typeValue = buf.getVI()
     if (typeValue % 2n === 0n) {
@@ -56,6 +111,11 @@ export class KeyValuePair {
     }
   }
 
+  /**
+   * Checks if this pair is equal to another.
+   * @param other - The other KeyValuePair.
+   * @returns True if both type and value are equal.
+   */
   equals(other: KeyValuePair): boolean {
     if (this.typeValue !== other.typeValue) return false
     if (isVarInt(this) && isVarInt(other)) {
@@ -74,10 +134,20 @@ export class KeyValuePair {
   }
 }
 
+/**
+ * Checks if the KeyValuePair is a varint pair (even typeValue).
+ * @param pair - The KeyValuePair to check.
+ * @returns True if value is a varint.
+ */
 export function isVarInt(pair: KeyValuePair): pair is KeyValuePair & { value: bigint } {
   return pair.typeValue % 2n === 0n
 }
 
+/**
+ * Checks if the KeyValuePair is a blob pair (odd typeValue).
+ * @param pair - The KeyValuePair to check.
+ * @returns True if value is a Uint8Array.
+ */
 export function isBytes(pair: KeyValuePair): pair is KeyValuePair & { value: Uint8Array } {
   return pair.typeValue % 2n !== 0n
 }

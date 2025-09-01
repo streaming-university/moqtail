@@ -4,17 +4,43 @@ import { KeyValuePair } from '../common/pair'
 import { ControlMessageType } from './constant'
 import { NotEnoughBytesError, LengthExceedsMaxError } from '../error/error'
 
+/**
+ * Represents a protocol Announce message, used to announce a track and its parameters.
+ *
+ * @public
+ */
 export class Announce {
+  /**
+   * @public
+   * Constructs an Announce message.
+   *
+   * @param requestId - The request ID for this announce message.
+   * @param trackNamespace - The track namespace as a Tuple.
+   * @param parameters - The list of key-value parameters for the track.
+   */
   constructor(
     public readonly requestId: bigint,
     public readonly trackNamespace: Tuple,
     public readonly parameters: KeyValuePair[],
   ) {}
 
+  /**
+   * @public
+   * Gets the message type for this Announce message.
+   *
+   * @returns The ControlMessageType.Announce value.
+   */
   getType(): ControlMessageType {
     return ControlMessageType.Announce
   }
 
+  /**
+   * @public
+   * Serializes the Announce message into a {@link FrozenByteBuffer}.
+   *
+   * @returns The serialized buffer.
+   * @throws :{@link LengthExceedsMaxError} If the payload exceeds 65535 bytes.
+   */
   serialize(): FrozenByteBuffer {
     const buf = new ByteBuffer()
     buf.putVI(ControlMessageType.Announce)
@@ -35,6 +61,14 @@ export class Announce {
     return buf.freeze()
   }
 
+  /**
+   * @public
+   * Parses an Announce message from the given buffer.
+   *
+   * @param buf - The buffer to parse from.
+   * @returns The parsed Announce message.
+   * @throws :{@link NotEnoughBytesError} If the buffer does not contain enough bytes.
+   */
   static parsePayload(buf: BaseByteBuffer): Announce {
     const requestId = buf.getVI()
     const trackNamespace = buf.getTuple()

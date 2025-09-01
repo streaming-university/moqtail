@@ -1,4 +1,4 @@
-import { TrackStatus, TrackStatusRequest as TrackStatusRequestMessage } from '@/model'
+import { TrackStatus, TrackStatusRequestMessage as TrackStatusRequestMessage } from '@/model'
 
 export class TrackStatusRequest implements PromiseLike<TrackStatus> {
   public readonly requestId: bigint

@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, ReactNode } from 'react'
-import { RoomState } from '../types/types'
+import { RoomState } from '@/types/types'
 
 type SessionContextType = {
   userId: string

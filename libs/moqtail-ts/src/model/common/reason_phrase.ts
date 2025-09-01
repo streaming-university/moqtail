@@ -1,11 +1,32 @@
 import { LengthExceedsMaxError, InvalidUTF8Error, NotEnoughBytesError, CastingError } from '../error/error'
 import { BaseByteBuffer, ByteBuffer, FrozenByteBuffer } from './byte_buffer'
-
+/**
+ * The maximum allowed length (in bytes) for a ReasonPhrase.
+ * @public
+ */
 export const MAX_REASON_PHRASE_LEN = 1024
 
+/**
+ * Represents a protocol ReasonPhrase, a short UTF-8 string used for error or status reporting.
+ * Enforces a maximum byte length and validates encoding.
+ *
+ * @public
+ */
 export class ReasonPhrase {
+  /**
+   * The underlying phrase string.
+   * @public
+   */
   readonly #phrase: string
 
+  /**
+   * Constructs a ReasonPhrase, validating UTF-8 encoding and length.
+   *
+   * @param phrase - The string to use as the reason phrase.
+   * @throws {@link InvalidUTF8Error} if encoding fails.
+   * @throws {@link LengthExceedsMaxError} if the encoded phrase exceeds {@link MAX_REASON_PHRASE_LEN} bytes.
+   * @public
+   */
   constructor(phrase: string) {
     let encodedPhrase: Uint8Array
     try {
@@ -21,13 +42,20 @@ export class ReasonPhrase {
     this.#phrase = phrase
   }
 
+  /**
+   * Returns the phrase string.
+   * @public
+   */
   public get phrase(): string {
     return this.#phrase
   }
 
   /**
-   * Serializes the ReasonPhrase into a Uint8Array containing:
+   * Serializes the ReasonPhrase into a {@link FrozenByteBuffer} containing:
    * varint(length_of_phrase_bytes) || phrase_bytes
+   *
+   * @returns The serialized buffer.
+   * @public
    */
   public serialize(): FrozenByteBuffer {
     const buf = new ByteBuffer()
@@ -40,6 +68,14 @@ export class ReasonPhrase {
   /**
    * Deserializes a ReasonPhrase from the given buffer.
    * Reads varint(length) || utf8‑bytes.
+   *
+   * @param buf - The buffer to read from.
+   * @returns The deserialized ReasonPhrase.
+   * @throws :{@link CastingError} if the length cannot be safely cast to a number.
+   * @throws :{@link LengthExceedsMaxError} if the length exceeds {@link MAX_REASON_PHRASE_LEN}.
+   * @throws :{@link NotEnoughBytesError} if the buffer does not contain enough bytes.
+   * @throws :{@link InvalidUTF8Error} if decoding fails.
+   * @public
    */
   public static deserialize(buf: BaseByteBuffer): ReasonPhrase {
     const lenBig = buf.getVI() // Read length varint
