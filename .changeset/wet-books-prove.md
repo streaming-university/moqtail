@@ -3,9 +3,7 @@
 'client-js': patch
 ---
 
-docs: add documentation for most of the public facing library api
-
-summary:
+Add documentation for most of the public facing library api
 
 - add api-extractor for document standardization
 - add type-doc for static site generation based off tsdocs
