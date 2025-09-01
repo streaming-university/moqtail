@@ -1,8 +1,8 @@
-# MoqTail TypeScript Client Library
+# MOQtail TypeScript Client Library
 
 > ⚠️ **Work in Progress**: This library is under active development and the API is subject to change. Please use with caution in production environments.
 
-MOQT (Media over QUIC Transport) is a protocol for media delivery over QUIC connections, enabling efficient streaming of live and on-demand content. The MoqTail client library provides a TypeScript implementation that supports both publisher and subscriber roles in the MOQT ecosystem.
+MOQT (Media over QUIC Transport) is a protocol for media delivery over QUIC connections, enabling efficient streaming of live and on-demand content. The MOQtail client library provides a TypeScript implementation that supports both publisher and subscriber roles in the MOQT ecosystem.
 
 ## Overview
 
@@ -13,7 +13,7 @@ The `MOQtailClient` serves as the main entry point for interacting with MoQ rela
 
 ## Publisher
 
-As a publisher, the MoqTail client allows you to create, manage, and distribute content through tracks. The library handles protocol-level details while giving you full control over content creation and packaging.
+As a publisher, the MOQtail client allows you to create, manage, and distribute content through tracks. The library handles protocol-level details while giving you full control over content creation and packaging.
 
 ### Track Management
 
@@ -123,7 +123,7 @@ The library automatically manages active requests, handles protocol negotiation,
 
 ## Subscriber
 
-As a subscriber, the MoqTail client enables you to discover, request, and consume content from publishers. The library provides two main mechanisms for content retrieval: `subscribe()` for live streaming content and `fetch()` for on-demand content access.
+As a subscriber, the MOQtail client enables you to discover, request, and consume content from publishers. The library provides two main mechanisms for content retrieval: `subscribe()` for live streaming content and `fetch()` for on-demand content access.
 
 ### Live Content Subscription
 
@@ -366,7 +366,7 @@ async function createSubscriber() {
 
 ### Other Client Operations
 
-The MoqTail client supports additional operations for track discovery and status management:
+The MOQtail client supports additional operations for track discovery and status management:
 
 #### Announce Operations
 
@@ -433,7 +433,7 @@ if (result instanceof TrackStatusError) {
 
 ## Utilities
 
-The MoqTail library provides several utility classes to help with common streaming scenarios:
+The MOQtail library provides several utility classes to help with common streaming scenarios:
 
 ### Playout Buffer
 
