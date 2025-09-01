@@ -18,8 +18,7 @@ use std::time::Instant;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
-use tokio::sync::broadcast::Receiver;
-use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{debug, error, info};
 use wtransport::SendStream;
 
@@ -27,7 +26,7 @@ use wtransport::SendStream;
 pub struct Subscription {
   pub subscribe_message: Subscribe,
   subscriber: Arc<RwLock<MOQTClient>>,
-  event_rx: Arc<Mutex<Option<Receiver<TrackEvent>>>>,
+  event_rx: Arc<Mutex<Option<UnboundedReceiver<TrackEvent>>>>,
   send_streams: Arc<RwLock<BTreeMap<String, Arc<Mutex<SendStream>>>>>,
   finished: Arc<RwLock<bool>>, // Indicates if the subscription is finished
   #[allow(dead_code)]
@@ -39,7 +38,7 @@ impl Subscription {
   fn create_instance(
     subscribe_message: Subscribe,
     subscriber: Arc<RwLock<MOQTClient>>,
-    event_rx: Arc<Mutex<Option<Receiver<TrackEvent>>>>,
+    event_rx: Arc<Mutex<Option<UnboundedReceiver<TrackEvent>>>>,
     cache: TrackCache,
     client_connection_id: usize,
   ) -> Self {
@@ -56,7 +55,7 @@ impl Subscription {
   pub fn new(
     subscribe_message: Subscribe,
     subscriber: Arc<RwLock<MOQTClient>>,
-    event_rx: Receiver<TrackEvent>,
+    event_rx: UnboundedReceiver<TrackEvent>,
     cache: TrackCache,
     client_connection_id: usize,
   ) -> Self {
@@ -131,7 +130,7 @@ impl Subscription {
 
     if let Some(ref mut event_rx) = *event_rx_guard {
       match event_rx.recv().await {
-        Ok(event) => match event {
+        Some(event) => match event {
           TrackEvent::Header { header } => {
             info!(
               "Received Header event: subscriber: {}",
@@ -236,22 +235,15 @@ impl Subscription {
             *is_finished = true;
           }
         },
-        Err(e) => {
-          // TODO: Why does this happen?
-          if e == RecvError::Closed {
-            // The channel is closed, we should finish the subscription
-            info!(
-              "Event receiver closed for subscriber: {} track: {}, finishing subscription",
-              self.client_connection_id, self.subscribe_message.track_alias
-            );
-            let mut is_finished = self.finished.write().await;
-            *is_finished = true;
-          } else {
-            error!(
-              "Unexpected error receiving event: {:?} subscriber: {} track: {}",
-              e, self.client_connection_id, self.subscribe_message.track_alias
-            );
-          }
+        None => {
+          // For unbounded receivers, recv() returns None when the channel is closed
+          // The channel is closed, we should finish the subscription
+          info!(
+            "Event receiver closed for subscriber: {} track: {}, finishing subscription",
+            self.client_connection_id, self.subscribe_message.track_alias
+          );
+          let mut is_finished = self.finished.write().await;
+          *is_finished = true;
         }
       }
     } else {
