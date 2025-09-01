@@ -41,7 +41,10 @@ jobs:
 
       - name: Create documentation
         working-directory: libs/moqtail-ts
-        run: npm run docs
+        run: |
+          commit=$(git rev-parse --short HEAD)
+          date=$(date +'%Y-%m-%d')
+          npm run docs -- --customFooterHtml "Last updated: ${date} (commit <code>${commit}</code>)"
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
