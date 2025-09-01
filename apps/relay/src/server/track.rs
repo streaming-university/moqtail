@@ -10,7 +10,7 @@ use moqtail::{model::common::tuple::Tuple, transport::data_stream_handler::Heade
 use std::time::Instant;
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
-use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info};
 
 #[derive(Debug, Clone)]
@@ -32,9 +32,7 @@ pub struct Track {
   pub publisher_connection_id: usize,
   #[allow(dead_code)]
   pub(crate) cache: TrackCache,
-  event_tx: Sender<TrackEvent>,
-  #[allow(dead_code)]
-  event_rx: Arc<Receiver<TrackEvent>>,
+  subscriber_senders: Arc<RwLock<BTreeMap<usize, UnboundedSender<TrackEvent>>>>,
   pub largest_location: Arc<RwLock<Location>>,
 }
 
@@ -48,8 +46,6 @@ impl Track {
     cache_size: usize,
     publisher_connection_id: usize,
   ) -> Self {
-    let (event_tx, event_rx) = tokio::sync::broadcast::channel(1000);
-
     Track {
       track_alias,
       track_namespace,
@@ -57,8 +53,7 @@ impl Track {
       subscriptions: Arc::new(RwLock::new(BTreeMap::new())),
       publisher_connection_id,
       cache: TrackCache::new(track_alias, cache_size),
-      event_tx,
-      event_rx: Arc::new(event_rx), // Keep the receiver alive so that the sender stays alive
+      subscriber_senders: Arc::new(RwLock::new(BTreeMap::new())),
       largest_location: Arc::new(RwLock::new(Location::new(0, 0))),
     }
   }
@@ -74,7 +69,10 @@ impl Track {
       "Adding subscription for subscriber_id: {} to track: {}",
       connection_id, self.track_alias
     );
-    let event_rx = self.event_tx.subscribe();
+
+    // Create a separate unbounded channel for this subscriber
+    let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+
     let subscription = Subscription::new(
       subscribe_message,
       subscriber.clone(),
@@ -93,6 +91,10 @@ impl Track {
     }
     subscriptions.insert(connection_id, Arc::new(RwLock::new(subscription)));
 
+    // Store the sender for this subscriber
+    let mut senders = self.subscriber_senders.write().await;
+    senders.insert(connection_id, event_tx);
+
     Ok(())
   }
 
@@ -108,6 +110,16 @@ impl Track {
       sub.finish().await;
     }
     subscriptions.remove(&subscriber_id);
+
+    // Remove and dispose the sender for this subscriber
+    let mut senders = self.subscriber_senders.write().await;
+    if let Some(_sender) = senders.remove(&subscriber_id) {
+      // The sender is automatically dropped here, which closes the channel
+      info!(
+        "Disposed sender for subscriber_id: {} from track: {}",
+        subscriber_id, self.track_alias
+      );
+    }
   }
 
   pub async fn new_header(&self, header: &HeaderInfo) -> Result<()> {
@@ -115,15 +127,7 @@ impl Track {
       header: header.clone(),
     };
 
-    match self.event_tx.send(header_event) {
-      Ok(_) => {
-        info!("Header sent successfully: {:?}", header);
-      }
-      Err(e) => {
-        tracing::error!("Failed to send header: {}", e);
-        return Err(anyhow::Error::from(e));
-      }
-    };
+    self.send_event_to_subscribers(header_event).await?;
 
     Ok(())
   }
@@ -156,13 +160,7 @@ impl Track {
         }
       }
 
-      match self.event_tx.send(object_event) {
-        Ok(_) => {}
-        Err(e) => {
-          tracing::error!("Failed to send object: stream_id: {}, e: {}", stream_id, e);
-          return Err(anyhow::Error::from(e));
-        }
-      };
+      self.send_event_to_subscribers(object_event).await?;
       Ok(())
     } else {
       error!(
@@ -178,15 +176,12 @@ impl Track {
   }
 
   pub async fn stream_closed(&self, stream_id: String) -> Result<(), anyhow::Error> {
-    let event = TrackEvent::StreamClosed { stream_id };
-
-    match self.event_tx.send(event) {
-      Ok(_) => {}
-      Err(e) => {
-        tracing::error!("Failed to send closed event: {}", e);
-        return Err(anyhow::Error::from(e));
-      }
+    let event = TrackEvent::StreamClosed {
+      stream_id: stream_id.clone(),
     };
+
+    self.send_event_to_subscribers(event).await?;
+
     Ok(())
   }
 
@@ -201,23 +196,48 @@ impl Track {
       reason: "Publisher disconnected".to_string(),
     };
 
-    match self.event_tx.send(event) {
-      Ok(_) => {
-        info!(
-          "Publisher disconnected event sent successfully for track: {}",
+    self.send_event_to_subscribers(event).await?;
+
+    Ok(())
+  }
+
+  // Send event to all subscribers
+  async fn send_event_to_subscribers(
+    &self,
+    event: TrackEvent,
+  ) -> Result<Vec<usize>, anyhow::Error> {
+    let senders = self.subscriber_senders.read().await;
+    let mut failed_subscribers = Vec::new();
+    if !senders.is_empty() {
+      for (subscriber_id, sender) in senders.iter() {
+        if let Err(e) = sender.send(event.clone()) {
+          error!(
+            "Failed to send event to subscriber {}: {}",
+            subscriber_id, e
+          );
+          failed_subscribers.push(*subscriber_id);
+        }
+      }
+
+      if !failed_subscribers.is_empty() {
+        error!(
+          "{:?} event sent to {} subscribers, {} failed for track: {}",
+          event,
+          senders.len() - failed_subscribers.len(),
+          failed_subscribers.len(),
+          self.track_alias
+        );
+      } else {
+        debug!(
+          "{:?} event sent successfully to {} subscribers for track: {}",
+          event,
+          senders.len(),
           self.track_alias
         );
       }
-      Err(e) => {
-        error!(
-          "Failed to send publisher disconnected event for track {}: {}",
-          self.track_alias, e
-        );
-        return Err(anyhow::Error::from(e));
-      }
     }
 
-    Ok(())
+    Ok(failed_subscribers)
   }
 }
 
