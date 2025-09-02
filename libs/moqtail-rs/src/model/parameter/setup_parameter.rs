@@ -1,9 +1,7 @@
 use crate::model::{
-  common::varint::{BufMutVarIntExt, BufVarIntExt},
-  error::ParseError,
-  parameter::constant::SetupParameterType,
+  common::pair::KeyValuePair, error::ParseError, parameter::constant::SetupParameterType,
 };
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetupParameter {
   Path { moqt_path: String },
@@ -24,62 +22,62 @@ impl SetupParameter {
   }
 
   pub fn serialize(&self) -> Result<Bytes, ParseError> {
-    let mut buf = BytesMut::new();
+    let mut bytes = BytesMut::new();
     match self {
       Self::Path { moqt_path } => {
-        buf.put_vi(SetupParameterType::Path as u64)?;
         let data = moqt_path.as_bytes();
-        buf.put_vi(data.len() as u64)?;
-        buf.extend_from_slice(data);
+        let kvp = KeyValuePair::try_new_bytes(
+          SetupParameterType::Path as u64,
+          Bytes::copy_from_slice(data),
+        )?;
+        let slice = kvp.serialize()?;
+        bytes.extend_from_slice(&slice);
       }
       Self::MaxRequestId { max_id } => {
-        buf.put_vi(SetupParameterType::MaxRequestId as u64)?;
-        buf.put_vi(*max_id)?;
+        let kvp = KeyValuePair::try_new_varint(SetupParameterType::MaxRequestId as u64, *max_id)?;
+        let slice = kvp.serialize()?;
+        bytes.extend_from_slice(&slice);
       }
       Self::MaxAuthTokenCacheSize { max_size } => {
-        buf.put_vi(SetupParameterType::MaxAuthTokenCacheSize as u64)?;
-        buf.put_vi(*max_size)?;
+        let kvp = KeyValuePair::try_new_varint(
+          SetupParameterType::MaxAuthTokenCacheSize as u64,
+          *max_size,
+        )?;
+        let slice = kvp.serialize()?;
+        bytes.extend_from_slice(&slice);
       }
     }
-    Ok(buf.freeze())
+    Ok(bytes.freeze())
   }
-  pub fn deserialize(bytes: &mut Bytes) -> Result<SetupParameter, ParseError> {
-    let ptype = bytes.get_vi()?;
-    let ptype = SetupParameterType::try_from(ptype)?;
-
-    match ptype {
-      SetupParameterType::Path => {
-        let len = bytes.get_vi()?;
-        let len: usize =
-          len
-            .try_into()
-            .map_err(|e: std::num::TryFromIntError| ParseError::CastingError {
-              context: "SetupParameter::deserialize",
-              from_type: "u64",
-              to_type: "usize",
-              details: e.to_string(),
-            })?;
-        if bytes.remaining() < len {
-          return Err(ParseError::NotEnoughBytes {
+  pub fn deserialize(kvp: &KeyValuePair) -> Result<SetupParameter, ParseError> {
+    match kvp {
+      KeyValuePair::VarInt { type_value, value } => {
+        let type_value = SetupParameterType::try_from(*type_value)?;
+        match type_value {
+          SetupParameterType::MaxRequestId => Ok(SetupParameter::MaxRequestId { max_id: *value }),
+          SetupParameterType::MaxAuthTokenCacheSize => {
+            Ok(SetupParameter::MaxAuthTokenCacheSize { max_size: *value })
+          }
+          _ => Err(ParseError::KeyValueFormattingError {
             context: "SetupParameter::deserialize",
-            needed: len,
-            available: bytes.remaining(),
-          });
+          }),
         }
-        let raw = bytes.copy_to_bytes(len);
-        let moqt_path = String::from_utf8(raw.to_vec()).map_err(|e| ParseError::InvalidUTF8 {
-          context: "SetupParameter::deserialize",
-          details: e.to_string(),
-        })?;
-        Ok(SetupParameter::Path { moqt_path })
       }
-      SetupParameterType::MaxRequestId => {
-        let max_id = bytes.get_vi()?;
-        Ok(SetupParameter::MaxRequestId { max_id })
-      }
-      SetupParameterType::MaxAuthTokenCacheSize => {
-        let max_size = bytes.get_vi()?;
-        Ok(SetupParameter::MaxAuthTokenCacheSize { max_size })
+      KeyValuePair::Bytes { type_value, value } => {
+        let type_value = SetupParameterType::try_from(*type_value)?;
+        match type_value {
+          SetupParameterType::Path => {
+            let moqt_path =
+              String::from_utf8(value.to_vec()).map_err(|e| ParseError::InvalidUTF8 {
+                context: "SetupParameter::deserialize",
+                details: e.to_string(),
+              })?;
+            Ok(SetupParameter::Path { moqt_path })
+          }
+          _ => Err(ParseError::KeyValueFormattingError {
+            context: "SetupParameter::deserialize",
+          }),
+        }
       }
     }
   }
@@ -88,14 +86,18 @@ impl SetupParameter {
 #[cfg(test)]
 mod tests {
   use super::SetupParameter;
-  use crate::model::{common::varint::BufMutVarIntExt, parameter::constant::SetupParameterType};
+  use crate::model::common::pair::KeyValuePair;
+  use crate::model::common::varint::BufMutVarIntExt;
+  use crate::model::parameter::constant::SetupParameterType;
   use bytes::{Buf, BytesMut};
 
   #[test]
   fn test_roundtrip_path() {
     let orig = SetupParameter::new_path("test/path".to_string());
-    let mut buf = orig.serialize().unwrap();
-    let got = SetupParameter::deserialize(&mut buf).unwrap();
+    let serialized = orig.serialize().unwrap();
+    let mut buf = serialized.clone();
+    let kvp = KeyValuePair::deserialize(&mut buf).unwrap();
+    let got = SetupParameter::deserialize(&kvp).unwrap();
     assert_eq!(orig, got);
     assert_eq!(buf.remaining(), 0);
   }
@@ -103,8 +105,10 @@ mod tests {
   #[test]
   fn test_roundtrip_empty_path() {
     let orig = SetupParameter::new_path(String::new());
-    let mut buf = orig.serialize().unwrap();
-    let got = SetupParameter::deserialize(&mut buf).unwrap();
+    let serialized = orig.serialize().unwrap();
+    let mut buf = serialized.clone();
+    let kvp = KeyValuePair::deserialize(&mut buf).unwrap();
+    let got = SetupParameter::deserialize(&kvp).unwrap();
     assert_eq!(orig, got);
     assert_eq!(buf.remaining(), 0);
   }
@@ -112,8 +116,10 @@ mod tests {
   #[test]
   fn test_roundtrip_max_request_id() {
     let orig = SetupParameter::new_max_request_id(0xDEAD_BEEFu64);
-    let mut buf = orig.serialize().unwrap();
-    let got = SetupParameter::deserialize(&mut buf).unwrap();
+    let serialized = orig.serialize().unwrap();
+    let mut buf = serialized.clone();
+    let kvp = KeyValuePair::deserialize(&mut buf).unwrap();
+    let got = SetupParameter::deserialize(&kvp).unwrap();
     assert_eq!(orig, got);
     assert_eq!(buf.remaining(), 0);
   }
@@ -121,19 +127,23 @@ mod tests {
   #[test]
   fn test_roundtrip_max_auth_cache_size() {
     let orig = SetupParameter::new_max_auth_token_cache_size(123456);
-    let mut buf = orig.serialize().unwrap();
-    let got = SetupParameter::deserialize(&mut buf).unwrap();
+    let serialized = orig.serialize().unwrap();
+    let mut buf = serialized.clone();
+    let kvp = KeyValuePair::deserialize(&mut buf).unwrap();
+    let got = SetupParameter::deserialize(&kvp).unwrap();
     assert_eq!(orig, got);
     assert_eq!(buf.remaining(), 0);
   }
 
   #[test]
   fn test_deserialize_invalid_type() {
-    let mut buf = BytesMut::new();
-    buf.put_vi(999u64).unwrap(); // unknown tag
-    let mut bytes = buf.freeze();
-    let err = SetupParameter::deserialize(&mut bytes);
-    assert!(err.is_err())
+    // Create a KeyValuePair with an invalid type that SetupParameter should reject
+    let kvp = KeyValuePair::VarInt {
+      type_value: 999, // invalid SetupParameterType
+      value: 42,
+    };
+    let err = SetupParameter::deserialize(&kvp);
+    assert!(err.is_err());
   }
 
   #[test]
@@ -142,8 +152,8 @@ mod tests {
     buf.put_vi(SetupParameterType::Path as u64).unwrap();
     // no length, no data
     let mut bytes = buf.freeze();
-    let err = SetupParameter::deserialize(&mut bytes);
-    assert!(err.is_err())
+    let err = KeyValuePair::deserialize(&mut bytes);
+    assert!(err.is_err());
   }
 
   #[test]
@@ -153,8 +163,8 @@ mod tests {
     buf.put_vi(5).unwrap(); // declare 5 bytes
     buf.extend_from_slice(b"abc"); // only 3 bytes
     let mut bytes = buf.freeze();
-    let err = SetupParameter::deserialize(&mut bytes);
-    assert!(err.is_err())
+    let err = KeyValuePair::deserialize(&mut bytes);
+    assert!(err.is_err());
   }
 
   #[test]
@@ -163,8 +173,8 @@ mod tests {
     buf.put_vi(SetupParameterType::MaxRequestId as u64).unwrap();
     // no ID varint
     let mut bytes = buf.freeze();
-    let err = SetupParameter::deserialize(&mut bytes);
-    assert!(err.is_err())
+    let err = KeyValuePair::deserialize(&mut bytes);
+    assert!(err.is_err());
   }
 
   #[test]
@@ -175,8 +185,8 @@ mod tests {
       .unwrap();
     // no size varint
     let mut bytes = buf.freeze();
-    let err = SetupParameter::deserialize(&mut bytes);
-    assert!(err.is_err())
+    let err = KeyValuePair::deserialize(&mut bytes);
+    assert!(err.is_err());
   }
 
   #[test]
@@ -185,7 +195,8 @@ mod tests {
     let mut buf = BytesMut::from(&orig.serialize().unwrap()[..]);
     buf.extend_from_slice(b"XYZ");
     let mut bytes = buf.freeze();
-    let got = SetupParameter::deserialize(&mut bytes).unwrap();
+    let kvp = KeyValuePair::deserialize(&mut bytes).unwrap();
+    let got = SetupParameter::deserialize(&kvp).unwrap();
     assert_eq!(got, orig);
     assert_eq!(bytes.remaining(), 3);
     assert_eq!(&bytes[..], b"XYZ");
@@ -197,7 +208,8 @@ mod tests {
     let mut buf = BytesMut::from(&orig.serialize().unwrap()[..]);
     buf.extend_from_slice(&[0xFF, 0xEE]);
     let mut bytes = buf.freeze();
-    let got = SetupParameter::deserialize(&mut bytes).unwrap();
+    let kvp = KeyValuePair::deserialize(&mut bytes).unwrap();
+    let got = SetupParameter::deserialize(&kvp).unwrap();
     assert_eq!(got, orig);
     assert_eq!(bytes.remaining(), 2);
     assert_eq!(&bytes[..], &[0xFF, 0xEE]);
@@ -209,7 +221,8 @@ mod tests {
     let mut buf = BytesMut::from(&orig.serialize().unwrap()[..]);
     buf.extend_from_slice(&[1, 2, 3]);
     let mut bytes = buf.freeze();
-    let got = SetupParameter::deserialize(&mut bytes).unwrap();
+    let kvp = KeyValuePair::deserialize(&mut bytes).unwrap();
+    let got = SetupParameter::deserialize(&kvp).unwrap();
     assert_eq!(got, orig);
     assert_eq!(bytes.remaining(), 3);
     assert_eq!(&bytes[..], &[1, 2, 3]);

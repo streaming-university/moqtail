@@ -1,10 +1,10 @@
 use crate::model::{
-  common::varint::BufMutVarIntExt,
+  common::{pair::KeyValuePair, varint::BufMutVarIntExt},
   error::ParseError,
   parameter::constant::{TokenAliasType, VersionSpecificParameterType},
 };
 
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 
 use crate::model::common::varint::BufVarIntExt;
 
@@ -73,12 +73,20 @@ impl VersionParameter {
     let mut bytes = BytesMut::new();
     match self {
       VersionParameter::MaxCacheDuration { duration } => {
-        bytes.put_vi(VersionSpecificParameterType::MaxCacheDuration)?;
-        bytes.put_vi(*duration)?;
+        let kvp = KeyValuePair::try_new_varint(
+          VersionSpecificParameterType::MaxCacheDuration as u64,
+          *duration,
+        )?;
+        let slice = kvp.serialize()?;
+        bytes.extend_from_slice(&slice);
       }
       VersionParameter::DeliveryTimeout { object_timeout } => {
-        bytes.put_vi(VersionSpecificParameterType::DeliveryTimeout)?;
-        bytes.put_vi(*object_timeout)?;
+        let kvp = KeyValuePair::try_new_varint(
+          VersionSpecificParameterType::DeliveryTimeout as u64,
+          *object_timeout,
+        )?;
+        let slice = kvp.serialize()?;
+        bytes.extend_from_slice(&slice);
       }
       VersionParameter::AuthorizationToken {
         alias_type,
@@ -86,82 +94,103 @@ impl VersionParameter {
         token_type,
         token_value,
       } => {
-        bytes.put_vi(VersionSpecificParameterType::AuthorizationToken)?;
-        let mut payload = BytesMut::new();
-        payload.put_vi(*alias_type)?;
-        if let Some(token_alias) = token_alias {
-          payload.put_vi(*token_alias)?;
+        let mut payload_bytes = BytesMut::new();
+        payload_bytes.put_vi(*alias_type)?;
+        match *alias_type {
+          x if x == TokenAliasType::Delete as u64 => {
+            if let Some(token_alias) = token_alias {
+              payload_bytes.put_vi(*token_alias)?;
+            }
+          }
+          x if x == TokenAliasType::Register as u64 => {
+            if let (Some(token_alias), Some(token_type), Some(token_value)) =
+              (token_alias, token_type, token_value)
+            {
+              payload_bytes.put_vi(*token_alias)?;
+              payload_bytes.put_vi(*token_type)?;
+              payload_bytes.extend_from_slice(token_value);
+            }
+          }
+          x if x == TokenAliasType::UseAlias as u64 => {
+            if let Some(token_alias) = token_alias {
+              payload_bytes.put_vi(*token_alias)?;
+            }
+          }
+          x if x == TokenAliasType::UseValue as u64 => {
+            if let (Some(token_type), Some(token_value)) = (token_type, token_value) {
+              payload_bytes.put_vi(*token_type)?;
+              payload_bytes.extend_from_slice(token_value);
+            }
+          }
+          _ => {
+            return Err(ParseError::KeyValueFormattingError {
+              context: "VersionParameter::serialize: unknown alias_type",
+            });
+          }
         }
-        if let Some(token_type) = token_type {
-          payload.put_vi(*token_type)?;
-        }
-        if let Some(token_value) = token_value {
-          payload.extend_from_slice(token_value);
-        }
-        bytes.put_vi(payload.len())?;
-        bytes.extend_from_slice(&payload);
+        let kvp = KeyValuePair::try_new_bytes(
+          VersionSpecificParameterType::AuthorizationToken as u64,
+          payload_bytes.freeze(),
+        )?;
+        let slice = kvp.serialize()?;
+        bytes.extend_from_slice(&slice);
       }
     }
     Ok(bytes.freeze())
   }
 
-  pub fn deserialize(bytes: &mut Bytes) -> Result<VersionParameter, ParseError> {
-    let param_type = bytes.get_vi()?;
-    let param_type = VersionSpecificParameterType::try_from(param_type)?;
-    match param_type {
-      VersionSpecificParameterType::MaxCacheDuration => {
-        let duration = bytes.get_vi()?;
-        Ok(VersionParameter::MaxCacheDuration { duration })
-      }
-      VersionSpecificParameterType::DeliveryTimeout => {
-        let object_timeout = bytes.get_vi()?;
-        Ok(VersionParameter::DeliveryTimeout { object_timeout })
-      }
-      VersionSpecificParameterType::AuthorizationToken => {
-        let len = bytes.get_vi()?;
-        let length: usize =
-          len
-            .try_into()
-            .map_err(|e: std::num::TryFromIntError| ParseError::CastingError {
-              context: "VersionParameter::AuthorizationToken length",
-              from_type: "u64",
-              to_type: "usize",
-              details: e.to_string(),
-            })?;
-        if bytes.remaining() < length {
-          return Err(ParseError::NotEnoughBytes {
-            context: "VersionParameter::AuthorizationToken length",
-            needed: length,
-            available: bytes.remaining(),
-          });
+  pub fn deserialize(kvp: &KeyValuePair) -> Result<VersionParameter, ParseError> {
+    match kvp {
+      KeyValuePair::VarInt { type_value, value } => {
+        let type_value = VersionSpecificParameterType::try_from(*type_value)?;
+        match type_value {
+          VersionSpecificParameterType::DeliveryTimeout => Ok(VersionParameter::DeliveryTimeout {
+            object_timeout: *value,
+          }),
+          VersionSpecificParameterType::MaxCacheDuration => {
+            Ok(VersionParameter::MaxCacheDuration { duration: *value })
+          }
+          _ => Err(ParseError::KeyValueFormattingError {
+            context: "VersionParameter::deserialize",
+          }),
         }
-        let mut payload_bytes = bytes.copy_to_bytes(length);
-        let alias_type = payload_bytes.get_vi()?;
-        let alias_type = TokenAliasType::try_from(alias_type)?;
-        match alias_type {
-          TokenAliasType::Delete => {
-            let token_alias = payload_bytes.get_vi()?;
-            Ok(Self::new_auth_token_delete(token_alias))
+      }
+      KeyValuePair::Bytes { type_value, value } => {
+        let type_value = VersionSpecificParameterType::try_from(*type_value)?;
+        let mut payload_bytes = value.clone();
+        match type_value {
+          VersionSpecificParameterType::AuthorizationToken => {
+            let alias_type = payload_bytes.get_vi()?;
+            let alias_type = TokenAliasType::try_from(alias_type)?;
+            match alias_type {
+              TokenAliasType::Delete => {
+                let token_alias = payload_bytes.get_vi()?;
+                Ok(Self::new_auth_token_delete(token_alias))
+              }
+              TokenAliasType::Register => {
+                let token_alias = payload_bytes.get_vi()?;
+                let token_type = payload_bytes.get_vi()?;
+                let token_value = payload_bytes.clone();
+                Ok(Self::new_auth_token_register(
+                  token_alias,
+                  token_type,
+                  token_value,
+                ))
+              }
+              TokenAliasType::UseAlias => {
+                let token_alias = payload_bytes.get_vi()?;
+                Ok(Self::new_auth_token_use_alias(token_alias))
+              }
+              TokenAliasType::UseValue => {
+                let token_type = payload_bytes.get_vi()?;
+                let token_value = payload_bytes.clone();
+                Ok(Self::new_auth_token_use_value(token_type, token_value))
+              }
+            }
           }
-          TokenAliasType::Register => {
-            let token_alias = payload_bytes.get_vi()?;
-            let token_type = payload_bytes.get_vi()?;
-            let token_value = payload_bytes;
-            Ok(Self::new_auth_token_register(
-              token_alias,
-              token_type,
-              token_value,
-            ))
-          }
-          TokenAliasType::UseAlias => {
-            let token_alias = payload_bytes.get_vi()?;
-            Ok(Self::new_auth_token_use_alias(token_alias))
-          }
-          TokenAliasType::UseValue => {
-            let token_type = payload_bytes.get_vi()?;
-            let token_value = payload_bytes;
-            Ok(Self::new_auth_token_use_value(token_type, token_value))
-          }
+          _ => Err(ParseError::KeyValueFormattingError {
+            context: "VersionParameter::deserialize",
+          }),
         }
       }
     }
@@ -171,6 +200,7 @@ impl VersionParameter {
 #[cfg(test)]
 mod tests {
   use super::VersionParameter;
+  use crate::model::common::pair::KeyValuePair;
   use crate::model::common::varint::BufMutVarIntExt;
   use crate::model::parameter::constant::VersionSpecificParameterType;
   use bytes::{Buf, Bytes, BytesMut};
@@ -178,8 +208,10 @@ mod tests {
   #[test]
   fn test_roundtrip_max_cache_duration() {
     let orig = VersionParameter::new_max_cache_duration(0x1234);
-    let mut buf = orig.serialize().unwrap();
-    let got = VersionParameter::deserialize(&mut buf).unwrap();
+    let serialized = orig.serialize().unwrap();
+    let mut buf = serialized.clone();
+    let kvp = KeyValuePair::deserialize(&mut buf).unwrap();
+    let got = VersionParameter::deserialize(&kvp).unwrap();
     assert_eq!(orig, got);
     assert_eq!(buf.remaining(), 0);
   }
@@ -187,8 +219,10 @@ mod tests {
   #[test]
   fn test_roundtrip_delivery_timeout() {
     let orig = VersionParameter::new_delivery_timeout(0xABCD);
-    let mut buf = orig.serialize().unwrap();
-    let got = VersionParameter::deserialize(&mut buf).unwrap();
+    let serialized = orig.serialize().unwrap();
+    let mut buf = serialized.clone();
+    let kvp = KeyValuePair::deserialize(&mut buf).unwrap();
+    let got = VersionParameter::deserialize(&kvp).unwrap();
     assert_eq!(orig, got);
     assert_eq!(buf.remaining(), 0);
   }
@@ -196,8 +230,10 @@ mod tests {
   #[test]
   fn test_roundtrip_auth_token_delete() {
     let orig = VersionParameter::new_auth_token_delete(42);
-    let mut buf = orig.serialize().unwrap();
-    let got = VersionParameter::deserialize(&mut buf).unwrap();
+    let serialized = orig.serialize().unwrap();
+    let mut buf = serialized.clone();
+    let kvp = KeyValuePair::deserialize(&mut buf).unwrap();
+    let got = VersionParameter::deserialize(&kvp).unwrap();
     assert_eq!(orig, got);
     assert_eq!(buf.remaining(), 0);
   }
@@ -205,8 +241,10 @@ mod tests {
   #[test]
   fn test_roundtrip_auth_token_register() {
     let orig = VersionParameter::new_auth_token_register(5, 1, Bytes::from_static(b"bytes"));
-    let mut buf = orig.serialize().unwrap();
-    let got = VersionParameter::deserialize(&mut buf).unwrap();
+    let serialized = orig.serialize().unwrap();
+    let mut buf = serialized.clone();
+    let kvp = KeyValuePair::deserialize(&mut buf).unwrap();
+    let got = VersionParameter::deserialize(&kvp).unwrap();
     assert_eq!(orig, got);
     assert_eq!(buf.remaining(), 0);
   }
@@ -214,8 +252,10 @@ mod tests {
   #[test]
   fn test_roundtrip_auth_token_use_alias() {
     let orig = VersionParameter::new_auth_token_use_alias(100);
-    let mut buf = orig.serialize().unwrap();
-    let got = VersionParameter::deserialize(&mut buf).unwrap();
+    let serialized = orig.serialize().unwrap();
+    let mut buf = serialized.clone();
+    let kvp = KeyValuePair::deserialize(&mut buf).unwrap();
+    let got = VersionParameter::deserialize(&kvp).unwrap();
     assert_eq!(orig, got);
     assert_eq!(buf.remaining(), 0);
   }
@@ -223,18 +263,22 @@ mod tests {
   #[test]
   fn test_roundtrip_auth_token_use_value() {
     let orig = VersionParameter::new_auth_token_use_value(16, Bytes::from_static(b"bytes"));
-    let mut buf = orig.serialize().unwrap();
-    let got = VersionParameter::deserialize(&mut buf).unwrap();
+    let serialized = orig.serialize().unwrap();
+    let mut buf = serialized.clone();
+    let kvp = KeyValuePair::deserialize(&mut buf).unwrap();
+    let got = VersionParameter::deserialize(&kvp).unwrap();
     assert_eq!(orig, got);
     assert_eq!(buf.remaining(), 0);
   }
 
   #[test]
   fn test_deserialize_invalid_param_type() {
-    let mut buf = BytesMut::new();
-    buf.put_vi(0xFF_FF).unwrap(); // invalid type
-    buf.put_vi(0xDEAD).unwrap();
-    let err = VersionParameter::deserialize(&mut buf.freeze());
+    // Create a KeyValuePair with an invalid type that VersionParameter should reject
+    let kvp = KeyValuePair::VarInt {
+      type_value: 0xFF_FF, // invalid VersionSpecificParameterType
+      value: 0xDEAD,
+    };
+    let err = VersionParameter::deserialize(&kvp);
     assert!(err.is_err());
   }
 
@@ -244,7 +288,8 @@ mod tests {
     buf
       .put_vi(VersionSpecificParameterType::MaxCacheDuration as u64)
       .unwrap();
-    let err = VersionParameter::deserialize(&mut buf.freeze());
+    let mut bytes = buf.freeze();
+    let err = KeyValuePair::deserialize(&mut bytes);
     assert!(err.is_err());
   }
 
@@ -254,7 +299,8 @@ mod tests {
     buf
       .put_vi(VersionSpecificParameterType::DeliveryTimeout as u64)
       .unwrap();
-    let err = VersionParameter::deserialize(&mut buf.freeze());
+    let mut bytes = buf.freeze();
+    let err = KeyValuePair::deserialize(&mut bytes);
     assert!(err.is_err());
   }
 
@@ -264,7 +310,8 @@ mod tests {
     let mut buf = BytesMut::from(&orig.serialize().unwrap()[..]);
     buf.extend_from_slice(b"XYZ");
     let mut bytes = buf.freeze();
-    let got = VersionParameter::deserialize(&mut bytes).unwrap();
+    let kvp = KeyValuePair::deserialize(&mut bytes).unwrap();
+    let got = VersionParameter::deserialize(&kvp).unwrap();
     assert_eq!(got, orig);
     assert_eq!(bytes.remaining(), 3);
     assert_eq!(&bytes[..], b"XYZ");
@@ -276,7 +323,8 @@ mod tests {
     let mut buf = BytesMut::from(&orig.serialize().unwrap()[..]);
     buf.extend_from_slice(&[1, 2, 3]);
     let mut bytes = buf.freeze();
-    let got = VersionParameter::deserialize(&mut bytes).unwrap();
+    let kvp = KeyValuePair::deserialize(&mut bytes).unwrap();
+    let got = VersionParameter::deserialize(&kvp).unwrap();
     assert_eq!(got, orig);
     assert_eq!(bytes.remaining(), 3);
     assert_eq!(&bytes[..], &[1, 2, 3]);
@@ -288,7 +336,8 @@ mod tests {
     let mut buf = BytesMut::from(&orig.serialize().unwrap()[..]);
     buf.extend_from_slice(b"EXTRA");
     let mut bytes = buf.freeze();
-    let got = VersionParameter::deserialize(&mut bytes).unwrap();
+    let kvp = KeyValuePair::deserialize(&mut bytes).unwrap();
+    let got = VersionParameter::deserialize(&kvp).unwrap();
     assert_eq!(got, orig);
     assert_eq!(bytes.remaining(), 5);
     assert_eq!(&bytes[..], b"EXTRA");
@@ -300,7 +349,8 @@ mod tests {
     let mut buf = BytesMut::from(&orig.serialize().unwrap()[..]);
     buf.extend_from_slice(b"++");
     let mut bytes = buf.freeze();
-    let got = VersionParameter::deserialize(&mut bytes).unwrap();
+    let kvp = KeyValuePair::deserialize(&mut bytes).unwrap();
+    let got = VersionParameter::deserialize(&kvp).unwrap();
     assert_eq!(got, orig);
     assert_eq!(bytes.remaining(), 2);
     assert_eq!(&bytes[..], b"++");
@@ -312,7 +362,8 @@ mod tests {
     let mut buf = BytesMut::from(&orig.serialize().unwrap()[..]);
     buf.extend_from_slice(&[9]);
     let mut bytes = buf.freeze();
-    let got = VersionParameter::deserialize(&mut bytes).unwrap();
+    let kvp = KeyValuePair::deserialize(&mut bytes).unwrap();
+    let got = VersionParameter::deserialize(&kvp).unwrap();
     assert_eq!(got, orig);
     assert_eq!(bytes.remaining(), 1);
     assert_eq!(&bytes[..], &[9]);
@@ -324,7 +375,8 @@ mod tests {
     let mut buf = BytesMut::from(&orig.serialize().unwrap()[..]);
     buf.extend_from_slice(&[0xAB, 0xCD]);
     let mut bytes = buf.freeze();
-    let got = VersionParameter::deserialize(&mut bytes).unwrap();
+    let kvp = KeyValuePair::deserialize(&mut bytes).unwrap();
+    let got = VersionParameter::deserialize(&kvp).unwrap();
     assert_eq!(got, orig);
     assert_eq!(bytes.remaining(), 2);
     assert_eq!(&bytes[..], &[0xAB, 0xCD]);
