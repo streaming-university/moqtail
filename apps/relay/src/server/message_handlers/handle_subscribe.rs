@@ -87,6 +87,7 @@ pub async fn handle_subscribe_messages(
             sub.track_namespace.clone(),
             sub.track_name.clone(),
             context.server_config.cache_size.into(),
+            context.server_config.cache_grow_ratio_before_evicting,
             publisher.read().await.connection_id,
           );
           {

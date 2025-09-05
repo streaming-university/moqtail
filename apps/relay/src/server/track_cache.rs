@@ -1,4 +1,3 @@
-use crate::server::utils;
 use moqtail::model::common::location::Location;
 use moqtail::model::data::fetch_object::FetchObject;
 use moqtail::transport::data_stream_handler::HeaderInfo;
@@ -17,88 +16,97 @@ pub struct TrackCache {
   #[allow(dead_code)]
   pub track_alias: u64,
   headers: Arc<RwLock<BTreeMap<String, HeaderInfo>>>,
-  #[allow(dead_code)]
   objects: Arc<RwLock<BTreeMap<u64, Vec<FetchObject>>>>,
   // Ring buffer implementation: keep track of header IDs in order of insertion
   header_queue: Arc<RwLock<VecDeque<String>>>,
   #[allow(dead_code)]
   cache_size: usize,
+  cache_grow_ratio_before_evicting: f64,
 }
 
 impl TrackCache {
-  pub fn new(track_alias: u64, cache_size: usize) -> Self {
+  pub fn new(track_alias: u64, cache_size: usize, cache_grow_ratio_before_evicting: f64) -> Self {
     Self {
       track_alias,
       headers: Arc::new(RwLock::new(BTreeMap::new())),
       objects: Arc::new(RwLock::new(BTreeMap::new())),
       header_queue: Arc::new(RwLock::new(VecDeque::with_capacity(cache_size))),
       cache_size,
+      cache_grow_ratio_before_evicting,
     }
   }
 
-  #[allow(dead_code)]
-  pub async fn add_header(&self, header: HeaderInfo) -> Option<HeaderInfo> {
-    let stream_id = utils::build_stream_id(self.track_alias, &header);
-
-    debug!(
-      "add_header | track: {} stream_id: {}",
-      self.track_alias, stream_id
-    );
-
-    // Check if we need to evict the oldest header
-    // self.ensure_capacity(&header_id).await;
-
-    // Add new header to queue
-    let mut header_queue = self.header_queue.write().await;
-    header_queue.push_back(stream_id.clone());
-
-    // Store the header
-    let mut headers = self.headers.write().await;
-    headers.insert(stream_id, header)
-  }
-
-  /*
   // Ensure we don't exceed capacity by removing oldest elements if needed
-  async fn ensure_capacity(&self, new_header_id: &String) {
-    let mut header_queue = self.header_queue.write().await;
+  // Uses a ratio-based approach: allows cache to grow to configured ratio of capacity before evicting
+  async fn ensure_capacity(&self) {
+    let max_allowed_size =
+      (self.cache_size as f64 * self.cache_grow_ratio_before_evicting) as usize;
 
-    // If the header already exists, we're just updating it
-    if self.headers.read().await.contains_key(new_header_id) {
-      // Remove the existing entry from the queue
-      if let Some(pos) = header_queue.iter().position(|id| id == new_header_id) {
-        header_queue.remove(pos);
+    let objects = self.objects.read().await;
+
+    // Only evict if we exceed the ratio-based threshold
+    if objects.len() > max_allowed_size {
+      drop(objects);
+      let mut objects = self.objects.write().await;
+
+      // Calculate how many elements to remove (remove excess beyond normal capacity)
+      let excess_count = objects.len() - self.cache_size;
+      let mut removed_count = 0;
+
+      debug!(
+        "ensure_capacity | cache exceeded ratio threshold. track: {} current: {} max_allowed: {} removing: {}",
+        self.track_alias,
+        objects.len(),
+        max_allowed_size,
+        excess_count
+      );
+
+      // Remove excess elements in batch
+      while removed_count < excess_count && !objects.is_empty() {
+        match objects.pop_first() {
+          Some((group_id, _)) => {
+            removed_count += 1;
+            warn!(
+              "ensure_capacity | removed oldest group. track: {} group: {} ({}/{} removed)",
+              self.track_alias, group_id, removed_count, excess_count
+            );
+          }
+          None => {
+            warn!(
+              "ensure_capacity | unable to remove group from track cache. track: {} ",
+              self.track_alias
+            );
+            break;
+          }
+        };
       }
-      return;
-    }
 
-    // If we're at capacity, remove the oldest header and its objects
-    if header_queue.len() >= self.cache_size {
-      if let Some(oldest_header_id) = header_queue.pop_front() {
-        debug!(
-          "ensure_capacity | removing oldest header. track: {} header: {}",
-          self.track_alias, oldest_header_id
-        );
-        // Remove header
-        let mut headers = self.headers.write().await;
-        headers.remove(&oldest_header_id);
-
-        // Remove associated objects
-        let mut objects = self.objects.write().await;
-        objects.remove(&oldest_header_id);
-      }
+      info!(
+        "ensure_capacity | eviction complete. track: {} final_size: {} removed: {}",
+        self.track_alias,
+        objects.len(),
+        removed_count
+      );
     }
   }
-  */
 
   pub async fn add_object(&self, object: FetchObject) {
     let mut map = self.objects.write().await;
+    let mut is_new_group: bool = false;
     match map.get_mut(&object.group_id) {
       Some(objects) => {
         objects.push(object);
       }
       None => {
         map.insert(object.group_id, vec![object]);
+        is_new_group = true;
       }
+    }
+    drop(map);
+
+    // if this is a new group, check if we need to evict old groups from the cache
+    if is_new_group {
+      self.ensure_capacity().await;
     }
   }
 
