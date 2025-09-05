@@ -149,30 +149,40 @@ pub async fn handle_fetch_messages(
       };
 
       let the_client = client.read().await;
-
       let stream_id = build_stream_id(track.track_alias, &header_info);
-      let stream_result = the_client
-        .open_stream(&stream_id, fetch_header.serialize().unwrap(), 0)
-        .await;
 
-      let send_stream = match stream_result {
-        Ok(send_stream) => send_stream,
-        Err(e) => {
-          error!("handle_fetch_messages | Error opening stream: {:?}", e);
-          return Err(TerminationCode::InternalError);
+      let stream_fn = async move |client: MOQTClient, stream_id: &String| {
+        let stream_result = client
+          .open_stream(stream_id, fetch_header.serialize().unwrap(), 0)
+          .await;
+
+        match stream_result {
+          Ok(send_stream) => Some(send_stream),
+          Err(e) => {
+            error!("handle_fetch_messages | Error opening stream: {:?}", e);
+            None
+          }
         }
       };
+
       let mut object_count = 0;
+      let mut send_stream = None;
       loop {
         match object_rx.recv().await {
           Some(object) => {
+            if object_count == 0 {
+              send_stream = match stream_fn(the_client.clone(), &stream_id).await {
+                Some(ss) => Some(ss),
+                None => return Err(TerminationCode::InternalError),
+              };
+            }
             let object_id = object.object_id;
             if let Err(e) = the_client
               .write_object_to_stream(
                 &stream_id,
                 object_id,
                 object.serialize().unwrap(),
-                Some(send_stream.clone()),
+                send_stream.as_ref().cloned(),
               )
               .await
             {
@@ -190,6 +200,7 @@ pub async fn handle_fetch_messages(
           }
         }
       }
+
       if object_count == 0 {
         send_fetch_error(
           client.clone(),
@@ -204,18 +215,17 @@ pub async fn handle_fetch_messages(
           error!("handle_fetch_messages | Error closing stream: {:?}", e);
           // return Err(TerminationCode::InternalError);
         }
+        // TODO: implement descending fetch
+        // TODO: end of track is correct?
+        let largest_location = track.largest_location.read().await;
+        let end_of_track = largest_location.group == end_location.clone().unwrap().group;
+        let fetch_ok =
+          FetchOk::new_ascending(request_id, end_of_track, end_location.unwrap(), vec![]);
+
+        the_client
+          .queue_message(ControlMessage::FetchOk(Box::new(fetch_ok)))
+          .await;
       }
-
-      // TODO: implement descending fetch
-      // TODO: end of track is correct?
-      let largest_location = track.largest_location.read().await;
-      let end_of_track = largest_location.group == end_location.clone().unwrap().group;
-      let fetch_ok =
-        FetchOk::new_ascending(request_id, end_of_track, end_location.unwrap(), vec![]);
-
-      the_client
-        .queue_message(ControlMessage::FetchOk(Box::new(fetch_ok)))
-        .await;
       Ok(())
     }
     ControlMessage::FetchOk(m) => {
