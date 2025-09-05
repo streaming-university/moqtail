@@ -21,8 +21,11 @@ pub struct Cli {
   #[arg(long, default_value = "apps/relay/cert/key.pem")]
   pub key_file: String,
   /// Number of cached subgroups/fetches per track
-  #[arg(long, default_value_t = 1000)]
+  #[arg(long, default_value_t = 10)]
   pub cache_size: u16,
+  /// Cache grow ratio before evicting - allows cache to grow to this multiple of cache_size before evicting
+  #[arg(long, default_value_t = 1.2)]
+  pub cache_grow_ratio_before_evicting: f64,
   #[arg(long, default_value_t = 7)]
   pub max_idle_timeout: u64,
   #[arg(long, default_value_t = 3)]
@@ -39,6 +42,7 @@ pub struct AppConfig {
   pub max_idle_timeout: u64,
   pub keep_alive_interval: u64,
   pub cache_size: u16,
+  pub cache_grow_ratio_before_evicting: f64,
   pub log_folder: String,
 }
 
@@ -55,6 +59,7 @@ impl AppConfig {
         max_idle_timeout: cli.max_idle_timeout,
         keep_alive_interval: cli.keep_alive_interval,
         cache_size: cli.cache_size,
+        cache_grow_ratio_before_evicting: cli.cache_grow_ratio_before_evicting,
         log_folder: cli.log_folder,
       }
     })

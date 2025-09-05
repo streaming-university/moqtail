@@ -44,6 +44,7 @@ impl Track {
     track_namespace: Tuple,
     track_name: String,
     cache_size: usize,
+    cache_grow_ratio_before_evicting: f64,
     publisher_connection_id: usize,
   ) -> Self {
     Track {
@@ -52,7 +53,7 @@ impl Track {
       track_name,
       subscriptions: Arc::new(RwLock::new(BTreeMap::new())),
       publisher_connection_id,
-      cache: TrackCache::new(track_alias, cache_size),
+      cache: TrackCache::new(track_alias, cache_size, cache_grow_ratio_before_evicting),
       subscriber_senders: Arc::new(RwLock::new(BTreeMap::new())),
       largest_location: Arc::new(RwLock::new(Location::new(0, 0))),
     }
