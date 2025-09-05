@@ -32,7 +32,7 @@ pub struct Track {
   pub publisher_connection_id: usize,
   #[allow(dead_code)]
   pub(crate) cache: TrackCache,
-  subscriber_senders: Arc<RwLock<BTreeMap<usize, UnboundedSender<TrackEvent>>>>,
+  subscriber_senders: Arc<RwLock<BTreeMap<usize, UnboundedSender<Vec<TrackEvent>>>>>,
   pub largest_location: Arc<RwLock<Location>>,
 }
 
@@ -72,7 +72,7 @@ impl Track {
     );
 
     // Create a separate unbounded channel for this subscriber
-    let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<TrackEvent>>();
 
     let subscription = Subscription::new(
       subscribe_message,
@@ -123,17 +123,16 @@ impl Track {
     }
   }
 
-  pub async fn new_header(&self, header: &HeaderInfo) -> Result<()> {
-    let header_event = TrackEvent::Header {
-      header: header.clone(),
-    };
-
-    self.send_event_to_subscribers(header_event).await?;
-
-    Ok(())
+  pub async fn new_object(&self, stream_id: String, object: &Object) -> Result<(), anyhow::Error> {
+    self.new_object_with_header(stream_id, object, None).await
   }
 
-  pub async fn new_object(&self, stream_id: String, object: &Object) -> Result<(), anyhow::Error> {
+  pub async fn new_object_with_header(
+    &self,
+    stream_id: String,
+    object: &Object,
+    header_info: Option<&HeaderInfo>,
+  ) -> Result<(), anyhow::Error> {
     debug!(
       "new_object: track: {:?} location: {:?} stream_id: {} diff_ms: {}",
       object.track_alias,
@@ -144,10 +143,22 @@ impl Track {
 
     if let Ok(fetch_object) = object.clone().try_into_fetch() {
       self.cache.add_object(fetch_object).await;
-      let object_event = TrackEvent::Object {
+
+      // Prepare events to send
+      let mut events = Vec::new();
+
+      // Add header event if provided
+      if let Some(header) = header_info {
+        events.push(TrackEvent::Header {
+          header: header.clone(),
+        });
+      }
+
+      // Add object event
+      events.push(TrackEvent::Object {
         stream_id: stream_id.clone(),
         object: object.clone(),
-      };
+      });
 
       // update the largest location
       {
@@ -161,7 +172,8 @@ impl Track {
         }
       }
 
-      self.send_event_to_subscribers(object_event).await?;
+      // Send all events atomically
+      self.send_events_to_subscribers(events).await?;
       Ok(())
     } else {
       error!(
@@ -207,13 +219,23 @@ impl Track {
     &self,
     event: TrackEvent,
   ) -> Result<Vec<usize>, anyhow::Error> {
+    self.send_events_to_subscribers(vec![event]).await
+  }
+
+  // Send multiple events atomically to all subscribers
+  async fn send_events_to_subscribers(
+    &self,
+    events: Vec<TrackEvent>,
+  ) -> Result<Vec<usize>, anyhow::Error> {
     let senders = self.subscriber_senders.read().await;
     let mut failed_subscribers = Vec::new();
+
     if !senders.is_empty() {
       for (subscriber_id, sender) in senders.iter() {
-        if let Err(e) = sender.send(event.clone()) {
+        // Send the entire event array to this subscriber
+        if let Err(e) = sender.send(events.clone()) {
           error!(
-            "Failed to send event to subscriber {}: {}",
+            "Failed to send events to subscriber {}: {}",
             subscriber_id, e
           );
           failed_subscribers.push(*subscriber_id);
@@ -222,16 +244,16 @@ impl Track {
 
       if !failed_subscribers.is_empty() {
         error!(
-          "{:?} event sent to {} subscribers, {} failed for track: {}",
-          event,
+          "{} events sent to {} subscribers, {} failed for track: {}",
+          events.len(),
           senders.len() - failed_subscribers.len(),
           failed_subscribers.len(),
           self.track_alias
         );
       } else {
         debug!(
-          "{:?} event sent successfully to {} subscribers for track: {}",
-          event,
+          "{} events sent successfully to {} subscribers for track: {}",
+          events.len(),
           senders.len(),
           self.track_alias
         );

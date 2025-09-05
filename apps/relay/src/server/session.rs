@@ -429,12 +429,13 @@ impl Session {
 
     loop {
       let next = stream_handler.next_object().await;
+
       match next {
         (handler, Some(object)) => {
           // Handle the object
           stream_handler = handler;
 
-          if first_object {
+          let header_info = if first_object {
             // debug!("First object received, processing header info");
             let header = handler.get_header_info().await;
             if header.is_none() {
@@ -476,15 +477,20 @@ impl Session {
               // TODO: get track for fetch requests as well
               return Err(anyhow::Error::msg(TerminationCode::InternalError.to_json()));
             };
-            let _ = current_track
-              .as_ref()
-              .unwrap()
-              .new_header(&header_info)
-              .await;
             stream_id = utils::build_stream_id(track_alias, &header_info);
-          }
+            Some(header_info)
+          } else {
+            None
+          };
+
           let track = current_track.as_ref().unwrap();
-          let _ = track.new_object(stream_id.clone(), &object).await;
+          let _ = if first_object {
+            track
+              .new_object_with_header(stream_id.clone(), &object, header_info.as_ref())
+              .await
+          } else {
+            track.new_object(stream_id.clone(), &object).await
+          };
 
           object_count += 1;
           first_object = false; // reset the first object flag after processing the header
