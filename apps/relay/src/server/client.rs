@@ -114,18 +114,34 @@ impl MOQTClient {
       let mut send_streams = self.send_streams.write().await;
       match send_streams.entry(stream_id.to_string()) {
         std::collections::hash_map::Entry::Vacant(entry) => {
-          let send_stream = self
+          info!(
+            "open_stream | attempt to create send_stream ({}) connection_id: {}",
+            stream_id, self.connection_id
+          );
+          let result = self
             .connection
             .open_uni()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to open send stream 1: {:?}", e))?
+            .map_err(|e| anyhow::anyhow!("Failed to open send stream 1: {:?}", e))?;
+
+          info!(
+            "open_stream | waiting to create send_stream ({}) connection_id: {}",
+            stream_id, self.connection_id
+          );
+
+          let send_stream = result
             .await
             .map_err(|e| anyhow::anyhow!("Failed to open send stream 2: {:?}", e))?;
+
+          info!(
+            "open_stream | created send_stream ({}) connection_id: {}",
+            stream_id, self.connection_id
+          );
           send_stream.set_priority(priority);
           let s = Arc::new(Mutex::new(send_stream));
           entry.insert(s.clone());
           info!(
-            "open_stream | Create send_stream ({}) connection_id: {}",
+            "open_stream | added send_stream to send streams ({}) connection_id: {}",
             stream_id, self.connection_id
           );
           s
