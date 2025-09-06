@@ -144,15 +144,18 @@ impl Subscription {
 
               // Handle header info if this is the first object
               if let Some(header) = header_info {
-                info!(
-                  "Received Object event with header: subscriber: {}",
-                  self.client_connection_id
-                );
-
                 if let HeaderInfo::Subgroup {
                   header: _subgroup_header,
                 } = header
                 {
+                  info!(
+                    "Creating stream - subscriber: {} track: {} now: {} received time: {} object: {:?}",
+                    self.client_connection_id,
+                    self.subscribe_message.track_alias,
+                    utils::passed_time_since_start(),
+                    object_received_time,
+                    object.location
+                  );
                   if let Ok((stream_id, send_stream)) = self.handle_header(header.clone()).await {
                     self
                       .send_streams
@@ -160,12 +163,13 @@ impl Subscription {
                       .await
                       .insert(stream_id.clone(), send_stream.clone());
                     info!(
-                      "Stream created - subscriber: {} stream_id: {} track: {} now: {} received time: {}",
+                      "Stream created - subscriber: {} stream_id: {} track: {} now: {} received time: {} object: {:?}",
                       self.client_connection_id,
                       stream_id,
                       self.subscribe_message.track_alias,
                       utils::passed_time_since_start(),
-                      object_received_time
+                      object_received_time,
+                      object.location
                     );
                   }
                 } else {
@@ -188,10 +192,11 @@ impl Subscription {
                   .await;
               } else {
                 error!(
-                  "Received Object event without a valid send stream for subscriber: {} stream_id: {} track: {} now: {} received time: {}",
+                  "Received Object event without a valid send stream for subscriber: {} stream_id: {} track: {} object: {:?} now: {} received time: {}",
                   self.client_connection_id,
                   stream_id,
                   self.subscribe_message.track_alias,
+                  object.location,
                   utils::passed_time_since_start(),
                   object_received_time
                 );
@@ -274,6 +279,8 @@ impl Subscription {
           return Err(e);
         }
       };
+
+      info!("Created stream: {stream_id}");
 
       Ok((stream_id, send_stream))
     } else {
