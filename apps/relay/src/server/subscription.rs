@@ -14,7 +14,6 @@ use moqtail::model::control::subscribe_done::SubscribeDone;
 use moqtail::model::data::object::Object;
 use moqtail::transport::data_stream_handler::HeaderInfo;
 use std::collections::BTreeMap;
-use std::time::Instant;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
@@ -141,6 +140,8 @@ impl Subscription {
               stream_id,
               header_info,
             } => {
+              let object_received_time = utils::passed_time_since_start();
+
               // Handle header info if this is the first object
               if let Some(header) = header_info {
                 info!(
@@ -158,6 +159,14 @@ impl Subscription {
                       .write()
                       .await
                       .insert(stream_id.clone(), send_stream.clone());
+                    info!(
+                      "Stream created - subscriber: {} stream_id: {} track: {} now: {} received time: {}",
+                      self.client_connection_id,
+                      stream_id,
+                      self.subscribe_message.track_alias,
+                      utils::passed_time_since_start(),
+                      object_received_time
+                    );
                   }
                 } else {
                   error!(
@@ -167,7 +176,6 @@ impl Subscription {
                 }
               }
 
-              // Handle the object
               let send_stream = self.send_streams.read().await.get(&stream_id).cloned();
 
               if let Some(send_stream) = send_stream {
@@ -180,8 +188,12 @@ impl Subscription {
                   .await;
               } else {
                 error!(
-                  "Received Object event without a valid send stream for subscriber: {} stream_id: {} track: {}",
-                  self.client_connection_id, stream_id, self.subscribe_message.track_alias
+                  "Received Object event without a valid send stream for subscriber: {} stream_id: {} track: {} now: {} received time: {}",
+                  self.client_connection_id,
+                  stream_id,
+                  self.subscribe_message.track_alias,
+                  utils::passed_time_since_start(),
+                  object_received_time
                 );
               }
             }
@@ -244,8 +256,7 @@ impl Subscription {
     if let Ok(header_payload) = self.get_header_payload(&header_info).await {
       // set priority based on the current time
       // TODO: revisit this logic to set priority based on the subscription
-      let priority = i32::MAX
-        - (Instant::now().duration_since(*utils::BASE_TIME).as_millis() % i32::MAX as u128) as i32;
+      let priority = i32::MAX - (utils::passed_time_since_start() % i32::MAX as u128) as i32;
 
       let send_stream = match self
         .subscriber
@@ -263,6 +274,7 @@ impl Subscription {
           return Err(e);
         }
       };
+
       Ok((stream_id, send_stream))
     } else {
       error!(
@@ -289,7 +301,7 @@ impl Subscription {
       object.track_alias,
       object.location,
       &stream_id,
-      (Instant::now() - *utils::BASE_TIME).as_millis()
+      utils::passed_time_since_start()
     );
 
     // This loop will keep the stream open and process incoming objects

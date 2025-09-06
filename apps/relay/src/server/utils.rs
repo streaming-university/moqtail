@@ -38,3 +38,7 @@ pub fn build_stream_id(track_alias: u64, header: &HeaderInfo) -> String {
     }
   }
 }
+
+pub fn passed_time_since_start() -> u128 {
+  (Instant::now() - *BASE_TIME).as_millis()
+}

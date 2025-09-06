@@ -7,7 +7,6 @@ use moqtail::model::common::location::Location;
 use moqtail::model::control::subscribe::Subscribe;
 use moqtail::model::data::object::Object;
 use moqtail::{model::common::tuple::Tuple, transport::data_stream_handler::HeaderInfo};
-use std::time::Instant;
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::UnboundedSender;
@@ -146,8 +145,18 @@ impl Track {
       object.track_alias,
       object.location,
       &stream_id,
-      (Instant::now() - *utils::BASE_TIME).as_millis()
+      utils::passed_time_since_start()
     );
+
+    if header_info.is_some() {
+      info!(
+        "new group: track: {:?} location: {:?} stream_id: {} time: {}",
+        object.track_alias,
+        object.location,
+        &stream_id,
+        utils::passed_time_since_start()
+      );
+    }
 
     if let Ok(fetch_object) = object.clone().try_into_fetch() {
       self.cache.add_object(fetch_object).await;
@@ -179,7 +188,7 @@ impl Track {
         object.track_alias,
         object.location,
         stream_id,
-        (Instant::now() - *utils::BASE_TIME).as_millis(),
+        utils::passed_time_since_start(),
         object
       );
       Err(anyhow::anyhow!("Object is not a fetch object"))
