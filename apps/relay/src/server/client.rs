@@ -110,51 +110,49 @@ impl MOQTClient {
     header_payload: Bytes,
     priority: i32, // Priority for the stream
   ) -> Result<Arc<Mutex<SendStream>>> {
-    let mut send_streams = self.send_streams.write().await;
-    match send_streams.entry(stream_id.to_string()) {
-      std::collections::hash_map::Entry::Vacant(entry) => {
-        let send_stream = self
-          .connection
-          .open_uni()
-          .await
-          .map_err(|e| anyhow::anyhow!("Failed to open send stream 1: {:?}", e))?
-          .await
-          .map_err(|e| anyhow::anyhow!("Failed to open send stream 2: {:?}", e))?;
-        send_stream.set_priority(priority);
-        entry.insert(Arc::new(Mutex::new(send_stream)));
-        info!(
-          "open_stream | Create send_stream ({}) connection_id: {}",
-          stream_id, self.connection_id
-        );
+    let send_stream = {
+      let mut send_streams = self.send_streams.write().await;
+      match send_streams.entry(stream_id.to_string()) {
+        std::collections::hash_map::Entry::Vacant(entry) => {
+          let send_stream = self
+            .connection
+            .open_uni()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to open send stream 1: {:?}", e))?
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to open send stream 2: {:?}", e))?;
+          send_stream.set_priority(priority);
+          let s = Arc::new(Mutex::new(send_stream));
+          entry.insert(s.clone());
+          info!(
+            "open_stream | Create send_stream ({}) connection_id: {}",
+            stream_id, self.connection_id
+          );
+          s
+        }
+        std::collections::hash_map::Entry::Occupied(s) => {
+          debug!(
+            "open_stream | Send stream for {} already exists connection_id: {}",
+            stream_id, self.connection_id
+          );
+          s.get().clone()
+        }
       }
-      std::collections::hash_map::Entry::Occupied(_) => {
-        debug!(
-          "open_stream | Send stream for {} already exists connection_id: {}",
-          stream_id, self.connection_id
-        );
-      }
-    }
-    drop(send_streams);
+    };
 
-    let send_streams = self.send_streams.read().await;
-
-    // Retrieve the send stream from the map
-    debug!("open_stream | Send stream for {}", stream_id);
-    let send_stream = send_streams
-      .get(&stream_id.to_string())
-      .ok_or_else(|| {
-        anyhow::anyhow!(
-          "Send stream not found ({}) connection_id: {}",
-          stream_id,
-          self.connection_id
-        )
-      })
-      .cloned()?;
-    drop(send_streams);
+    info!(
+      "open_stream |  writing to stream ({}) connection_id: {}",
+      stream_id, self.connection_id
+    );
 
     // Write the header payload to the stream
     match send_stream.lock().await.write_all(&header_payload).await {
-      Ok(..) => {}
+      Ok(..) => {
+        info!(
+          "open_stream |  wrote to stream ({}) connection_id: {}",
+          stream_id, self.connection_id
+        );
+      }
       Err(e) => {
         error!(
           "open_stream |  Failed to write header payload to send stream ({}) connection_id: {}",
