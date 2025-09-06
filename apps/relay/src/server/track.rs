@@ -68,10 +68,10 @@ impl Track {
 
   pub async fn add_subscription(
     &mut self,
-    subscriber: Arc<RwLock<MOQTClient>>,
+    subscriber: Arc<MOQTClient>,
     subscribe_message: Subscribe,
   ) -> Result<(), anyhow::Error> {
-    let connection_id = { subscriber.read().await.connection_id };
+    let connection_id = { subscriber.connection_id };
 
     info!(
       "Adding subscription for subscriber_id: {} to track: {}",

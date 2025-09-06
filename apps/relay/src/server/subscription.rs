@@ -24,7 +24,7 @@ use wtransport::SendStream;
 #[derive(Debug, Clone)]
 pub struct Subscription {
   pub subscribe_message: Subscribe,
-  subscriber: Arc<RwLock<MOQTClient>>,
+  subscriber: Arc<MOQTClient>,
   event_rx: Arc<Mutex<Option<UnboundedReceiver<TrackEvent>>>>,
   send_streams: Arc<RwLock<BTreeMap<String, Arc<Mutex<SendStream>>>>>,
   finished: Arc<RwLock<bool>>, // Indicates if the subscription is finished
@@ -36,7 +36,7 @@ pub struct Subscription {
 impl Subscription {
   fn create_instance(
     subscribe_message: Subscribe,
-    subscriber: Arc<RwLock<MOQTClient>>,
+    subscriber: Arc<MOQTClient>,
     event_rx: Arc<Mutex<Option<UnboundedReceiver<TrackEvent>>>>,
     cache: TrackCache,
     client_connection_id: usize,
@@ -53,7 +53,7 @@ impl Subscription {
   }
   pub fn new(
     subscribe_message: Subscribe,
-    subscriber: Arc<RwLock<MOQTClient>>,
+    subscriber: Arc<MOQTClient>,
     event_rx: UnboundedReceiver<TrackEvent>,
     cache: TrackCache,
     client_connection_id: usize,
@@ -265,8 +265,6 @@ impl Subscription {
 
       let send_stream = match self
         .subscriber
-        .read()
-        .await
         .open_stream(stream_id.as_str(), header_payload, priority)
         .await
       {
@@ -328,8 +326,6 @@ impl Subscription {
 
       self
         .subscriber
-        .read()
-        .await
         .write_object_to_stream(
           stream_id.as_str(),
           sub_object.object_id,
@@ -362,19 +358,13 @@ impl Subscription {
     // Handle the stream closed event
     debug!("Stream closed: {}", stream_id);
     let connection_id = self.client_connection_id;
-    self
-      .subscriber
-      .read()
-      .await
-      .close_stream(&stream_id)
-      .await
-      .map_err(|e| {
-        debug!(
-          "Failed to close stream {}: {:?} subscriber: {} track: {}",
-          stream_id, e, connection_id, self.subscribe_message.track_alias
-        );
-        e
-      })
+    self.subscriber.close_stream(&stream_id).await.map_err(|e| {
+      debug!(
+        "Failed to close stream {}: {:?} subscriber: {} track: {}",
+        stream_id, e, connection_id, self.subscribe_message.track_alias
+      );
+      e
+    })
   }
 
   async fn get_header_payload(&self, header_info: &HeaderInfo) -> Result<Bytes> {
@@ -420,8 +410,8 @@ impl Subscription {
       reason_phrase,
     );
 
-    let subscriber_client = self.subscriber.read().await;
-    subscriber_client
+    self
+      .subscriber
       .queue_message(ControlMessage::SubscribeDone(Box::new(subscribe_done)))
       .await;
 

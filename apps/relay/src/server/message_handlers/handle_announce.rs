@@ -5,11 +5,10 @@ use moqtail::model::control::{announce_ok::AnnounceOk, control_message::ControlM
 use moqtail::model::error::TerminationCode;
 use moqtail::transport::control_stream_handler::ControlStreamHandler;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tracing::info;
 
 pub async fn handle_announce_messages(
-  client: Arc<RwLock<MOQTClient>>,
+  client: Arc<MOQTClient>,
   control_stream_handler: &mut ControlStreamHandler,
   msg: ControlMessage,
   _context: Arc<SessionContext>,
@@ -21,8 +20,6 @@ pub async fn handle_announce_messages(
       // this is a publisher, add it to the client manager
       // send announce_ok
       client
-        .read()
-        .await
         .add_announced_track_namespace(m.track_namespace.clone())
         .await;
 

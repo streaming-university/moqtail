@@ -13,11 +13,10 @@ use moqtail::model::{common::reason_phrase::ReasonPhrase, control::constant::Fet
 use moqtail::transport::control_stream_handler::ControlStreamHandler;
 use moqtail::transport::data_stream_handler::HeaderInfo;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
 pub async fn handle_fetch_messages(
-  client: Arc<RwLock<MOQTClient>>,
+  client: Arc<MOQTClient>,
   _control_stream_handler: &mut ControlStreamHandler,
   msg: ControlMessage,
   context: Arc<SessionContext>,
@@ -148,10 +147,9 @@ pub async fn handle_fetch_messages(
         fetch_request: fetch,
       };
 
-      let the_client = client.read().await;
       let stream_id = build_stream_id(track.track_alias, &header_info);
 
-      let stream_fn = async move |client: MOQTClient, stream_id: &String| {
+      let stream_fn = async move |client: Arc<MOQTClient>, stream_id: &String| {
         let stream_result = client
           .open_stream(stream_id, fetch_header.serialize().unwrap(), 0)
           .await;
@@ -171,13 +169,13 @@ pub async fn handle_fetch_messages(
         match object_rx.recv().await {
           Some(object) => {
             if object_count == 0 {
-              send_stream = match stream_fn(the_client.clone(), &stream_id).await {
+              send_stream = match stream_fn(client.clone(), &stream_id).await {
                 Some(ss) => Some(ss),
                 None => return Err(TerminationCode::InternalError),
               };
             }
             let object_id = object.object_id;
-            if let Err(e) = the_client
+            if let Err(e) = client
               .write_object_to_stream(
                 &stream_id,
                 object_id,
@@ -211,7 +209,7 @@ pub async fn handle_fetch_messages(
         .await;
       } else {
         info!("handle_fetch_messages | Fetched {} objects", object_count);
-        if let Err(e) = the_client.close_stream(&stream_id).await {
+        if let Err(e) = client.close_stream(&stream_id).await {
           error!("handle_fetch_messages | Error closing stream: {:?}", e);
           // return Err(TerminationCode::InternalError);
         }
@@ -222,7 +220,7 @@ pub async fn handle_fetch_messages(
         let fetch_ok =
           FetchOk::new_ascending(request_id, end_of_track, end_location.unwrap(), vec![]);
 
-        the_client
+        client
           .queue_message(ControlMessage::FetchOk(Box::new(fetch_ok)))
           .await;
       }
@@ -251,13 +249,12 @@ pub async fn handle_fetch_messages(
 }
 
 async fn send_fetch_error(
-  client: Arc<RwLock<MOQTClient>>,
+  client: Arc<MOQTClient>,
   request_id: u64,
   error_code: FetchErrorCode,
   reason_phrase: ReasonPhrase,
 ) {
   let fetch_error = FetchError::new(request_id, error_code, reason_phrase);
-  let client = client.read().await;
   client
     .queue_message(ControlMessage::FetchError(Box::new(fetch_error)))
     .await;

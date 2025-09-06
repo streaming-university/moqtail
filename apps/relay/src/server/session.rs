@@ -141,7 +141,7 @@ impl Session {
     loop {
       // see if we have a message to receive from the client
       let msg: ControlMessage;
-      let c = client.read().await; // this is the client that is connected to this session
+      let c = client.clone(); // this is the client that is connected to this session
       {
         tokio::select! {
           m = control_stream_handler.next_message() => {
@@ -336,7 +336,6 @@ impl Session {
       let tracks = tracks_cleanup.read().await;
       let client = context.get_client().await;
       if let Some(client) = client {
-        let client = client.read().await;
         let published_tracks = client.get_published_tracks().await;
         for track_alias in published_tracks {
           info!(
@@ -413,8 +412,6 @@ impl Session {
       Some(c) => c,
       None => return Err(TerminationCode::InternalError.into()),
     };
-
-    let client = client.read().await;
 
     debug!("client is {}", client.connection_id);
 
@@ -523,7 +520,7 @@ impl Session {
   async fn negotiate(
     context: Arc<SessionContext>,
     control_stream_handler: &mut ControlStreamHandler,
-  ) -> Result<Arc<RwLock<MOQTClient>>> {
+  ) -> Result<Arc<MOQTClient>> {
     debug!("Negotiating with client...");
     let client_setup = match control_stream_handler.next_message().await {
       Ok(ControlMessage::ClientSetup(m)) => *m,
@@ -561,7 +558,7 @@ impl Session {
         Arc::new(context.connection.clone()),
         Arc::new(client_setup),
       );
-      let client = Arc::new(RwLock::new(client));
+      let client = Arc::new(client);
       m.add(client.clone()).await;
       client
     } else {
