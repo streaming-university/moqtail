@@ -14,11 +14,19 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info};
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum TrackEvent {
-  Header { header: HeaderInfo },
-  Object { stream_id: String, object: Object },
-  StreamClosed { stream_id: String },
-  PublisherDisconnected { reason: String },
+  Object {
+    stream_id: String,
+    object: Object,
+    header_info: Option<HeaderInfo>,
+  },
+  StreamClosed {
+    stream_id: String,
+  },
+  PublisherDisconnected {
+    reason: String,
+  },
 }
 #[derive(Debug, Clone)]
 pub struct Track {
@@ -32,7 +40,7 @@ pub struct Track {
   pub publisher_connection_id: usize,
   #[allow(dead_code)]
   pub(crate) cache: TrackCache,
-  subscriber_senders: Arc<RwLock<BTreeMap<usize, UnboundedSender<Vec<TrackEvent>>>>>,
+  subscriber_senders: Arc<RwLock<BTreeMap<usize, UnboundedSender<TrackEvent>>>>,
   pub largest_location: Arc<RwLock<Location>>,
 }
 
@@ -72,7 +80,7 @@ impl Track {
     );
 
     // Create a separate unbounded channel for this subscriber
-    let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<TrackEvent>>();
+    let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<TrackEvent>();
 
     let subscription = Subscription::new(
       subscribe_message,
@@ -144,22 +152,6 @@ impl Track {
     if let Ok(fetch_object) = object.clone().try_into_fetch() {
       self.cache.add_object(fetch_object).await;
 
-      // Prepare events to send
-      let mut events = Vec::new();
-
-      // Add header event if provided
-      if let Some(header) = header_info {
-        events.push(TrackEvent::Header {
-          header: header.clone(),
-        });
-      }
-
-      // Add object event
-      events.push(TrackEvent::Object {
-        stream_id: stream_id.clone(),
-        object: object.clone(),
-      });
-
       // update the largest location
       {
         let mut largest_location = self.largest_location.write().await;
@@ -172,8 +164,14 @@ impl Track {
         }
       }
 
-      // Send all events atomically
-      self.send_events_to_subscribers(events).await?;
+      // Send single Object event with optional header info
+      let event = TrackEvent::Object {
+        stream_id: stream_id.clone(),
+        object: object.clone(),
+        header_info: header_info.cloned(),
+      };
+
+      self.send_event_to_subscribers(event).await?;
       Ok(())
     } else {
       error!(
@@ -219,23 +217,14 @@ impl Track {
     &self,
     event: TrackEvent,
   ) -> Result<Vec<usize>, anyhow::Error> {
-    self.send_events_to_subscribers(vec![event]).await
-  }
-
-  // Send multiple events atomically to all subscribers
-  async fn send_events_to_subscribers(
-    &self,
-    events: Vec<TrackEvent>,
-  ) -> Result<Vec<usize>, anyhow::Error> {
     let senders = self.subscriber_senders.read().await;
     let mut failed_subscribers = Vec::new();
 
     if !senders.is_empty() {
       for (subscriber_id, sender) in senders.iter() {
-        // Send the entire event array to this subscriber
-        if let Err(e) = sender.send(events.clone()) {
+        if let Err(e) = sender.send(event.clone()) {
           error!(
-            "Failed to send events to subscriber {}: {}",
+            "Failed to send event to subscriber {}: {}",
             subscriber_id, e
           );
           failed_subscribers.push(*subscriber_id);
@@ -244,16 +233,16 @@ impl Track {
 
       if !failed_subscribers.is_empty() {
         error!(
-          "{} events sent to {} subscribers, {} failed for track: {}",
-          events.len(),
+          "{:?} event sent to {} subscribers, {} failed for track: {}",
+          event,
           senders.len() - failed_subscribers.len(),
           failed_subscribers.len(),
           self.track_alias
         );
       } else {
         debug!(
-          "{} events sent successfully to {} subscribers for track: {}",
-          events.len(),
+          "{:?} event sent successfully to {} subscribers for track: {}",
+          event,
           senders.len(),
           self.track_alias
         );

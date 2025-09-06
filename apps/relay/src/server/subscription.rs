@@ -26,7 +26,7 @@ use wtransport::SendStream;
 pub struct Subscription {
   pub subscribe_message: Subscribe,
   subscriber: Arc<RwLock<MOQTClient>>,
-  event_rx: Arc<Mutex<Option<UnboundedReceiver<Vec<TrackEvent>>>>>,
+  event_rx: Arc<Mutex<Option<UnboundedReceiver<TrackEvent>>>>,
   send_streams: Arc<RwLock<BTreeMap<String, Arc<Mutex<SendStream>>>>>,
   finished: Arc<RwLock<bool>>, // Indicates if the subscription is finished
   #[allow(dead_code)]
@@ -38,7 +38,7 @@ impl Subscription {
   fn create_instance(
     subscribe_message: Subscribe,
     subscriber: Arc<RwLock<MOQTClient>>,
-    event_rx: Arc<Mutex<Option<UnboundedReceiver<Vec<TrackEvent>>>>>,
+    event_rx: Arc<Mutex<Option<UnboundedReceiver<TrackEvent>>>>,
     cache: TrackCache,
     client_connection_id: usize,
   ) -> Self {
@@ -55,7 +55,7 @@ impl Subscription {
   pub fn new(
     subscribe_message: Subscribe,
     subscriber: Arc<RwLock<MOQTClient>>,
-    event_rx: UnboundedReceiver<Vec<TrackEvent>>,
+    event_rx: UnboundedReceiver<TrackEvent>,
     cache: TrackCache,
     client_connection_id: usize,
   ) -> Self {
@@ -130,17 +130,21 @@ impl Subscription {
 
     if let Some(ref mut event_rx) = *event_rx_guard {
       match event_rx.recv().await {
-        Some(events) => {
-          // Process all events in the array
-          for event in events {
-            if *self.finished.read().await {
-              return;
-            }
+        Some(event) => {
+          if *self.finished.read().await {
+            return;
+          }
 
-            match event {
-              TrackEvent::Header { header } => {
+          match event {
+            TrackEvent::Object {
+              object,
+              stream_id,
+              header_info,
+            } => {
+              // Handle header info if this is the first object
+              if let Some(header) = header_info {
                 info!(
-                  "Received Header event: subscriber: {}",
+                  "Received Object event with header: subscriber: {}",
                   self.client_connection_id
                 );
 
@@ -157,58 +161,57 @@ impl Subscription {
                   }
                 } else {
                   error!(
-                    "Received Header event for non-subgroup header: {:?}",
+                    "Received Object event with non-subgroup header: {:?}",
                     header
                   );
                 }
               }
-              TrackEvent::Object { object, stream_id } => {
-                let send_stream = self.send_streams.read().await.get(&stream_id).cloned();
 
-                if let Some(send_stream) = send_stream {
-                  debug!(
-                    "Received Object event: subscriber: {} stream_id: {} track: {}",
-                    self.client_connection_id, stream_id, self.subscribe_message.track_alias
-                  );
-                  let _ = self
-                    .handle_object(object, stream_id, send_stream.clone())
-                    .await;
-                } else {
-                  error!(
-                    "Received Object event without a valid send stream for subscriber: {} stream_id: {} track: {}",
-                    self.client_connection_id, stream_id, self.subscribe_message.track_alias
-                  );
-                }
-              }
-              TrackEvent::StreamClosed { stream_id } => {
-                info!(
-                  "Received StreamClosed event: subscriber: {} stream_id: {} track: {}",
+              // Handle the object
+              let send_stream = self.send_streams.read().await.get(&stream_id).cloned();
+
+              if let Some(send_stream) = send_stream {
+                debug!(
+                  "Received Object event: subscriber: {} stream_id: {} track: {}",
                   self.client_connection_id, stream_id, self.subscribe_message.track_alias
                 );
-                let _ = self.handle_stream_closed(stream_id).await;
-              }
-              TrackEvent::PublisherDisconnected { reason } => {
-                info!(
-                  "Received PublisherDisconnected event: subscriber: {}, reason: {} track: {}",
-                  self.client_connection_id, reason, self.subscribe_message.track_alias
+                let _ = self
+                  .handle_object(object, stream_id, send_stream.clone())
+                  .await;
+              } else {
+                error!(
+                  "Received Object event without a valid send stream for subscriber: {} stream_id: {} track: {}",
+                  self.client_connection_id, stream_id, self.subscribe_message.track_alias
                 );
-
-                // Send SubscribeDone message and finish the subscription
-                if let Err(e) = self
-                  .send_subscribe_done(SubscribeDoneStatusCode::TrackEnded, &reason)
-                  .await
-                {
-                  error!(
-                    "Failed to send SubscribeDone for publisher disconnect: subscriber: {} track: {} error: {:?}",
-                    self.client_connection_id, self.subscribe_message.track_alias, e
-                  );
-                }
-
-                // Finish the subscription since the publisher is gone
-                let mut is_finished = self.finished.write().await;
-                *is_finished = true;
-                return; // Exit early since subscription is finished
               }
+            }
+            TrackEvent::StreamClosed { stream_id } => {
+              info!(
+                "Received StreamClosed event: subscriber: {} stream_id: {} track: {}",
+                self.client_connection_id, stream_id, self.subscribe_message.track_alias
+              );
+              let _ = self.handle_stream_closed(stream_id).await;
+            }
+            TrackEvent::PublisherDisconnected { reason } => {
+              info!(
+                "Received PublisherDisconnected event: subscriber: {}, reason: {} track: {}",
+                self.client_connection_id, reason, self.subscribe_message.track_alias
+              );
+
+              // Send SubscribeDone message and finish the subscription
+              if let Err(e) = self
+                .send_subscribe_done(SubscribeDoneStatusCode::TrackEnded, &reason)
+                .await
+              {
+                error!(
+                  "Failed to send SubscribeDone for publisher disconnect: subscriber: {} track: {} error: {:?}",
+                  self.client_connection_id, self.subscribe_message.track_alias, e
+                );
+              }
+
+              // Finish the subscription since the publisher is gone
+              let mut is_finished = self.finished.write().await;
+              *is_finished = true;
             }
           }
         }
