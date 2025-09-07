@@ -152,7 +152,7 @@ pub async fn handle_fetch_messages(
 
       let stream_fn = async move |client: Arc<MOQTClient>, stream_id: &String| {
         let stream_result = client
-          .open_stream(stream_id, fetch_header.serialize().unwrap(), 0)
+          .open_stream(stream_id, fetch_header.serialize().unwrap(), i32::MAX)
           .await;
 
         match stream_result {
