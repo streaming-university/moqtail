@@ -63,7 +63,7 @@ impl TrackCache {
 
       // Remove excess elements in batch
       while removed_count < excess_count && !objects.is_empty() {
-        match objects.pop_first() {
+        match objects.pop_last() {
           Some((group_id, _)) => {
             removed_count += 1;
             warn!(
