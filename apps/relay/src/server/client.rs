@@ -192,8 +192,12 @@ impl MOQTClient {
   }
 
   pub async fn close_stream(&self, stream_id: &str) -> Result<()> {
-    let mut send_streams = self.send_streams.write().await;
-    if let Some(send_stream) = send_streams.remove(stream_id) {
+    let stream: Option<Arc<Mutex<SendStream>>> = {
+      let mut send_streams = self.send_streams.write().await;
+      send_streams.remove(stream_id)
+    };
+
+    if let Some(send_stream) = stream {
       let mut stream = send_stream.lock().await;
       stream.finish().await.map_err(|e| {
         error!(
