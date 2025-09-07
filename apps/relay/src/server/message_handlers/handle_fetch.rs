@@ -234,9 +234,6 @@ pub async fn handle_fetch_messages(
         // return Err(TerminationCode::InternalError);
       }
 
-      if send_stream.is_some() {
-        let _ = client.close_stream(&stream_id).await;
-      }
       Ok(())
     }
     ControlMessage::FetchOk(m) => {
