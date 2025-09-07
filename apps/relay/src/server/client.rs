@@ -28,7 +28,7 @@ pub(crate) struct MOQTClient {
 
   pub message_queue: Arc<RwLock<VecDeque<ControlMessage>>>, // the control messages the client has sent
   pub message_notify: Arc<Notify>, // notify when a new message is available
-  pub send_streams: Arc<Mutex<HashMap<String, Arc<Mutex<SendStream>>>>>, // the streams the client has opened, key is the track alias + _ + subgroup_id
+  pub send_streams: Arc<RwLock<HashMap<String, Arc<Mutex<SendStream>>>>>, // the streams the client has opened, key is the track alias + _ + subgroup_id
 
   //pub track_queue: Arc<RwLock<BTreeMap<u64>>>, // the track aliases that will be delivered to the client
 
@@ -55,7 +55,7 @@ impl MOQTClient {
       subscribers: Arc::new(RwLock::new(Vec::new())),
       message_queue: Arc::new(RwLock::new(VecDeque::new())),
       message_notify: Arc::new(Notify::default()),
-      send_streams: Arc::new(Mutex::new(HashMap::new())),
+      send_streams: Arc::new(RwLock::new(HashMap::new())),
       fetch_requests: Arc::new(RwLock::new(BTreeMap::new())),
       subscribe_requests: Arc::new(RwLock::new(BTreeMap::new())),
     }
@@ -111,7 +111,7 @@ impl MOQTClient {
     priority: i32, // Priority for the stream
   ) -> Result<Arc<Mutex<SendStream>>> {
     let send_stream = {
-      let mut send_streams = self.send_streams.lock().await;
+      let mut send_streams = self.send_streams.write().await;
       match send_streams.entry(stream_id.to_string()) {
         std::collections::hash_map::Entry::Vacant(entry) => {
           info!(
@@ -176,7 +176,7 @@ impl MOQTClient {
         );
 
         // remove this from the streams
-        let mut send_streams = self.send_streams.lock().await;
+        let mut send_streams = self.send_streams.write().await;
         send_streams.remove(&stream_id.to_string());
 
         return Err(anyhow::anyhow!(
@@ -192,7 +192,7 @@ impl MOQTClient {
   }
 
   pub async fn close_stream(&self, stream_id: &str) -> Result<()> {
-    let mut send_streams = self.send_streams.lock().await;
+    let mut send_streams = self.send_streams.write().await;
     if let Some(send_stream) = send_streams.remove(stream_id) {
       let mut stream = send_stream.lock().await;
       stream.finish().await.map_err(|e| {
@@ -236,7 +236,7 @@ impl MOQTClient {
       if let Some(send_stream) = the_stream {
         Some(send_stream)
       } else {
-        let send_streams = self.send_streams.lock().await;
+        let send_streams = self.send_streams.read().await;
         send_streams.get(&stream_id.to_string()).cloned()
       }
     };
@@ -256,7 +256,7 @@ impl MOQTClient {
               );
               drop(stream);
               // remove this from the streams
-              let mut send_streams = self.send_streams.lock().await;
+              let mut send_streams = self.send_streams.write().await;
               send_streams.remove(&stream_id.to_string());
             }
             _ => {}
