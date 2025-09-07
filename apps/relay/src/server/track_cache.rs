@@ -38,6 +38,8 @@ impl TrackCache {
 
   // Ensure we don't exceed capacity by removing oldest elements if needed
   // Uses a ratio-based approach: allows cache to grow to configured ratio of capacity before evicting
+
+  #[allow(dead_code)]
   async fn ensure_capacity(&self) {
     let max_allowed_size =
       (self.cache_size as f64 * self.cache_grow_ratio_before_evicting) as usize;
@@ -63,7 +65,7 @@ impl TrackCache {
 
       // Remove excess elements in batch
       while removed_count < excess_count && !objects.is_empty() {
-        match objects.pop_last() {
+        match objects.pop_first() {
           Some((group_id, _)) => {
             removed_count += 1;
             warn!(
@@ -110,7 +112,7 @@ impl TrackCache {
 
     // if this is a new group, check if we need to evict old groups from the cache
     if is_new_group {
-      self.ensure_capacity().await;
+      // self.ensure_capacity().await;
     }
   }
 
