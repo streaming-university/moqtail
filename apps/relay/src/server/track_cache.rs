@@ -106,6 +106,10 @@ impl TrackCache {
     };
 
     if is_new_group {
+      info!(
+        "track_cache::add_object | adding new group | track: {} group: {}",
+        self.track_alias, object.group_id
+      );
       let mut map = self.objects.write().await;
       map.insert(group_id, RwLock::new(vec![object]));
     }

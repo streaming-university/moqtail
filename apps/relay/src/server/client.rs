@@ -114,29 +114,16 @@ impl MOQTClient {
       let mut send_streams = self.send_streams.write().await;
       match send_streams.entry(stream_id.to_string()) {
         std::collections::hash_map::Entry::Vacant(entry) => {
-          info!(
-            "open_stream | attempt to create send_stream ({}) connection_id: {}",
-            stream_id, self.connection_id
-          );
           let result = self
             .connection
             .open_uni()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to open send stream 1: {:?}", e))?;
 
-          info!(
-            "open_stream | waiting to create send_stream ({}) connection_id: {}",
-            stream_id, self.connection_id
-          );
-
           let send_stream = result
             .await
             .map_err(|e| anyhow::anyhow!("Failed to open send stream 2: {:?}", e))?;
 
-          info!(
-            "open_stream | created send_stream ({}) connection_id: {}",
-            stream_id, self.connection_id
-          );
           send_stream.set_priority(priority);
           let s = Arc::new(Mutex::new(send_stream));
           entry.insert(s.clone());
@@ -156,7 +143,7 @@ impl MOQTClient {
       }
     };
 
-    info!(
+    debug!(
       "open_stream |  writing to stream ({}) connection_id: {}",
       stream_id, self.connection_id
     );
@@ -164,7 +151,7 @@ impl MOQTClient {
     // Write the header payload to the stream
     match send_stream.lock().await.write_all(&header_payload).await {
       Ok(..) => {
-        info!(
+        debug!(
           "open_stream |  wrote to stream ({}) connection_id: {}",
           stream_id, self.connection_id
         );
