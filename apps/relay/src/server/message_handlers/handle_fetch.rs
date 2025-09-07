@@ -1,5 +1,6 @@
 use crate::server::client::MOQTClient;
 use crate::server::session_context::SessionContext;
+use crate::server::track_cache::CacheConsumeEvent;
 use crate::server::utils::build_stream_id;
 use core::result::Result::{Err, Ok};
 use moqtail::model::common::location::Location;
@@ -167,31 +168,52 @@ pub async fn handle_fetch_messages(
       let mut send_stream = None;
       loop {
         match object_rx.recv().await {
-          Some(object) => {
-            if object_count == 0 {
-              send_stream = match stream_fn(client.clone(), &stream_id).await {
-                Some(ss) => Some(ss),
-                None => return Err(TerminationCode::InternalError),
-              };
+          Some(event) => match event {
+            CacheConsumeEvent::NoObject => {
+              // there is no object found
+              break;
             }
-            let object_id = object.object_id;
-            if let Err(e) = client
-              .write_object_to_stream(
-                &stream_id,
-                object_id,
-                object.serialize().unwrap(),
-                send_stream.as_ref().cloned(),
-              )
-              .await
-            {
-              error!(
-                "handle_fetch_messages | Error writing object to stream: {:?}",
-                e
+            CacheConsumeEvent::EndLocation(end_location) => {
+              info!(
+                "handle_fetch_messages | real end_location: {:?}",
+                &end_location
               );
-              return Err(TerminationCode::InternalError);
+              // TODO: implement descending fetch
+              // TODO: end of track is correct?
+              let largest_location = track.largest_location.read().await;
+              let end_of_track = largest_location.group == end_location.group;
+              let fetch_ok = FetchOk::new_ascending(request_id, end_of_track, end_location, vec![]);
+
+              client
+                .queue_message(ControlMessage::FetchOk(Box::new(fetch_ok)))
+                .await;
             }
-            object_count += 1;
-          }
+            CacheConsumeEvent::Object(object) => {
+              if object_count == 0 {
+                send_stream = match stream_fn(client.clone(), &stream_id).await {
+                  Some(ss) => Some(ss),
+                  None => return Err(TerminationCode::InternalError),
+                };
+              }
+              let object_id = object.object_id;
+              if let Err(e) = client
+                .write_object_to_stream(
+                  &stream_id,
+                  object_id,
+                  object.serialize().unwrap(),
+                  send_stream.as_ref().cloned(),
+                )
+                .await
+              {
+                error!(
+                  "handle_fetch_messages | Error writing object to stream: {:?}",
+                  e
+                );
+                return Err(TerminationCode::InternalError);
+              }
+              object_count += 1;
+            }
+          },
           None => {
             warn!("handle_fetch_messages | No object.");
             break;
@@ -207,22 +229,9 @@ pub async fn handle_fetch_messages(
           ReasonPhrase::try_new(String::from("No objects available")).unwrap(),
         )
         .await;
-      } else {
-        info!("handle_fetch_messages | Fetched {} objects", object_count);
-        if let Err(e) = client.close_stream(&stream_id).await {
-          error!("handle_fetch_messages | Error closing stream: {:?}", e);
-          // return Err(TerminationCode::InternalError);
-        }
-        // TODO: implement descending fetch
-        // TODO: end of track is correct?
-        let largest_location = track.largest_location.read().await;
-        let end_of_track = largest_location.group == end_location.clone().unwrap().group;
-        let fetch_ok =
-          FetchOk::new_ascending(request_id, end_of_track, end_location.unwrap(), vec![]);
-
-        client
-          .queue_message(ControlMessage::FetchOk(Box::new(fetch_ok)))
-          .await;
+      } else if let Err(e) = client.close_stream(&stream_id).await {
+        error!("handle_fetch_messages | Error closing stream: {:?}", e);
+        // return Err(TerminationCode::InternalError);
       }
       Ok(())
     }

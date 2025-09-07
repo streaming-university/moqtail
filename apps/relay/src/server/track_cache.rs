@@ -24,6 +24,13 @@ pub struct TrackCache {
   cache_grow_ratio_before_evicting: f64,
 }
 
+#[derive(Debug, Clone)]
+pub enum CacheConsumeEvent {
+  Object(FetchObject),
+  EndLocation(Location),
+  NoObject,
+}
+
 impl TrackCache {
   pub fn new(track_alias: u64, cache_size: usize, cache_grow_ratio_before_evicting: f64) -> Self {
     Self {
@@ -120,7 +127,7 @@ impl TrackCache {
     }
   }
 
-  pub async fn read_objects(&self, start: Location, end: Location) -> Receiver<FetchObject> {
+  pub async fn read_objects(&self, start: Location, end: Location) -> Receiver<CacheConsumeEvent> {
     let (tx, rx) = channel(32); // Smaller buffer for memory efficiency
     let objects = self.objects.clone();
 
@@ -143,7 +150,31 @@ impl TrackCache {
 
       let range = guard.range(start.group..=end.group);
 
-      info!("read_objects | range: {:?}", range.clone().count());
+      let end_of_range = range.clone().last();
+      if end_of_range.is_none() {
+        if let Err(err) = tx.send(CacheConsumeEvent::NoObject).await {
+          warn!("read_objects | An error occurred: {:?}", err);
+          return;
+        }
+      } else {
+        let end_of_range = end_of_range.unwrap();
+        let end_group_id = *end_of_range.0;
+        let end_object_id = if let Some(object_id) = end_of_range.1.read().await.last() {
+          object_id.object_id
+        } else {
+          0
+        };
+        let end_location = Location::new(end_group_id, end_object_id);
+        info!(
+          "read_objects | range: {:?} end_location: {:?}",
+          range.clone().count(),
+          &end_location
+        );
+        if let Err(err) = tx.send(CacheConsumeEvent::EndLocation(end_location)).await {
+          warn!("read_objects | An error occurred: {:?}", err);
+          return;
+        }
+      }
 
       // TODO: ordering of objects
       for (group_id, objects_guard) in range {
@@ -162,7 +193,7 @@ impl TrackCache {
             // if end object is 0, we return all objects in the group
             break;
           }
-          if let Err(err) = tx.send(object.clone()).await {
+          if let Err(err) = tx.send(CacheConsumeEvent::Object(object.clone())).await {
             warn!("read_objects | An error occurred: {:?}", err);
             break; // Client disconnected
           }
