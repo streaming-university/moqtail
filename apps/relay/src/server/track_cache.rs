@@ -16,7 +16,7 @@ pub struct TrackCache {
   #[allow(dead_code)]
   pub track_alias: u64,
   headers: Arc<RwLock<BTreeMap<String, HeaderInfo>>>,
-  objects: Arc<RwLock<BTreeMap<u64, Vec<FetchObject>>>>,
+  objects: Arc<RwLock<BTreeMap<u64, RwLock<Vec<FetchObject>>>>>,
   // Ring buffer implementation: keep track of header IDs in order of insertion
   header_queue: Arc<RwLock<VecDeque<String>>>,
   #[allow(dead_code)]
@@ -91,18 +91,22 @@ impl TrackCache {
   }
 
   pub async fn add_object(&self, object: FetchObject) {
-    let mut map = self.objects.write().await;
-    let mut is_new_group: bool = false;
-    match map.get_mut(&object.group_id) {
-      Some(objects) => {
-        objects.push(object);
+    let group_id = object.group_id;
+    let is_new_group = {
+      let map = self.objects.read().await;
+      if let Some(objects) = map.get(&object.group_id) {
+        let mut arr = objects.write().await;
+        arr.push(object.clone());
+        false
+      } else {
+        true
       }
-      None => {
-        map.insert(object.group_id, vec![object]);
-        is_new_group = true;
-      }
+    };
+
+    if is_new_group {
+      let mut map = self.objects.write().await;
+      map.insert(group_id, RwLock::new(vec![object]));
     }
-    drop(map);
 
     // if this is a new group, check if we need to evict old groups from the cache
     if is_new_group {
@@ -136,7 +140,9 @@ impl TrackCache {
       info!("read_objects | range: {:?}", range.clone().count());
 
       // TODO: ordering of objects
-      for (group_id, objects) in range {
+      for (group_id, objects_guard) in range {
+        let objects = objects_guard.read().await;
+
         if *group_id < start.group {
           continue;
         }
@@ -144,7 +150,7 @@ impl TrackCache {
           break;
         }
         info!("read_objects | group_id: {:?}", group_id);
-        for object in objects {
+        for object in objects.iter() {
           if *group_id == end.group && end.object > 0 && end.object < object.object_id {
             // we hit the end of the range
             // if end object is 0, we return all objects in the group
