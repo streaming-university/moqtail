@@ -233,6 +233,10 @@ pub async fn handle_fetch_messages(
         error!("handle_fetch_messages | Error closing stream: {:?}", e);
         // return Err(TerminationCode::InternalError);
       }
+
+      if send_stream.is_some() {
+        let _ = client.close_stream(&stream_id).await;
+      }
       Ok(())
     }
     ControlMessage::FetchOk(m) => {
