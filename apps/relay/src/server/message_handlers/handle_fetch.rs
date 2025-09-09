@@ -15,6 +15,7 @@ use moqtail::model::{common::reason_phrase::ReasonPhrase, control::constant::Fet
 use moqtail::transport::control_stream_handler::ControlStreamHandler;
 use moqtail::transport::data_stream_handler::HeaderInfo;
 use std::sync::Arc;
+use tokio::io::AsyncWriteExt;
 use tracing::{error, info, warn};
 
 pub async fn handle_fetch_messages(
@@ -234,7 +235,7 @@ pub async fn handle_fetch_messages(
         // close the stream instantly
         if let Some(the_stream) = send_stream {
           // gracefully finish the stream here
-          if let Err(e) = the_stream.lock().await.finish().await {
+          if let Err(e) = the_stream.lock().await.shutdown().await {
             error!("handle_fetch_messages | Error closing stream: {:?}", e);
             // return Err(TerminationCode::InternalError);
           } else {
