@@ -1,3 +1,4 @@
+use super::config::AppConfig;
 use super::track_cache::TrackCache;
 use crate::server::client::MOQTClient;
 use crate::server::object_logger::ObjectLogger;
@@ -54,10 +55,8 @@ impl Track {
     track_alias: u64,
     track_namespace: Tuple,
     track_name: String,
-    cache_size: usize,
-    cache_grow_ratio_before_evicting: f64,
     publisher_connection_id: usize,
-    log_folder: String,
+    config: &AppConfig,
   ) -> Self {
     Track {
       track_alias,
@@ -65,11 +64,16 @@ impl Track {
       track_name,
       subscriptions: Arc::new(RwLock::new(BTreeMap::new())),
       publisher_connection_id,
-      cache: TrackCache::new(track_alias, cache_size, cache_grow_ratio_before_evicting),
+      cache: TrackCache::new(
+        track_alias,
+        config.cache_size.into(),
+        config.cache_grow_ratio_before_evicting,
+        config,
+      ),
       subscriber_senders: Arc::new(RwLock::new(BTreeMap::new())),
       largest_location: Arc::new(RwLock::new(Location::new(0, 0))),
-      object_logger: ObjectLogger::new(log_folder.clone()),
-      log_folder,
+      object_logger: ObjectLogger::new(config.log_folder.clone()),
+      log_folder: config.log_folder.clone(),
     }
   }
 

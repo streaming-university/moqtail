@@ -1,27 +1,30 @@
+use moka::future::Cache;
 use moqtail::model::common::location::Location;
 use moqtail::model::data::fetch_object::FetchObject;
-use moqtail::transport::data_stream_handler::HeaderInfo;
-use std::{
-  collections::{BTreeMap, VecDeque},
-  sync::Arc,
-};
+use std::sync::Arc;
+use tokio::fs::OpenOptions;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{
   RwLock,
   mpsc::{Receiver, channel},
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
+
+use super::config::{AppConfig, CacheExpirationType};
+
+// Type alias for the cache key (group_id)
+type GroupId = u64;
+
+// Type alias for the cached value (group objects)
+type GroupObjects = Arc<RwLock<Vec<FetchObject>>>;
 
 #[derive(Debug, Clone)]
 pub struct TrackCache {
-  #[allow(dead_code)]
   pub track_alias: u64,
-  headers: Arc<RwLock<BTreeMap<String, HeaderInfo>>>,
-  objects: Arc<RwLock<BTreeMap<u64, RwLock<Vec<FetchObject>>>>>,
-  // Ring buffer implementation: keep track of header IDs in order of insertion
-  header_queue: Arc<RwLock<VecDeque<String>>>,
-  #[allow(dead_code)]
-  cache_size: usize,
-  cache_grow_ratio_before_evicting: f64,
+  // Moka cache for storing groups of objects
+  cache: Cache<GroupId, GroupObjects>,
+  #[allow(dead_code)] // Used in eviction listener closure
+  log_folder: String,
 }
 
 #[derive(Debug, Clone)]
@@ -32,142 +35,174 @@ pub enum CacheConsumeEvent {
 }
 
 impl TrackCache {
-  pub fn new(track_alias: u64, cache_size: usize, cache_grow_ratio_before_evicting: f64) -> Self {
+  pub fn new(
+    track_alias: u64,
+    cache_size: usize,
+    _cache_grow_ratio_before_evicting: f64,
+    config: &AppConfig,
+  ) -> Self {
+    let track_alias_for_listener = track_alias;
+    let log_folder = config.log_folder.clone();
+    let log_folder_for_listener = log_folder.clone();
+
+    let cache_builder = Cache::builder()
+      .max_capacity(cache_size as u64)
+      .eviction_listener(move |key: Arc<GroupId>, value: GroupObjects, _cause| {
+        let track_alias = track_alias_for_listener;
+        let log_folder = log_folder_for_listener.clone();
+        let group_id = *key;
+
+        tokio::spawn(async move {
+          let object_count = value.read().await.len();
+          Self::log_cache_eviction(log_folder, track_alias, group_id, object_count).await;
+        });
+      });
+
+    // Configure expiration based on config
+    let cache = match config.cache_expiration_type {
+      CacheExpirationType::Ttl => {
+        info!(
+          "track_cache::new | configuring TTL cache | track: {} duration: {}min",
+          track_alias, config.cache_expiration_minutes
+        );
+        cache_builder
+          .time_to_live(config.get_cache_expiration_duration())
+          .build()
+      }
+      CacheExpirationType::Tti => {
+        info!(
+          "track_cache::new | configuring TTI cache | track: {} duration: {}min",
+          track_alias, config.cache_expiration_minutes
+        );
+        cache_builder
+          .time_to_idle(config.get_cache_expiration_duration())
+          .build()
+      }
+    };
+
     Self {
       track_alias,
-      headers: Arc::new(RwLock::new(BTreeMap::new())),
-      objects: Arc::new(RwLock::new(BTreeMap::new())),
-      header_queue: Arc::new(RwLock::new(VecDeque::with_capacity(cache_size))),
-      cache_size,
-      cache_grow_ratio_before_evicting,
+      cache,
+      log_folder,
     }
   }
 
-  // Ensure we don't exceed capacity by removing oldest elements if needed
-  // Uses a ratio-based approach: allows cache to grow to configured ratio of capacity before evicting
+  /// Log cache eviction events to cache_eviction.log
+  async fn log_cache_eviction(
+    log_folder: String,
+    track_alias: u64,
+    group_id: u64,
+    object_count: usize,
+  ) {
+    let log_filename = "cache_eviction.log";
+    let log_path = std::path::Path::new(&log_folder).join(log_filename);
 
-  #[allow(dead_code)]
-  async fn ensure_capacity(&self) {
-    let max_allowed_size =
-      (self.cache_size as f64 * self.cache_grow_ratio_before_evicting) as usize;
+    let log_entry = format!("{},{},{}\n", track_alias, group_id, object_count);
 
-    let objects = self.objects.read().await;
+    // Create logs directory if it doesn't exist
+    if let Err(e) = tokio::fs::create_dir_all(&log_folder).await {
+      error!("Failed to create log directory {}: {:?}", log_folder, e);
+      return;
+    }
 
-    // Only evict if we exceed the ratio-based threshold
-    if objects.len() > max_allowed_size {
-      drop(objects);
-      let mut objects = self.objects.write().await;
-
-      // Calculate how many elements to remove (remove excess beyond normal capacity)
-      let excess_count = objects.len() - self.cache_size;
-      let mut removed_count = 0;
-
-      debug!(
-        "ensure_capacity | cache exceeded ratio threshold. track: {} current: {} max_allowed: {} removing: {}",
-        self.track_alias,
-        objects.len(),
-        max_allowed_size,
-        excess_count
-      );
-
-      // Remove excess elements in batch
-      while removed_count < excess_count && !objects.is_empty() {
-        match objects.pop_first() {
-          Some((group_id, _)) => {
-            removed_count += 1;
-            warn!(
-              "ensure_capacity | removed oldest group. track: {} group: {} ({}/{} removed)",
-              self.track_alias, group_id, removed_count, excess_count
-            );
-          }
-          None => {
-            warn!(
-              "ensure_capacity | unable to remove group from track cache. track: {} ",
-              self.track_alias
-            );
-            break;
-          }
-        };
+    // Append to log file
+    match OpenOptions::new()
+      .create(true)
+      .append(true)
+      .open(&log_path)
+      .await
+    {
+      Ok(mut file) => {
+        if let Err(e) = file.write_all(log_entry.as_bytes()).await {
+          error!(
+            "Failed to write to cache eviction log file {:?}: {:?}",
+            log_path, e
+          );
+        }
       }
-
-      info!(
-        "ensure_capacity | eviction complete. track: {} final_size: {} removed: {}",
-        self.track_alias,
-        objects.len(),
-        removed_count
-      );
+      Err(e) => {
+        error!(
+          "Failed to open cache eviction log file {:?}: {:?}",
+          log_path, e
+        );
+      }
     }
   }
 
   pub async fn add_object(&self, object: FetchObject) {
     let group_id = object.group_id;
-    let is_new_group = {
-      let map = self.objects.read().await;
-      if let Some(objects) = map.get(&object.group_id) {
-        let mut arr = objects.write().await;
-        arr.push(object.clone());
-        false
-      } else {
-        true
-      }
-    };
 
-    if is_new_group {
-      info!(
-        "track_cache::add_object | adding new group | track: {} group: {}",
-        self.track_alias, object.group_id
+    // Check if group already exists in cache
+    if let Some(existing_objects) = self.cache.get(&group_id).await {
+      // Add object to existing group
+      let mut objects = existing_objects.write().await;
+      objects.push(object.clone());
+      debug!(
+        "track_cache::add_object | added object to existing group | track: {} group: {} object_id: {} total_objects: {}",
+        self.track_alias,
+        group_id,
+        object.object_id,
+        objects.len()
       );
-      let mut map = self.objects.write().await;
-      map.insert(group_id, RwLock::new(vec![object]));
-    }
-
-    // if this is a new group, check if we need to evict old groups from the cache
-    if is_new_group {
-      // self.ensure_capacity().await;
+    } else {
+      // Create new group with this object
+      let new_group_objects = Arc::new(RwLock::new(vec![object.clone()]));
+      self.cache.insert(group_id, new_group_objects).await;
+      debug!(
+        "track_cache::add_object | created new group | track: {} group: {} object_id: {}",
+        self.track_alias, group_id, object.object_id
+      );
     }
   }
 
   pub async fn read_objects(&self, start: Location, end: Location) -> Receiver<CacheConsumeEvent> {
     let (tx, rx) = channel(32); // Smaller buffer for memory efficiency
-    let objects = self.objects.clone();
+    let cache = self.cache.clone();
+    let track_alias = self.track_alias;
 
     // TODO: this can be done without using a task and sender-receiver pattern
     // but I'm doing this in order to lay the foundation for the future
     // when the cache will be filled eventually.
     tokio::spawn(async move {
-      let guard = objects.read().await;
       if start.group >= end.group {
         warn!("start group cannot be greater than end group");
         return;
       }
 
       info!(
-        "read_objects | start: {:?}, end: {:?}, objects len: {:?}",
-        start,
-        end,
-        guard.len()
+        "read_objects | track: {} start: {:?}, end: {:?}",
+        track_alias, start, end
       );
 
-      let range = guard.range(start.group..=end.group);
+      // Collect all groups in the range that exist in cache
+      let mut groups_in_range = Vec::new();
+      for group_id in start.group..=end.group {
+        if let Some(objects) = cache.get(&group_id).await {
+          groups_in_range.push((group_id, objects));
+        }
+      }
 
-      let end_of_range = range.clone().last();
-      if end_of_range.is_none() {
+      if groups_in_range.is_empty() {
         if let Err(err) = tx.send(CacheConsumeEvent::NoObject).await {
           warn!("read_objects | An error occurred: {:?}", err);
           return;
         }
-      } else {
-        let end_of_range = end_of_range.unwrap();
-        let end_group_id = *end_of_range.0;
-        let end_object_id = if let Some(object_id) = end_of_range.1.read().await.last() {
-          object_id.object_id
+        return;
+      }
+
+      // Send end location based on last group found
+      if let Some((last_group_id, last_objects)) = groups_in_range.last() {
+        let objects_guard = last_objects.read().await;
+        let end_object_id = if let Some(last_object) = objects_guard.last() {
+          last_object.object_id
         } else {
           0
         };
-        let end_location = Location::new(end_group_id, end_object_id);
+        let end_location = Location::new(*last_group_id, end_object_id);
         info!(
-          "read_objects | range: {:?} end_location: {:?}",
-          range.clone().count(),
+          "read_objects | track: {} groups_found: {} end_location: {:?}",
+          track_alias,
+          groups_in_range.len(),
           &end_location
         );
         if let Err(err) = tx.send(CacheConsumeEvent::EndLocation(end_location)).await {
@@ -176,46 +211,62 @@ impl TrackCache {
         }
       }
 
-      // TODO: ordering of objects
-      for (group_id, objects_guard) in range {
-        let objects = objects_guard.read().await;
+      // Send objects from all groups in range
+      for (group_id, objects_arc) in groups_in_range {
+        let objects = objects_arc.read().await;
 
-        if *group_id < start.group {
-          continue;
-        }
-        if *group_id > end.group {
-          break;
-        }
-        info!("read_objects | group_id: {:?}", group_id);
+        info!(
+          "read_objects | track: {} processing group_id: {} with {} objects",
+          track_alias,
+          group_id,
+          objects.len()
+        );
+
         for object in objects.iter() {
-          if *group_id == end.group && end.object > 0 && end.object < object.object_id {
-            // we hit the end of the range
-            // if end object is 0, we return all objects in the group
-            break;
+          // Apply range filtering
+          if group_id == start.group && start.object > 0 && object.object_id < start.object {
+            continue; // Skip objects before start
           }
+          if group_id == end.group && end.object > 0 && object.object_id > end.object {
+            break; // Stop at end boundary
+          }
+
           if let Err(err) = tx.send(CacheConsumeEvent::Object(object.clone())).await {
             warn!("read_objects | An error occurred: {:?}", err);
             break; // Client disconnected
           }
-          debug!("read_objects | sent object: {:?}", object);
+          debug!(
+            "read_objects | track: {} sent object: group={} object_id={}",
+            track_alias, group_id, object.object_id
+          );
         }
       }
     });
+
     rx
   }
 
-  // Get all headers in order from newest to oldest
+  /// Get cache statistics (for monitoring/debugging)
   #[allow(dead_code)]
-  pub async fn get_all_headers_ordered(&self) -> Vec<(String, HeaderInfo)> {
-    let headers = self.headers.read().await;
-    let header_queue = self.header_queue.read().await;
+  pub async fn get_cache_stats(&self) -> (u64, u64) {
+    (self.cache.entry_count(), self.cache.weighted_size())
+  }
 
-    let mut result = Vec::new();
-    for header_id in header_queue.iter().rev() {
-      if let Some(header) = headers.get(header_id) {
-        result.push((header_id.clone(), header.clone()));
-      }
-    }
-    result
+  /// Manually run pending tasks (for testing or maintenance)
+  #[allow(dead_code)]
+  pub async fn run_pending_tasks(&self) {
+    self.cache.run_pending_tasks().await;
+  }
+
+  /// Get a specific group if it exists
+  #[allow(dead_code)]
+  pub async fn get_group(&self, group_id: u64) -> Option<GroupObjects> {
+    self.cache.get(&group_id).await
+  }
+
+  /// Check if a group exists in cache
+  #[allow(dead_code)]
+  pub async fn contains_group(&self, group_id: u64) -> bool {
+    self.cache.contains_key(&group_id)
   }
 }
