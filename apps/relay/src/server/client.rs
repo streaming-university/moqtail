@@ -150,7 +150,7 @@ impl MOQTClient {
     &self,
     stream_id: &StreamId,
     header_payload: Bytes,
-    priority: i32, // Priority for the stream
+    _priority: i32, // Priority for the stream
   ) -> Result<Arc<Mutex<SendStream>>> {
     let send_stream = {
       let send_stream_map = self.get_stream_map(stream_id);
@@ -167,7 +167,9 @@ impl MOQTClient {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to open send stream 2: {:?}", e))?;
 
-          send_stream.set_priority(priority);
+          // TODO: just relay everything without setting any priority here. Need to check later
+          // send_stream.set_priority(priority);
+          send_stream.set_priority(0);
           let s = Arc::new(Mutex::new(send_stream));
           entry.insert(s.clone());
           info!(
