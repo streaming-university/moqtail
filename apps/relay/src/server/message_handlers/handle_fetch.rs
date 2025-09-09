@@ -237,8 +237,11 @@ pub async fn handle_fetch_messages(
           if let Err(e) = the_stream.lock().await.finish().await {
             error!("handle_fetch_messages | Error closing stream: {:?}", e);
             // return Err(TerminationCode::InternalError);
+          } else {
+            info!("finished fetch stream: {:?}", &stream_id);
           }
           client.remove_stream_by_stream_id(&stream_id).await;
+          info!("removed stream from the map {}", stream_id);
         }
       }
 
