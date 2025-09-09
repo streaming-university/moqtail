@@ -1,5 +1,6 @@
 use crate::server::client::MOQTClient;
 use crate::server::session_context::SessionContext;
+use crate::server::stream_id::StreamId;
 use crate::server::track_cache::CacheConsumeEvent;
 use crate::server::utils::build_stream_id;
 use core::result::Result::{Err, Ok};
@@ -150,9 +151,9 @@ pub async fn handle_fetch_messages(
 
       let stream_id = build_stream_id(track.track_alias, &header_info);
 
-      let stream_fn = async move |client: Arc<MOQTClient>, stream_id: &String| {
+      let stream_fn = async move |client: Arc<MOQTClient>, stream_id: &StreamId| {
         let stream_result = client
-          .open_stream(stream_id, fetch_header.serialize().unwrap(), i32::MAX)
+          .open_stream(stream_id, fetch_header.serialize().unwrap(), 0)
           .await;
 
         match stream_result {
@@ -229,9 +230,16 @@ pub async fn handle_fetch_messages(
           ReasonPhrase::try_new(String::from("No objects available")).unwrap(),
         )
         .await;
-      } else if let Err(e) = client.close_stream(&stream_id).await {
-        error!("handle_fetch_messages | Error closing stream: {:?}", e);
-        // return Err(TerminationCode::InternalError);
+      } else {
+        // close the stream instantly
+        if let Some(the_stream) = send_stream {
+          // gracefully finish the stream here
+          if let Err(e) = the_stream.lock().await.finish().await {
+            error!("handle_fetch_messages | Error closing stream: {:?}", e);
+            // return Err(TerminationCode::InternalError);
+          }
+          client.remove_stream_by_stream_id(&stream_id).await;
+        }
       }
 
       Ok(())

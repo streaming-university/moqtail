@@ -1,3 +1,4 @@
+use crate::server::stream_id::{StreamId, StreamType};
 use anyhow::Result;
 #[allow(dead_code)]
 use bytes::Bytes;
@@ -8,14 +9,24 @@ use moqtail::{
   },
   transport::data_stream_handler::{FetchRequest, SubscribeRequest},
 };
+
 use std::{
   collections::{BTreeMap, HashMap, VecDeque},
   sync::Arc,
+  usize,
 };
 use tokio::sync::Notify;
 use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, error, info, warn};
 use wtransport::{Connection, SendStream, error::StreamWriteError};
+
+// hash bucket count
+pub const STREAM_BUCKET_COUNT: usize = 10;
+
+pub type SendStreamMap = HashMap<String, Arc<Mutex<SendStream>>>;
+pub type SendStreamLock = Arc<RwLock<SendStreamMap>>;
+pub type SendStreamList = Vec<SendStreamLock>;
+
 #[derive(Debug, Clone)]
 pub(crate) struct MOQTClient {
   pub connection_id: usize,
@@ -28,9 +39,7 @@ pub(crate) struct MOQTClient {
 
   pub message_queue: Arc<RwLock<VecDeque<ControlMessage>>>, // the control messages the client has sent
   pub message_notify: Arc<Notify>, // notify when a new message is available
-  pub send_streams: Arc<RwLock<HashMap<String, Arc<Mutex<SendStream>>>>>, // the streams the client has opened, key is the track alias + _ + subgroup_id
-
-  //pub track_queue: Arc<RwLock<BTreeMap<u64>>>, // the track aliases that will be delivered to the client
+  pub send_streams: Arc<SendStreamList>,
 
   // this contains the requests made by the client and the corresponding request
   pub fetch_requests: Arc<RwLock<BTreeMap<u64, FetchRequest>>>,
@@ -46,6 +55,11 @@ impl MOQTClient {
     connection: Arc<Connection>,
     client_setup: Arc<ClientSetup>,
   ) -> Self {
+    let mut send_streams = Vec::with_capacity(STREAM_BUCKET_COUNT);
+    for _ in 0..STREAM_BUCKET_COUNT {
+      send_streams.push(Arc::new(RwLock::new(HashMap::new())));
+    }
+
     MOQTClient {
       connection_id,
       connection,
@@ -55,7 +69,7 @@ impl MOQTClient {
       subscribers: Arc::new(RwLock::new(Vec::new())),
       message_queue: Arc::new(RwLock::new(VecDeque::new())),
       message_notify: Arc::new(Notify::default()),
-      send_streams: Arc::new(RwLock::new(HashMap::new())),
+      send_streams: Arc::new(send_streams),
       fetch_requests: Arc::new(RwLock::new(BTreeMap::new())),
       subscribe_requests: Arc::new(RwLock::new(BTreeMap::new())),
     }
@@ -104,15 +118,44 @@ impl MOQTClient {
     self.message_notify.notify_one();
   }
 
+  fn get_stream_map(
+    &self,
+    stream_id: &StreamId,
+  ) -> Arc<RwLock<HashMap<String, Arc<Mutex<SendStream>>>>> {
+    let partition_index = match stream_id.stream_type {
+      StreamType::Fetch => stream_id.fetch_request_id.unwrap() % STREAM_BUCKET_COUNT as u64,
+      StreamType::Subgroup => {
+        (stream_id
+          .track_alias
+          .checked_mul(stream_id.group_id.unwrap_or(1))
+          .unwrap_or(0))
+          % STREAM_BUCKET_COUNT as u64
+      }
+    } as usize;
+    debug!(
+      "get_stream_map | stream_id: {} partition_index: {}",
+      stream_id, partition_index
+    );
+    self.send_streams[partition_index].clone()
+  }
+
+  pub async fn get_stream(&self, stream_id: &StreamId) -> Option<Arc<Mutex<SendStream>>> {
+    let send_stream_map = self.get_stream_map(stream_id);
+    let send_streams = send_stream_map.read().await;
+    let send_stream = send_streams.get(stream_id.get_stream_id().as_str());
+    send_stream.cloned()
+  }
+
   pub async fn open_stream(
     &self,
-    stream_id: &str, // "subgroup" or "fetch"
+    stream_id: &StreamId,
     header_payload: Bytes,
     priority: i32, // Priority for the stream
   ) -> Result<Arc<Mutex<SendStream>>> {
     let send_stream = {
-      let mut send_streams = self.send_streams.write().await;
-      match send_streams.entry(stream_id.to_string()) {
+      let send_stream_map = self.get_stream_map(stream_id);
+      let mut send_streams = send_stream_map.write().await;
+      match send_streams.entry(stream_id.get_stream_id().to_string()) {
         std::collections::hash_map::Entry::Vacant(entry) => {
           let result = self
             .connection
@@ -163,8 +206,9 @@ impl MOQTClient {
         );
 
         // remove this from the streams
-        let mut send_streams = self.send_streams.write().await;
-        send_streams.remove(&stream_id.to_string());
+        let send_stream_map = self.get_stream_map(stream_id);
+        let mut send_streams = send_stream_map.write().await;
+        send_streams.remove(&stream_id.get_stream_id().to_string());
 
         return Err(anyhow::anyhow!(
           "Failed to write header payload to send stream ({}): {:?} connection_id: {}",
@@ -178,26 +222,13 @@ impl MOQTClient {
     Ok(send_stream.clone())
   }
 
-  pub async fn close_stream(&self, stream_id: &str) -> Result<()> {
-    let stream: Option<Arc<Mutex<SendStream>>> = {
-      let mut send_streams = self.send_streams.write().await;
-      send_streams.remove(stream_id)
-    };
+  // Remove the stream from the map and finish it
+  pub async fn close_stream(&self, stream_id: &StreamId) -> Result<()> {
+    let stream = self.remove_stream_by_stream_id(stream_id).await;
 
     if let Some(send_stream) = stream {
-      let mut stream = send_stream.lock().await;
-      stream.finish().await.map_err(|e| {
-        error!(
-          "close_stream | Failed to finish send stream ({}): {:?} connection_id: {}",
-          stream_id, e, self.connection_id
-        );
-        anyhow::anyhow!("Failed to finish send stream ({}): {:?}", stream_id, e)
-      })?;
-      info!(
-        "close_stream | Closed send stream ({}) connection_id: {}",
-        stream_id, self.connection_id
-      );
-      Ok(())
+      // gracefully close the stream
+      self.finish_stream(stream_id, send_stream).await
     } else {
       warn!(
         "close_stream | Send stream not found for {} connection_id: {}",
@@ -211,9 +242,42 @@ impl MOQTClient {
     }
   }
 
+  // Just remove the stream from the stream_map
+  // The caller finishes the stream and calls this to remove it from the map
+  pub async fn remove_stream_by_stream_id(
+    &self,
+    stream_id: &StreamId,
+  ) -> Option<Arc<Mutex<SendStream>>> {
+    let send_stream_map = self.get_stream_map(stream_id);
+    let mut send_streams = send_stream_map.write().await;
+    send_streams.remove(stream_id.get_stream_id().as_str())
+  }
+
+  async fn finish_stream(
+    &self,
+    stream_id: &StreamId,
+    send_stream: Arc<Mutex<SendStream>>,
+  ) -> Result<()> {
+    let mut stream = send_stream.lock().await;
+
+    // gracefully close the stream
+    stream.finish().await.map_err(|e| {
+      error!(
+        "close_stream | Failed to finish send stream ({}): {:?} connection_id: {}",
+        stream_id, e, self.connection_id
+      );
+      anyhow::anyhow!("Failed to finish send stream ({}): {:?}", stream_id, e)
+    })?;
+    info!(
+      "close_stream | Closed send stream ({}) connection_id: {}",
+      stream_id, self.connection_id
+    );
+    Ok(())
+  }
+
   pub async fn write_object_to_stream(
     &self,
-    stream_id: &str,
+    stream_id: &StreamId,
     object_id: u64,
     object: Bytes,
     the_stream: Option<Arc<Mutex<SendStream>>>,
@@ -227,8 +291,11 @@ impl MOQTClient {
       if let Some(send_stream) = the_stream {
         Some(send_stream)
       } else {
-        let send_streams = self.send_streams.read().await;
-        send_streams.get(&stream_id.to_string()).cloned()
+        let stream_map = self.get_stream_map(stream_id);
+        let send_streams = stream_map.read().await;
+        send_streams
+          .get(stream_id.get_stream_id().as_str())
+          .cloned()
       }
     };
 
@@ -243,12 +310,13 @@ impl MOQTClient {
             StreamWriteError::Closed | StreamWriteError::Stopped(_) => {
               warn!(
                 "write_object_to_stream | Send stream is closed or stopped ({})",
-                stream_id
+                stream_id.get_stream_id()
               );
               drop(stream);
               // remove this from the streams
-              let mut send_streams = self.send_streams.write().await;
-              send_streams.remove(&stream_id.to_string());
+              let stream_map = self.get_stream_map(stream_id);
+              let mut send_streams = stream_map.write().await;
+              send_streams.remove(stream_id.get_stream_id().as_str());
             }
             _ => {}
           }

@@ -1,6 +1,5 @@
-use std::sync::Arc;
-
 use crate::server::client::MOQTClient;
+use crate::server::stream_id::StreamId;
 use crate::server::track::TrackEvent;
 use crate::server::track_cache::TrackCache;
 use crate::server::utils;
@@ -13,11 +12,11 @@ use moqtail::model::control::subscribe::Subscribe;
 use moqtail::model::control::subscribe_done::SubscribeDone;
 use moqtail::model::data::object::Object;
 use moqtail::transport::data_stream_handler::HeaderInfo;
-use std::collections::BTreeMap;
-use tokio::io::AsyncWriteExt;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::UnboundedReceiver;
+use tracing::warn;
 use tracing::{debug, error, info};
 use wtransport::SendStream;
 
@@ -26,7 +25,7 @@ pub struct Subscription {
   pub subscribe_message: Subscribe,
   subscriber: Arc<MOQTClient>,
   event_rx: Arc<Mutex<Option<UnboundedReceiver<TrackEvent>>>>,
-  send_streams: Arc<RwLock<BTreeMap<String, Arc<Mutex<SendStream>>>>>,
+  send_stream_ids: Arc<RwLock<Vec<StreamId>>>,
   finished: Arc<RwLock<bool>>, // Indicates if the subscription is finished
   #[allow(dead_code)]
   cache: TrackCache,
@@ -45,7 +44,7 @@ impl Subscription {
       subscribe_message,
       subscriber,
       event_rx,
-      send_streams: Arc::new(RwLock::new(BTreeMap::new())),
+      send_stream_ids: Arc::new(RwLock::new(Vec::new())),
       finished: Arc::new(RwLock::new(false)),
       cache,
       client_connection_id,
@@ -106,22 +105,18 @@ impl Subscription {
     );
 
     // Close all send streams
-    let mut send_streams = self.send_streams.write().await;
-    for (stream_id, send_stream) in send_streams.iter_mut() {
-      if let Err(e) = send_stream.lock().await.shutdown().await {
-        if e.kind() == std::io::ErrorKind::NotConnected {
-          debug!(
-            "Stream {} for subscriber: {} is already closed",
-            stream_id, self.client_connection_id
-          );
-        } else {
-          error!(
-            "Failed to shutdown stream {} for subscriber: {}, error: {:?}",
-            stream_id, self.client_connection_id, e
-          );
-        }
+    let mut send_stream_ids = self.send_stream_ids.write().await;
+    for stream_id in send_stream_ids.iter() {
+      // remove from the subscriber client's stream map
+      if let Err(e) = self.subscriber.close_stream(stream_id).await {
+        warn!(
+          "subscription.finish | Error in finishing stream | e: {:?}",
+          e
+        );
       }
     }
+
+    send_stream_ids.clear();
   }
 
   async fn receive(&mut self) {
@@ -143,7 +138,7 @@ impl Subscription {
               let object_received_time = utils::passed_time_since_start();
 
               // Handle header info if this is the first object
-              if let Some(header) = header_info {
+              let send_stream = if let Some(header) = header_info {
                 if let HeaderInfo::Subgroup {
                   header: _subgroup_header,
                 } = header
@@ -157,11 +152,7 @@ impl Subscription {
                     object.location
                   );
                   if let Ok((stream_id, send_stream)) = self.handle_header(header.clone()).await {
-                    self
-                      .send_streams
-                      .write()
-                      .await
-                      .insert(stream_id.clone(), send_stream.clone());
+                    self.send_stream_ids.write().await.push(stream_id.clone());
                     info!(
                       "Stream created - subscriber: {} stream_id: {} track: {} now: {} received time: {} object: {:?}",
                       self.client_connection_id,
@@ -171,16 +162,21 @@ impl Subscription {
                       object_received_time,
                       object.location
                     );
+                    Some(send_stream)
+                  } else {
+                    // TODO: maybe log error here?
+                    None
                   }
                 } else {
                   error!(
                     "Received Object event with non-subgroup header: {:?}",
                     header
                   );
+                  None
                 }
-              }
-
-              let send_stream = self.send_streams.read().await.get(&stream_id).cloned();
+              } else {
+                self.subscriber.get_stream(&stream_id).await
+              };
 
               if let Some(send_stream) = send_stream {
                 debug!(
@@ -188,7 +184,7 @@ impl Subscription {
                   self.client_connection_id, stream_id, self.subscribe_message.track_alias
                 );
                 let _ = self
-                  .handle_object(object, stream_id, send_stream.clone())
+                  .handle_object(object, &stream_id, send_stream.clone())
                   .await;
               } else {
                 error!(
@@ -207,7 +203,7 @@ impl Subscription {
                 "Received StreamClosed event: subscriber: {} stream_id: {} track: {}",
                 self.client_connection_id, stream_id, self.subscribe_message.track_alias
               );
-              let _ = self.handle_stream_closed(stream_id).await;
+              let _ = self.handle_stream_closed(&stream_id).await;
             }
             TrackEvent::PublisherDisconnected { reason } => {
               info!(
@@ -253,7 +249,7 @@ impl Subscription {
   async fn handle_header(
     &self,
     header_info: HeaderInfo,
-  ) -> Result<(String, Arc<Mutex<SendStream>>)> {
+  ) -> Result<(StreamId, Arc<Mutex<SendStream>>)> {
     // Handle the header information
     debug!("Handling header: {:?}", header_info);
     let stream_id = self.get_stream_id(&header_info);
@@ -265,7 +261,7 @@ impl Subscription {
 
       let send_stream = match self
         .subscriber
-        .open_stream(stream_id.as_str(), header_payload, priority)
+        .open_stream(&stream_id, header_payload, priority)
         .await
       {
         Ok(send_stream) => send_stream,
@@ -278,9 +274,9 @@ impl Subscription {
         }
       };
 
-      info!("Created stream: {stream_id}");
+      info!("Created stream: {}", stream_id.get_stream_id());
 
-      Ok((stream_id, send_stream))
+      Ok((stream_id, send_stream.clone()))
     } else {
       error!(
         "Failed to serialize header payload for stream {} subscriber: {} track: {}",
@@ -298,14 +294,14 @@ impl Subscription {
   async fn handle_object(
     &self,
     object: Object,
-    stream_id: String,
+    stream_id: &StreamId,
     send_stream: Arc<Mutex<SendStream>>,
   ) -> Result<()> {
     debug!(
       "Handling object track: {} location: {:?} stream_id: {} diff_ms: {}",
       object.track_alias,
       object.location,
-      &stream_id,
+      stream_id,
       utils::passed_time_since_start()
     );
 
@@ -327,7 +323,7 @@ impl Subscription {
       self
         .subscriber
         .write_object_to_stream(
-          stream_id.as_str(),
+          stream_id,
           sub_object.object_id,
           object_bytes,
           Some(send_stream.clone()),
@@ -354,11 +350,16 @@ impl Subscription {
     }
   }
 
-  async fn handle_stream_closed(&self, stream_id: String) -> Result<()> {
+  async fn handle_stream_closed(&self, stream_id: &StreamId) -> Result<()> {
     // Handle the stream closed event
-    debug!("Stream closed: {}", stream_id);
+    debug!("Stream closed: {}", stream_id.get_stream_id());
+
+    // remove the stream id from stream ids array
+    let mut stream_ids = self.send_stream_ids.write().await;
+    stream_ids.retain(|x| *x != *stream_id);
+
     let connection_id = self.client_connection_id;
-    self.subscriber.close_stream(&stream_id).await.map_err(|e| {
+    self.subscriber.close_stream(stream_id).await.map_err(|e| {
       debug!(
         "Failed to close stream {}: {:?} subscriber: {} track: {}",
         stream_id, e, connection_id, self.subscribe_message.track_alias
@@ -390,7 +391,7 @@ impl Subscription {
     }
   }
 
-  fn get_stream_id(&self, header_info: &HeaderInfo) -> String {
+  fn get_stream_id(&self, header_info: &HeaderInfo) -> StreamId {
     utils::build_stream_id(self.subscribe_message.track_alias, header_info)
   }
 

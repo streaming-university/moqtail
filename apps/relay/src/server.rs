@@ -5,6 +5,7 @@ mod errors;
 mod message_handlers;
 mod session;
 mod session_context;
+mod stream_id;
 mod subscription;
 mod track;
 mod track_cache;

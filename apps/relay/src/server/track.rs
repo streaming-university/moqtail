@@ -1,5 +1,6 @@
 use super::track_cache::TrackCache;
 use crate::server::client::MOQTClient;
+use crate::server::stream_id::StreamId;
 use crate::server::subscription::Subscription;
 use crate::server::utils;
 use anyhow::Result;
@@ -16,12 +17,12 @@ use tracing::{debug, error, info};
 #[allow(clippy::large_enum_variant)]
 pub enum TrackEvent {
   Object {
-    stream_id: String,
+    stream_id: StreamId,
     object: Object,
     header_info: Option<HeaderInfo>,
   },
   StreamClosed {
-    stream_id: String,
+    stream_id: StreamId,
   },
   PublisherDisconnected {
     reason: String,
@@ -130,13 +131,17 @@ impl Track {
     }
   }
 
-  pub async fn new_object(&self, stream_id: String, object: &Object) -> Result<(), anyhow::Error> {
+  pub async fn new_object(
+    &self,
+    stream_id: &StreamId,
+    object: &Object,
+  ) -> Result<(), anyhow::Error> {
     self.new_object_with_header(stream_id, object, None).await
   }
 
   pub async fn new_object_with_header(
     &self,
-    stream_id: String,
+    stream_id: &StreamId,
     object: &Object,
     header_info: Option<&HeaderInfo>,
   ) -> Result<(), anyhow::Error> {
@@ -144,7 +149,7 @@ impl Track {
       "new_object: track: {:?} location: {:?} stream_id: {} diff_ms: {}",
       object.track_alias,
       object.location,
-      &stream_id,
+      stream_id,
       utils::passed_time_since_start()
     );
 
@@ -153,7 +158,7 @@ impl Track {
         "new group: track: {:?} location: {:?} stream_id: {} time: {}",
         object.track_alias,
         object.location,
-        &stream_id,
+        stream_id,
         utils::passed_time_since_start()
       );
     }
@@ -195,7 +200,7 @@ impl Track {
     }
   }
 
-  pub async fn stream_closed(&self, stream_id: String) -> Result<(), anyhow::Error> {
+  pub async fn stream_closed(&self, stream_id: &StreamId) -> Result<(), anyhow::Error> {
     let event = TrackEvent::StreamClosed {
       stream_id: stream_id.clone(),
     };
