@@ -83,6 +83,7 @@ pub async fn handle_subscribe_messages(
             context.server_config.cache_size.into(),
             context.server_config.cache_grow_ratio_before_evicting,
             publisher.connection_id,
+            context.server_config.log_folder.clone(),
           );
           {
             context

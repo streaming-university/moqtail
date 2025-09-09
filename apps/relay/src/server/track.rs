@@ -1,5 +1,6 @@
 use super::track_cache::TrackCache;
 use crate::server::client::MOQTClient;
+use crate::server::object_logger::ObjectLogger;
 use crate::server::stream_id::StreamId;
 use crate::server::subscription::Subscription;
 use crate::server::utils;
@@ -42,6 +43,8 @@ pub struct Track {
   pub(crate) cache: TrackCache,
   subscriber_senders: Arc<RwLock<BTreeMap<usize, UnboundedSender<TrackEvent>>>>,
   pub largest_location: Arc<RwLock<Location>>,
+  object_logger: ObjectLogger,
+  log_folder: String,
 }
 
 // TODO: this track implementation should be static? At least
@@ -54,6 +57,7 @@ impl Track {
     cache_size: usize,
     cache_grow_ratio_before_evicting: f64,
     publisher_connection_id: usize,
+    log_folder: String,
   ) -> Self {
     Track {
       track_alias,
@@ -64,6 +68,8 @@ impl Track {
       cache: TrackCache::new(track_alias, cache_size, cache_grow_ratio_before_evicting),
       subscriber_senders: Arc::new(RwLock::new(BTreeMap::new())),
       largest_location: Arc::new(RwLock::new(Location::new(0, 0))),
+      object_logger: ObjectLogger::new(log_folder.clone()),
+      log_folder,
     }
   }
 
@@ -88,6 +94,7 @@ impl Track {
       event_rx,
       self.cache.clone(),
       connection_id,
+      self.log_folder.clone(),
     );
 
     let mut subscriptions = self.subscriptions.write().await;
@@ -165,6 +172,13 @@ impl Track {
 
     if let Ok(fetch_object) = object.clone().try_into_fetch() {
       self.cache.add_object(fetch_object).await;
+
+      // Track-level logging - log every object arrival
+      let object_received_time = utils::passed_time_since_start();
+      self
+        .object_logger
+        .log_track_object(self.track_alias, object, object_received_time)
+        .await;
 
       // update the largest location
       {

@@ -3,6 +3,7 @@ mod client_manager;
 mod config;
 mod errors;
 mod message_handlers;
+mod object_logger;
 mod session;
 mod session_context;
 mod stream_id;

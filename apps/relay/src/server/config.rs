@@ -30,7 +30,7 @@ pub struct Cli {
   pub max_idle_timeout: u64,
   #[arg(long, default_value_t = 3)]
   pub keep_alive_interval: u64,
-  #[arg(long, default_value = ".")]
+  #[arg(long, default_value = "/tmp")]
   pub log_folder: String,
 }
 #[derive(Debug, Clone)]

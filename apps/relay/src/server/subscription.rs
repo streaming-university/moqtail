@@ -1,4 +1,5 @@
 use crate::server::client::MOQTClient;
+use crate::server::object_logger::ObjectLogger;
 use crate::server::stream_id::StreamId;
 use crate::server::track::TrackEvent;
 use crate::server::track_cache::TrackCache;
@@ -30,6 +31,7 @@ pub struct Subscription {
   #[allow(dead_code)]
   cache: TrackCache,
   client_connection_id: usize,
+  object_logger: ObjectLogger,
 }
 
 impl Subscription {
@@ -39,6 +41,7 @@ impl Subscription {
     event_rx: Arc<Mutex<Option<UnboundedReceiver<TrackEvent>>>>,
     cache: TrackCache,
     client_connection_id: usize,
+    log_folder: String,
   ) -> Self {
     Self {
       subscribe_message,
@@ -48,6 +51,7 @@ impl Subscription {
       finished: Arc::new(RwLock::new(false)),
       cache,
       client_connection_id,
+      object_logger: ObjectLogger::new(log_folder),
     }
   }
   pub fn new(
@@ -56,6 +60,7 @@ impl Subscription {
     event_rx: UnboundedReceiver<TrackEvent>,
     cache: TrackCache,
     client_connection_id: usize,
+    log_folder: String,
   ) -> Self {
     let event_rx = Arc::new(Mutex::new(Some(event_rx)));
     let sub = Self::create_instance(
@@ -64,6 +69,7 @@ impl Subscription {
       event_rx,
       cache,
       client_connection_id,
+      log_folder,
     );
 
     let mut instance = sub.clone();
@@ -183,6 +189,18 @@ impl Subscription {
                   "Received Object event: subscriber: {} stream_id: {} track: {}",
                   self.client_connection_id, stream_id, self.subscribe_message.track_alias
                 );
+
+                // Log object properties
+                self
+                  .object_logger
+                  .log_subscription_object(
+                    self.subscribe_message.track_alias,
+                    self.client_connection_id,
+                    &object,
+                    object_received_time,
+                  )
+                  .await;
+
                 let _ = self
                   .handle_object(object, &stream_id, send_stream.clone())
                   .await;
