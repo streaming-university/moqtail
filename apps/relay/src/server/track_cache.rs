@@ -195,19 +195,30 @@ impl TrackCache {
     // but I'm doing this in order to lay the foundation for the future
     // when the cache will be filled eventually.
     tokio::spawn(async move {
-      if start.group >= end.group {
-        warn!("start group cannot be greater than end group");
-        return;
-      }
-
       info!(
         "read_objects | track: {} start: {:?}, end: {:?}",
         track_alias, start, end
       );
 
+      let end_group = if end.object == 1 {
+        end.group - 1
+      } else {
+        end.group
+      };
+
+      // TODO: compare objects as well
+      if start.group > end.group {
+        warn!("start group cannot be greater than end group");
+        return;
+      }
+
       // Collect all groups in the range that exist in cache
       let mut groups_in_range = Vec::new();
-      for group_id in start.group..=end.group {
+
+      // zero means the entire group
+      let end_object = end.object - 1;
+
+      for group_id in start.group..=end_group {
         let cache_key = CacheKey::new(track_alias, group_id);
         if let Some(objects) = cache.get(&cache_key).await {
           groups_in_range.push((group_id, objects));
@@ -246,34 +257,30 @@ impl TrackCache {
       // Send objects from all groups in range
       for (group_id, objects_arc) in groups_in_range {
         let objects = objects_arc.read().await;
-
-        info!(
-          "read_objects | track: {} processing group_id: {} with {} objects",
-          track_alias,
-          group_id,
-          objects.len()
-        );
-
+        let mut object_counter = 0;
         for object in objects.iter() {
           // Apply range filtering
           if group_id == start.group && start.object > 0 && object.object_id < start.object {
             continue; // Skip objects before start
           }
 
-          // the end object is not covered
-          if group_id == end.group && end.object > 0 && object.object_id >= end.object {
+          // stop when we reach end
+          if group_id == end.group && end.object > 0 && object.object_id > end.object {
             break; // Stop at end boundary
           }
+
+          object_counter += 1;
 
           if let Err(err) = tx.send(CacheConsumeEvent::Object(object.clone())).await {
             warn!("read_objects | An error occurred: {:?}", err);
             break; // Client disconnected
           }
-          debug!(
-            "read_objects | track: {} sent object: group={} object_id={}",
-            track_alias, group_id, object.object_id
-          );
         }
+
+        info!(
+          "read_objects | track: {} processed group_id: {} with {} objects",
+          track_alias, group_id, object_counter
+        );
       }
     });
 
