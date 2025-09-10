@@ -1,4 +1,5 @@
 use moka::future::Cache;
+use moka::notification::RemovalCause;
 use moqtail::model::common::location::Location;
 use moqtail::model::data::fetch_object::FetchObject;
 use std::sync::Arc;
@@ -12,8 +13,28 @@ use tracing::{debug, error, info, warn};
 
 use super::config::{AppConfig, CacheExpirationType};
 
-// Type alias for the cache key (group_id)
-type GroupId = u64;
+/// Composite cache key combining track_alias and group_id for global uniqueness
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CacheKey {
+  pub track_alias: u64,
+  pub group_id: u64,
+}
+
+impl CacheKey {
+  /// Create a new cache key
+  pub fn new(track_alias: u64, group_id: u64) -> Self {
+    Self {
+      track_alias,
+      group_id,
+    }
+  }
+}
+
+impl std::fmt::Display for CacheKey {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "track:{}_group:{}", self.track_alias, self.group_id)
+  }
+}
 
 // Type alias for the cached value (group objects)
 type GroupObjects = Arc<RwLock<Vec<FetchObject>>>;
@@ -21,8 +42,8 @@ type GroupObjects = Arc<RwLock<Vec<FetchObject>>>;
 #[derive(Debug, Clone)]
 pub struct TrackCache {
   pub track_alias: u64,
-  // Moka cache for storing groups of objects
-  cache: Cache<GroupId, GroupObjects>,
+  // Moka cache for storing groups of objects with composite keys
+  cache: Cache<CacheKey, GroupObjects>,
   #[allow(dead_code)] // Used in eviction listener closure
   log_folder: String,
 }
@@ -41,20 +62,19 @@ impl TrackCache {
     _cache_grow_ratio_before_evicting: f64,
     config: &AppConfig,
   ) -> Self {
-    let track_alias_for_listener = track_alias;
     let log_folder = config.log_folder.clone();
     let log_folder_for_listener = log_folder.clone();
 
     let cache_builder = Cache::builder()
       .max_capacity(cache_size as u64)
-      .eviction_listener(move |key: Arc<GroupId>, value: GroupObjects, _cause| {
-        let track_alias = track_alias_for_listener;
+      .eviction_listener(move |key: Arc<CacheKey>, value: GroupObjects, cause| {
+        let track_alias = key.track_alias;
+        let group_id = key.group_id;
         let log_folder = log_folder_for_listener.clone();
-        let group_id = *key;
 
         tokio::spawn(async move {
           let object_count = value.read().await.len();
-          Self::log_cache_eviction(log_folder, track_alias, group_id, object_count).await;
+          Self::log_cache_eviction(log_folder, track_alias, group_id, object_count, cause).await;
         });
       });
 
@@ -93,11 +113,22 @@ impl TrackCache {
     track_alias: u64,
     group_id: u64,
     object_count: usize,
+    cause: RemovalCause,
   ) {
     let log_filename = "cache_eviction.log";
     let log_path = std::path::Path::new(&log_folder).join(log_filename);
 
-    let log_entry = format!("{},{},{}\n", track_alias, group_id, object_count);
+    let cause_str = match cause {
+      RemovalCause::Size => "SIZE",
+      RemovalCause::Expired => "EXPIRED",
+      RemovalCause::Explicit => "EXPLICIT",
+      RemovalCause::Replaced => "REPLACED",
+    };
+
+    let log_entry = format!(
+      "{},{},{},{}\n",
+      track_alias, group_id, object_count, cause_str
+    );
 
     // Create logs directory if it doesn't exist
     if let Err(e) = tokio::fs::create_dir_all(&log_folder).await {
@@ -130,27 +161,27 @@ impl TrackCache {
   }
 
   pub async fn add_object(&self, object: FetchObject) {
-    let group_id = object.group_id;
+    let cache_key = CacheKey::new(self.track_alias, object.group_id);
 
     // Check if group already exists in cache
-    if let Some(existing_objects) = self.cache.get(&group_id).await {
+    if let Some(existing_objects) = self.cache.get(&cache_key).await {
       // Add object to existing group
       let mut objects = existing_objects.write().await;
       objects.push(object.clone());
       debug!(
         "track_cache::add_object | added object to existing group | track: {} group: {} object_id: {} total_objects: {}",
         self.track_alias,
-        group_id,
+        object.group_id,
         object.object_id,
         objects.len()
       );
     } else {
       // Create new group with this object
       let new_group_objects = Arc::new(RwLock::new(vec![object.clone()]));
-      self.cache.insert(group_id, new_group_objects).await;
+      self.cache.insert(cache_key, new_group_objects).await;
       debug!(
         "track_cache::add_object | created new group | track: {} group: {} object_id: {}",
-        self.track_alias, group_id, object.object_id
+        self.track_alias, object.group_id, object.object_id
       );
     }
   }
@@ -177,7 +208,8 @@ impl TrackCache {
       // Collect all groups in the range that exist in cache
       let mut groups_in_range = Vec::new();
       for group_id in start.group..=end.group {
-        if let Some(objects) = cache.get(&group_id).await {
+        let cache_key = CacheKey::new(track_alias, group_id);
+        if let Some(objects) = cache.get(&cache_key).await {
           groups_in_range.push((group_id, objects));
         }
       }
@@ -261,12 +293,14 @@ impl TrackCache {
   /// Get a specific group if it exists
   #[allow(dead_code)]
   pub async fn get_group(&self, group_id: u64) -> Option<GroupObjects> {
-    self.cache.get(&group_id).await
+    let cache_key = CacheKey::new(self.track_alias, group_id);
+    self.cache.get(&cache_key).await
   }
 
   /// Check if a group exists in cache
   #[allow(dead_code)]
   pub async fn contains_group(&self, group_id: u64) -> bool {
-    self.cache.contains_key(&group_id)
+    let cache_key = CacheKey::new(self.track_alias, group_id);
+    self.cache.contains_key(&cache_key)
   }
 }

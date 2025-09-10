@@ -30,7 +30,7 @@ pub struct Cli {
   #[arg(long, default_value = "apps/relay/cert/key.pem")]
   pub key_file: String,
   /// Number of cached subgroups/fetches per track
-  #[arg(long, default_value_t = 2000)]
+  #[arg(long, default_value_t = 1000)]
   pub cache_size: u16,
   /// Cache grow ratio before evicting - allows cache to grow to this multiple of cache_size before evicting
   #[arg(long, default_value_t = 1.2)]
