@@ -177,7 +177,7 @@ pub async fn handle_fetch_messages(
             }
             CacheConsumeEvent::EndLocation(end_location) => {
               info!(
-                "handle_fetch_messages | real end_location: {:?}",
+                "handle_fetch_messages | sending fetch_ok | actual end_location: {:?}",
                 &end_location
               );
               // TODO: implement descending fetch
@@ -192,6 +192,7 @@ pub async fn handle_fetch_messages(
             }
             CacheConsumeEvent::Object(object) => {
               if object_count == 0 {
+                info!("handle_fetch_messages | starting stream {:?}", &stream_id);
                 send_stream = match stream_fn(client.clone(), &stream_id).await {
                   Some(ss) => Some(ss),
                   None => return Err(TerminationCode::InternalError),
@@ -213,6 +214,10 @@ pub async fn handle_fetch_messages(
                 );
                 return Err(TerminationCode::InternalError);
               }
+              info!(
+                "handle_fetch_messages | Wrote object to stream: {} object_id: {}",
+                &stream_id, object_id
+              );
               object_count += 1;
             }
           },

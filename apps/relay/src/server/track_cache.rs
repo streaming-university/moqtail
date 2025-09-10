@@ -200,7 +200,7 @@ impl TrackCache {
         track_alias, start, end
       );
 
-      let end_group = if end.object == 1 {
+      let normalized_end_group = if end.object == 1 {
         end.group - 1
       } else {
         end.group
@@ -216,9 +216,9 @@ impl TrackCache {
       let mut groups_in_range = Vec::new();
 
       // zero means the entire group
-      let end_object = end.object - 1;
+      let normalized_end_object = if end.object > 0 { end.object - 1 } else { 0 };
 
-      for group_id in start.group..=end_group {
+      for group_id in start.group..=normalized_end_group {
         let cache_key = CacheKey::new(track_alias, group_id);
         if let Some(objects) = cache.get(&cache_key).await {
           groups_in_range.push((group_id, objects));
@@ -265,7 +265,10 @@ impl TrackCache {
           }
 
           // stop when we reach end
-          if group_id == end.group && end.object > 0 && object.object_id > end.object {
+          if group_id == end.group
+            && normalized_end_object > 0
+            && object.object_id > normalized_end_object
+          {
             break; // Stop at end boundary
           }
 
