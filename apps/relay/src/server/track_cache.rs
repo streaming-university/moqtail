@@ -163,7 +163,7 @@ impl TrackCache {
   pub async fn add_object(&self, object: FetchObject) {
     let cache_key = CacheKey::new(self.track_alias, object.group_id);
 
-    // Check if group already exists in cache
+    // Check if group al  y exists in cache
     if let Some(existing_objects) = self.cache.get(&cache_key).await {
       // Add object to existing group
       let mut objects = existing_objects.write().await;
@@ -259,7 +259,9 @@ impl TrackCache {
           if group_id == start.group && start.object > 0 && object.object_id < start.object {
             continue; // Skip objects before start
           }
-          if group_id == end.group && end.object > 0 && object.object_id > end.object {
+
+          // the end object is not covered
+          if group_id == end.group && end.object > 0 && object.object_id >= end.object {
             break; // Stop at end boundary
           }
 
