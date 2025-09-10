@@ -1450,6 +1450,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "clap",
+ "fnv",
  "moka",
  "moqtail",
  "once_cell",

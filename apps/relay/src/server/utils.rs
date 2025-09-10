@@ -1,11 +1,12 @@
+use crate::server::stream_id::StreamId;
 use bytes::Bytes;
+use fnv::FnvHasher;
 use moqtail::{
   model::control::control_message::ControlMessageTrait, transport::data_stream_handler::HeaderInfo,
 };
 use once_cell::sync::Lazy;
+use std::hash::Hasher;
 use std::time::Instant;
-
-use crate::server::stream_id::StreamId;
 
 // Static reference time: set when the program starts
 pub static BASE_TIME: Lazy<Instant> = Lazy::new(Instant::now);
@@ -36,4 +37,10 @@ pub fn build_stream_id(track_alias: u64, header: &HeaderInfo) -> StreamId {
 
 pub fn passed_time_since_start() -> u128 {
   (Instant::now() - *BASE_TIME).as_millis()
+}
+
+pub fn fnv_hash(bytes: &[u8]) -> u64 {
+  let mut hasher = FnvHasher::default();
+  hasher.write(bytes);
+  hasher.finish()
 }

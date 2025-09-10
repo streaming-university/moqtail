@@ -501,7 +501,8 @@ impl Session {
         (_, None) => {
           // error!("Failed to receive object: {:?}", e);
           info!(
-            "no more objects in the stream track: {}, stream_id: {}, objects: {}",
+            "no more objects in the stream client: {} track: {} stream_id: {} objects: {}",
+            context.connection_id,
             track_alias,
             stream_id.clone().unwrap().get_stream_id(),
             object_count

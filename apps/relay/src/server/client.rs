@@ -1,4 +1,7 @@
-use crate::server::stream_id::{StreamId, StreamType};
+use crate::server::{
+  stream_id::{StreamId, StreamType},
+  utils,
+};
 use anyhow::Result;
 #[allow(dead_code)]
 use bytes::Bytes;
@@ -20,8 +23,11 @@ use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, error, info, warn};
 use wtransport::{Connection, SendStream, error::StreamWriteError};
 
-// hash bucket count
-pub const STREAM_BUCKET_COUNT: usize = 10;
+/// Number of partitions for send stream management to reduce lock contention.
+/// Each partition contains a separate HashMap protected by its own RwLock.
+/// Higher values reduce contention but increase memory overhead.
+/// Should be a power of 2 for optimal modulo performance.
+pub const SEND_STREAM_PARTITION_COUNT: usize = 16;
 
 pub type SendStreamMap = HashMap<String, Arc<Mutex<SendStream>>>;
 pub type SendStreamLock = Arc<RwLock<SendStreamMap>>;
@@ -55,8 +61,8 @@ impl MOQTClient {
     connection: Arc<Connection>,
     client_setup: Arc<ClientSetup>,
   ) -> Self {
-    let mut send_streams = Vec::with_capacity(STREAM_BUCKET_COUNT);
-    for _ in 0..STREAM_BUCKET_COUNT {
+    let mut send_streams = Vec::with_capacity(SEND_STREAM_PARTITION_COUNT);
+    for _ in 0..SEND_STREAM_PARTITION_COUNT {
       send_streams.push(Arc::new(RwLock::new(HashMap::new())));
     }
 
@@ -118,20 +124,36 @@ impl MOQTClient {
     self.message_notify.notify_one();
   }
 
+  /// Calculate the partition index for stream distribution across buckets.
+  /// This method implements a load balancing strategy to distribute streams
+  /// across multiple stream buckets to improve performance and reduce contention.
+  fn get_partition_index(&self, stream_id: &StreamId) -> usize {
+    let value = match stream_id.stream_type {
+      StreamType::Fetch => {
+        // Use a simple hash combining track_alias and fetch_request_id
+        stream_id
+          .track_alias
+          .wrapping_add(stream_id.fetch_request_id.unwrap_or(0).wrapping_mul(13))
+      }
+      StreamType::Subgroup => {
+        // Better distribution using prime number multipliers
+        stream_id
+          .track_alias
+          .wrapping_add(stream_id.group_id.unwrap_or(0).wrapping_mul(17))
+          .wrapping_add(stream_id.subgroup_id.unwrap_or(0).wrapping_mul(31))
+      }
+    };
+
+    // Convert to bytes for fnv_hash function
+    let value_bytes = value.to_le_bytes();
+    (utils::fnv_hash(&value_bytes) % SEND_STREAM_PARTITION_COUNT as u64) as usize
+  }
+
   fn get_stream_map(
     &self,
     stream_id: &StreamId,
   ) -> Arc<RwLock<HashMap<String, Arc<Mutex<SendStream>>>>> {
-    let partition_index = match stream_id.stream_type {
-      StreamType::Fetch => stream_id.fetch_request_id.unwrap() % STREAM_BUCKET_COUNT as u64,
-      StreamType::Subgroup => {
-        (stream_id
-          .track_alias
-          .checked_mul(stream_id.group_id.unwrap_or(1))
-          .unwrap_or(0))
-          % STREAM_BUCKET_COUNT as u64
-      }
-    } as usize;
+    let partition_index = self.get_partition_index(stream_id);
     debug!(
       "get_stream_map | stream_id: {} partition_index: {}",
       stream_id, partition_index
@@ -331,6 +353,326 @@ impl MOQTClient {
       // This is not an error. The stream already started, wait for the next group...
       // Err(anyhow::anyhow!("Send stream not found ({})", stream_id))
       Ok(())
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::server::stream_id::{StreamId, StreamType};
+
+  /// Test helper struct that exposes the partition logic for testing
+  struct PartitionTester;
+
+  impl PartitionTester {
+    /// Expose the partition index calculation logic for testing
+    /// This replicates the logic from MOQTClient::get_partition_index
+    fn get_partition_index(stream_id: &StreamId) -> usize {
+      let value = match stream_id.stream_type {
+        StreamType::Fetch => {
+          // Use a simple hash combining track_alias and fetch_request_id
+          stream_id
+            .track_alias
+            .wrapping_add(stream_id.fetch_request_id.unwrap_or(0).wrapping_mul(13))
+        }
+        StreamType::Subgroup => {
+          // Better distribution using prime number multipliers
+          stream_id
+            .track_alias
+            .wrapping_add(stream_id.group_id.unwrap_or(0).wrapping_mul(17))
+            .wrapping_add(stream_id.subgroup_id.unwrap_or(0).wrapping_mul(31))
+        }
+      };
+
+      // Convert to bytes for fnv_hash function
+      let value_bytes = value.to_le_bytes();
+      (utils::fnv_hash(&value_bytes) % SEND_STREAM_PARTITION_COUNT as u64) as usize
+    }
+  }
+
+  /// Helper function to create a Fetch stream ID
+  fn create_fetch_stream_id(track_alias: u64, fetch_request_id: u64) -> StreamId {
+    StreamId {
+      stream_type: StreamType::Fetch,
+      track_alias,
+      group_id: None,
+      subgroup_id: None,
+      fetch_request_id: Some(fetch_request_id),
+    }
+  }
+
+  /// Helper function to create a Subgroup stream ID
+  fn create_subgroup_stream_id(
+    track_alias: u64,
+    group_id: Option<u64>,
+    subgroup_id: Option<u64>,
+  ) -> StreamId {
+    StreamId {
+      stream_type: StreamType::Subgroup,
+      track_alias,
+      group_id,
+      subgroup_id,
+      fetch_request_id: None,
+    }
+  }
+
+  #[test]
+  fn test_get_partition_index_fetch_streams() {
+    // Test basic fetch stream partitioning
+    let stream_id1 = create_fetch_stream_id(100, 1);
+    let partition1 = PartitionTester::get_partition_index(&stream_id1);
+    assert!(
+      partition1 < SEND_STREAM_PARTITION_COUNT,
+      "Partition index should be within bounds"
+    );
+
+    let stream_id2 = create_fetch_stream_id(100, 2);
+    let partition2 = PartitionTester::get_partition_index(&stream_id2);
+    assert!(
+      partition2 < SEND_STREAM_PARTITION_COUNT,
+      "Partition index should be within bounds"
+    );
+
+    // Different fetch request IDs should potentially give different partitions
+    // (though not guaranteed due to hash collisions)
+    let stream_id3 = create_fetch_stream_id(100, 1000);
+    let partition3 = PartitionTester::get_partition_index(&stream_id3);
+    assert!(
+      partition3 < SEND_STREAM_PARTITION_COUNT,
+      "Partition index should be within bounds"
+    );
+  }
+
+  #[test]
+  fn test_get_partition_index_fetch_streams_consistency() {
+    // Test that the same inputs always produce the same output
+    let stream_id = create_fetch_stream_id(42, 123);
+    let partition1 = PartitionTester::get_partition_index(&stream_id);
+    let partition2 = PartitionTester::get_partition_index(&stream_id);
+    assert_eq!(
+      partition1, partition2,
+      "Same input should always produce same partition"
+    );
+  }
+
+  #[test]
+  fn test_get_partition_index_fetch_streams_edge_cases() {
+    // Test with fetch_request_id = None (should default to 0)
+    let mut stream_id = create_fetch_stream_id(100, 1);
+    stream_id.fetch_request_id = None;
+    let partition = PartitionTester::get_partition_index(&stream_id);
+    assert!(
+      partition < SEND_STREAM_PARTITION_COUNT,
+      "Partition index should be within bounds"
+    );
+
+    // Test with large values
+    let stream_id_large = create_fetch_stream_id(u64::MAX, u64::MAX);
+    let partition_large = PartitionTester::get_partition_index(&stream_id_large);
+    assert!(
+      partition_large < SEND_STREAM_PARTITION_COUNT,
+      "Partition index should be within bounds for large values"
+    );
+
+    // Test with zero values
+    let stream_id_zero = create_fetch_stream_id(0, 0);
+    let partition_zero = PartitionTester::get_partition_index(&stream_id_zero);
+    assert!(
+      partition_zero < SEND_STREAM_PARTITION_COUNT,
+      "Partition index should be within bounds for zero values"
+    );
+  }
+
+  #[test]
+  fn test_get_partition_index_subgroup_streams() {
+    // Test basic subgroup stream partitioning
+    let stream_id1 = create_subgroup_stream_id(100, Some(1), Some(1));
+    let partition1 = PartitionTester::get_partition_index(&stream_id1);
+    assert!(
+      partition1 < SEND_STREAM_PARTITION_COUNT,
+      "Partition index should be within bounds"
+    );
+
+    let stream_id2 = create_subgroup_stream_id(100, Some(2), Some(1));
+    let partition2 = PartitionTester::get_partition_index(&stream_id2);
+    assert!(
+      partition2 < SEND_STREAM_PARTITION_COUNT,
+      "Partition index should be within bounds"
+    );
+
+    let stream_id3 = create_subgroup_stream_id(200, Some(1), Some(1));
+    let partition3 = PartitionTester::get_partition_index(&stream_id3);
+    assert!(
+      partition3 < SEND_STREAM_PARTITION_COUNT,
+      "Partition index should be within bounds"
+    );
+  }
+
+  #[test]
+  fn test_get_partition_index_subgroup_streams_consistency() {
+    // Test that the same inputs always produce the same output
+    let stream_id = create_subgroup_stream_id(42, Some(7), Some(13));
+    let partition1 = PartitionTester::get_partition_index(&stream_id);
+    let partition2 = PartitionTester::get_partition_index(&stream_id);
+    assert_eq!(
+      partition1, partition2,
+      "Same input should always produce same partition"
+    );
+  }
+
+  #[test]
+  fn test_get_partition_index_subgroup_streams_none_values() {
+    // Test with None group_id and subgroup_id (should default to 0)
+    let stream_id1 = create_subgroup_stream_id(100, None, None);
+    let partition1 = PartitionTester::get_partition_index(&stream_id1);
+    assert!(
+      partition1 < SEND_STREAM_PARTITION_COUNT,
+      "Partition index should be within bounds"
+    );
+
+    // Test with Some group_id and None subgroup_id
+    let stream_id2 = create_subgroup_stream_id(100, Some(5), None);
+    let partition2 = PartitionTester::get_partition_index(&stream_id2);
+    assert!(
+      partition2 < SEND_STREAM_PARTITION_COUNT,
+      "Partition index should be within bounds"
+    );
+
+    // Test with None group_id and Some subgroup_id
+    let stream_id3 = create_subgroup_stream_id(100, None, Some(3));
+    let partition3 = PartitionTester::get_partition_index(&stream_id3);
+    assert!(
+      partition3 < SEND_STREAM_PARTITION_COUNT,
+      "Partition index should be within bounds"
+    );
+  }
+
+  #[test]
+  fn test_get_partition_index_subgroup_streams_large_values() {
+    // Test with large values to ensure no overflow
+    let stream_id_large = create_subgroup_stream_id(u64::MAX, Some(u64::MAX), Some(u64::MAX));
+    let partition_large = PartitionTester::get_partition_index(&stream_id_large);
+    assert!(
+      partition_large < SEND_STREAM_PARTITION_COUNT,
+      "Partition index should be within bounds for large values"
+    );
+
+    // Test with values that might cause overflow in naive implementations
+    let stream_id_overflow =
+      create_subgroup_stream_id(u64::MAX / 2, Some(u64::MAX / 3), Some(u64::MAX / 5));
+    let partition_overflow = PartitionTester::get_partition_index(&stream_id_overflow);
+    assert!(
+      partition_overflow < SEND_STREAM_PARTITION_COUNT,
+      "Partition index should be within bounds for overflow-prone values"
+    );
+  }
+
+  #[test]
+  fn test_get_partition_index_distribution_quality() {
+    let mut distribution = [0; SEND_STREAM_PARTITION_COUNT];
+    let test_count = 1000usize;
+
+    // Test distribution quality for fetch streams
+    for i in 0..test_count {
+      let stream_id = create_fetch_stream_id((i % 10) as u64, i as u64);
+      let partition = PartitionTester::get_partition_index(&stream_id);
+      distribution[partition] += 1;
+    }
+
+    // Check that distribution is reasonably even (no partition should be empty or overly full)
+    let expected_per_partition = test_count / SEND_STREAM_PARTITION_COUNT;
+    let tolerance = expected_per_partition / 2; // Allow 50% deviation
+
+    for (i, &count) in distribution.iter().enumerate() {
+      assert!(
+        count > 0,
+        "Partition {} should have at least one entry for good distribution",
+        i
+      );
+      assert!(
+        count < expected_per_partition + tolerance,
+        "Partition {} has too many entries ({}), expected around {}",
+        i,
+        count,
+        expected_per_partition
+      );
+      // print the distribution
+      println!("Partition {}: {}", i, count);
+    }
+  }
+
+  #[test]
+  fn test_get_partition_index_subgroup_distribution_quality() {
+    let mut distribution = [0; SEND_STREAM_PARTITION_COUNT];
+    let test_count = 1000usize;
+
+    // Test distribution quality for subgroup streams
+    for i in 0..test_count {
+      let stream_id = create_subgroup_stream_id(
+        (i % 10) as u64,       // track_alias
+        Some((i / 10) as u64), // group_id
+        Some((i % 5) as u64),  // subgroup_id
+      );
+      let partition = PartitionTester::get_partition_index(&stream_id);
+      distribution[partition] += 1;
+    }
+
+    // Check that distribution is reasonably even
+    let expected_per_partition = test_count / SEND_STREAM_PARTITION_COUNT;
+    let tolerance = expected_per_partition / 2; // Allow 50% deviation
+
+    for (i, &count) in distribution.iter().enumerate() {
+      assert!(
+        count > 0,
+        "Partition {} should have at least one entry for good distribution",
+        i
+      );
+      assert!(
+        count < expected_per_partition + tolerance,
+        "Partition {} has too many entries ({}), expected around {}",
+        i,
+        count,
+        expected_per_partition
+      );
+      // print out the distribution
+      println!("Partition {}: {}", i, count);
+    }
+  }
+
+  #[test]
+  fn test_get_partition_index_different_stream_types() {
+    // Test that fetch and subgroup streams with similar parameters can have different partitions
+    let fetch_stream = create_fetch_stream_id(100, 50);
+    let subgroup_stream = create_subgroup_stream_id(100, Some(50), Some(0));
+
+    let fetch_partition = PartitionTester::get_partition_index(&fetch_stream);
+    let subgroup_partition = PartitionTester::get_partition_index(&subgroup_stream);
+
+    // Both should be within bounds
+    assert!(fetch_partition < SEND_STREAM_PARTITION_COUNT);
+    assert!(subgroup_partition < SEND_STREAM_PARTITION_COUNT);
+
+    // They should potentially be different (though not guaranteed due to hashing)
+    // This test mainly ensures both algorithms work correctly
+  }
+
+  #[test]
+  fn test_get_partition_index_deterministic() {
+    let test_cases = vec![
+      create_fetch_stream_id(42, 123),
+      create_subgroup_stream_id(42, Some(123), Some(456)),
+      create_subgroup_stream_id(0, None, None),
+      create_fetch_stream_id(u64::MAX, 0),
+    ];
+
+    for stream_id in test_cases {
+      let partition1 = PartitionTester::get_partition_index(&stream_id);
+      let partition2 = PartitionTester::get_partition_index(&stream_id);
+      assert_eq!(
+        partition1, partition2,
+        "Multiple calls should produce same partition for same stream_id"
+      );
     }
   }
 }
