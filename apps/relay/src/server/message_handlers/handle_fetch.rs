@@ -129,127 +129,130 @@ pub async fn handle_fetch_messages(
         return Ok(());
       }
 
-      let track = track.unwrap();
-
-      // TODO: verify the range exist. Currently we just return what we have...
-
       info!(
         "handle_fetch_messages | Fetching objects from {:?} to {:?}",
         start_location.clone().unwrap(),
         end_location.clone().unwrap()
       );
 
-      let mut object_rx = track
-        .cache
-        .read_objects(start_location.unwrap(), end_location.clone().unwrap())
-        .await;
+      let track = track.unwrap();
 
-      let fetch_header = FetchHeader::new(request_id);
-      let header_info = HeaderInfo::Fetch {
-        header: fetch_header,
-        fetch_request: fetch,
-      };
-
-      let stream_id = build_stream_id(track.track_alias, &header_info);
-
-      let stream_fn = async move |client: Arc<MOQTClient>, stream_id: &StreamId| {
-        let stream_result = client
-          .open_stream(stream_id, fetch_header.serialize().unwrap(), 0)
+      tokio::spawn(async move {
+        // TODO: verify the range exist. Currently we just return what we have...
+        let mut object_rx = track
+          .cache
+          .read_objects(start_location.unwrap(), end_location.clone().unwrap())
           .await;
 
-        match stream_result {
-          Ok(send_stream) => Some(send_stream),
-          Err(e) => {
-            error!("handle_fetch_messages | Error opening stream: {:?}", e);
-            None
-          }
-        }
-      };
+        let fetch_header = FetchHeader::new(request_id);
+        let header_info = HeaderInfo::Fetch {
+          header: fetch_header,
+          fetch_request: fetch,
+        };
 
-      let mut object_count = 0;
-      let mut send_stream = None;
-      loop {
-        match object_rx.recv().await {
-          Some(event) => match event {
-            CacheConsumeEvent::NoObject => {
-              // there is no object found
+        let stream_id = build_stream_id(track.track_alias, &header_info);
+
+        let stream_fn = async move |client: Arc<MOQTClient>, stream_id: &StreamId| {
+          let stream_result = client
+            .open_stream(stream_id, fetch_header.serialize().unwrap(), 0)
+            .await;
+
+          match stream_result {
+            Ok(send_stream) => Some(send_stream),
+            Err(e) => {
+              error!("handle_fetch_messages | Error opening stream: {:?}", e);
+              None
+            }
+          }
+        };
+
+        let mut object_count = 0;
+        let mut send_stream = None;
+        loop {
+          match object_rx.recv().await {
+            Some(event) => match event {
+              CacheConsumeEvent::NoObject => {
+                // there is no object found
+                break;
+              }
+              CacheConsumeEvent::EndLocation(end_location) => {
+                info!(
+                  "handle_fetch_messages | sending fetch_ok | actual end_location: {:?}",
+                  &end_location
+                );
+                // TODO: implement descending fetch
+                // TODO: end of track is correct?
+                let largest_location = track.largest_location.read().await;
+                let end_of_track = largest_location.group == end_location.group;
+                let fetch_ok =
+                  FetchOk::new_ascending(request_id, end_of_track, end_location, vec![]);
+
+                client
+                  .queue_message(ControlMessage::FetchOk(Box::new(fetch_ok)))
+                  .await;
+              }
+              CacheConsumeEvent::Object(object) => {
+                if object_count == 0 {
+                  info!("handle_fetch_messages | starting stream {:?}", &stream_id);
+                  send_stream = match stream_fn(client.clone(), &stream_id).await {
+                    Some(ss) => Some(ss),
+                    None => return Err(TerminationCode::InternalError),
+                  };
+                }
+                let object_id = object.object_id;
+                if let Err(e) = client
+                  .write_object_to_stream(
+                    &stream_id,
+                    object_id,
+                    object.serialize().unwrap(),
+                    send_stream.as_ref().cloned(),
+                  )
+                  .await
+                {
+                  error!(
+                    "handle_fetch_messages | Error writing object to stream: {:?}",
+                    e
+                  );
+                  return Err(TerminationCode::InternalError);
+                }
+                info!(
+                  "handle_fetch_messages | Wrote object to stream: {} object_id: {}",
+                  &stream_id, object_id
+                );
+                object_count += 1;
+              }
+            },
+            None => {
+              warn!("handle_fetch_messages | No object.");
               break;
             }
-            CacheConsumeEvent::EndLocation(end_location) => {
-              info!(
-                "handle_fetch_messages | sending fetch_ok | actual end_location: {:?}",
-                &end_location
-              );
-              // TODO: implement descending fetch
-              // TODO: end of track is correct?
-              let largest_location = track.largest_location.read().await;
-              let end_of_track = largest_location.group == end_location.group;
-              let fetch_ok = FetchOk::new_ascending(request_id, end_of_track, end_location, vec![]);
-
-              client
-                .queue_message(ControlMessage::FetchOk(Box::new(fetch_ok)))
-                .await;
-            }
-            CacheConsumeEvent::Object(object) => {
-              if object_count == 0 {
-                info!("handle_fetch_messages | starting stream {:?}", &stream_id);
-                send_stream = match stream_fn(client.clone(), &stream_id).await {
-                  Some(ss) => Some(ss),
-                  None => return Err(TerminationCode::InternalError),
-                };
-              }
-              let object_id = object.object_id;
-              if let Err(e) = client
-                .write_object_to_stream(
-                  &stream_id,
-                  object_id,
-                  object.serialize().unwrap(),
-                  send_stream.as_ref().cloned(),
-                )
-                .await
-              {
-                error!(
-                  "handle_fetch_messages | Error writing object to stream: {:?}",
-                  e
-                );
-                return Err(TerminationCode::InternalError);
-              }
-              info!(
-                "handle_fetch_messages | Wrote object to stream: {} object_id: {}",
-                &stream_id, object_id
-              );
-              object_count += 1;
-            }
-          },
-          None => {
-            warn!("handle_fetch_messages | No object.");
-            break;
           }
         }
-      }
 
-      if object_count == 0 {
-        send_fetch_error(
-          client.clone(),
-          request_id,
-          FetchErrorCode::NoObjects,
-          ReasonPhrase::try_new(String::from("No objects available")).unwrap(),
-        )
-        .await;
-      } else {
-        // close the stream instantly
-        if let Some(the_stream) = send_stream {
-          // gracefully finish the stream here
-          if let Err(e) = the_stream.lock().await.shutdown().await {
-            error!("handle_fetch_messages | Error closing stream: {:?}", e);
-            // return Err(TerminationCode::InternalError);
-          } else {
-            info!("finished fetch stream: {:?}", &stream_id);
+        if object_count == 0 {
+          send_fetch_error(
+            client.clone(),
+            request_id,
+            FetchErrorCode::NoObjects,
+            ReasonPhrase::try_new(String::from("No objects available")).unwrap(),
+          )
+          .await;
+        } else {
+          // close the stream instantly
+          if let Some(the_stream) = send_stream {
+            // gracefully finish the stream here
+            if let Err(e) = the_stream.lock().await.shutdown().await {
+              error!("handle_fetch_messages | Error closing stream: {:?}", e);
+              // return Err(TerminationCode::InternalError);
+            } else {
+              info!("finished fetch stream: {:?}", &stream_id);
+            }
+            client.remove_stream_by_stream_id(&stream_id).await;
+            info!("removed stream from the map {}", stream_id);
           }
-          client.remove_stream_by_stream_id(&stream_id).await;
-          info!("removed stream from the map {}", stream_id);
         }
-      }
+        Ok(())
+      });
 
       Ok(())
     }
