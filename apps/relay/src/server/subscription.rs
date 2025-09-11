@@ -75,11 +75,12 @@ impl Subscription {
     let mut instance = sub.clone();
     tokio::spawn(async move {
       loop {
-        let is_finished = instance.finished.read().await;
-        if *is_finished {
-          break;
+        {
+          let is_finished = instance.finished.read().await;
+          if *is_finished {
+            break;
+          }
         }
-        drop(is_finished); // Explicitly drop the lock to allow other tasks to proceed
         tokio::select! {
           biased;
           _ = instance.receive() => {
@@ -104,25 +105,57 @@ impl Subscription {
 
     let mut receiver_guard = self.event_rx.lock().await;
     let _ = receiver_guard.take(); // This replaces the Some(receiver) with None
+    drop(receiver_guard); // Release the lock
 
     info!(
       "Subscription finished for subscriber: {} and track: {}",
       self.client_connection_id, self.subscribe_message.track_alias
     );
 
-    // Close all send streams
-    let mut send_stream_ids = self.send_stream_ids.write().await;
-    for stream_id in send_stream_ids.iter() {
-      // remove from the subscriber client's stream map
-      if let Err(e) = self.subscriber.close_stream(stream_id).await {
-        warn!(
-          "subscription.finish | Error in finishing stream | e: {:?}",
-          e
-        );
-      }
-    }
+    // Close all send streams asynchronously to avoid blocking subscription cleanup
+    let stream_ids = {
+      let mut send_stream_ids = self.send_stream_ids.write().await;
+      let ids = send_stream_ids.clone();
+      send_stream_ids.clear();
+      ids
+    };
 
-    send_stream_ids.clear();
+    if !stream_ids.is_empty() {
+      let subscriber = self.subscriber.clone();
+      let connection_id = self.client_connection_id;
+      let track_alias = self.subscribe_message.track_alias;
+
+      // Spawn background task for graceful stream cleanup
+      tokio::spawn(async move {
+        info!(
+          "Starting background cleanup of {} streams for subscriber: {} track: {}",
+          stream_ids.len(),
+          connection_id,
+          track_alias
+        );
+
+        for stream_id in stream_ids.iter() {
+          if let Err(e) = subscriber.close_stream(stream_id).await {
+            warn!(
+              "Background stream cleanup error for subscriber: {} stream_id: {} track: {} error: {:?}",
+              connection_id, stream_id, track_alias, e
+            );
+          } else {
+            debug!(
+              "Background stream cleanup successful for subscriber: {} stream_id: {} track: {}",
+              connection_id, stream_id, track_alias
+            );
+          }
+        }
+
+        info!(
+          "Background cleanup completed for subscriber: {} track: {} ({} streams)",
+          connection_id,
+          track_alias,
+          stream_ids.len()
+        );
+      });
+    }
   }
 
   async fn receive(&mut self) {
@@ -372,18 +405,41 @@ impl Subscription {
     // Handle the stream closed event
     debug!("Stream closed: {}", stream_id.get_stream_id());
 
-    // remove the stream id from stream ids array
+    // remove the stream id from stream ids array immediately
     let mut stream_ids = self.send_stream_ids.write().await;
     stream_ids.retain(|x| *x != *stream_id);
+    drop(stream_ids); // Release the lock immediately
 
+    // Perform graceful stream closure in a separate task to avoid blocking
+    // the main subscription event loop. This is critical for real-time media streaming
+    // where blocking operations can disrupt video flow timing (25fps = ~40ms intervals)
+    let subscriber = self.subscriber.clone();
+    let stream_id_clone = stream_id.clone();
     let connection_id = self.client_connection_id;
-    self.subscriber.close_stream(stream_id).await.map_err(|e| {
+    let track_alias = self.subscribe_message.track_alias;
+
+    tokio::spawn(async move {
       debug!(
-        "Failed to close stream {}: {:?} subscriber: {} track: {}",
-        stream_id, e, connection_id, self.subscribe_message.track_alias
+        "Starting graceful stream closure in background: subscriber: {} stream_id: {} track: {}",
+        connection_id, stream_id_clone, track_alias
       );
-      e
-    })
+
+      if let Err(e) = subscriber.close_stream(&stream_id_clone).await {
+        // Log the error but don't propagate it since this is background cleanup
+        debug!(
+          "Background stream closure completed with error: subscriber: {} stream_id: {} track: {} error: {:?}",
+          connection_id, stream_id_clone, track_alias, e
+        );
+      } else {
+        debug!(
+          "Background stream closure completed successfully: subscriber: {} stream_id: {} track: {}",
+          connection_id, stream_id_clone, track_alias
+        );
+      }
+    });
+
+    // Return immediately to avoid blocking the event loop
+    Ok(())
   }
 
   async fn get_header_payload(&self, header_info: &HeaderInfo) -> Result<Bytes> {

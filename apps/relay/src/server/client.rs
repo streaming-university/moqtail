@@ -16,7 +16,6 @@ use moqtail::{
 use std::{
   collections::{BTreeMap, HashMap, VecDeque},
   sync::Arc,
-  usize,
 };
 use tokio::sync::Notify;
 use tokio::sync::{Mutex, RwLock};
