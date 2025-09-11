@@ -91,6 +91,7 @@ function SessionPage() {
   const [pendingRoomClosedMessage, setPendingRoomClosedMessage] = useState<string | null>(null)
   const originalTitle = useRef<string>(document.title)
   const videoEncoderObjRef = useRef<any>(null)
+  const audioEncoderObjRef = useRef<any>(null)
   const chatSenderRef = useRef<{ send: (msg: string) => void } | null>(null)
   const offsetRef = useRef<number>(0)
   const [mediaReady, setMediaReady] = useState(false)
@@ -665,6 +666,9 @@ function SessionPage() {
         if (kind === 'mic') {
           users[userId] = { ...u, hasAudio: newValue }
           toggleMediaStreamAudio(newValue)
+          if (audioEncoderObjRef.current) {
+            audioEncoderObjRef.current.setEncoding(newValue)
+          }
         } else if (kind === 'cam') {
           users[userId] = { ...u, hasVideo: newValue }
           // --- Video track switching logic ---
@@ -907,6 +911,10 @@ function SessionPage() {
           publisherPriority: 1,
           audioGroupId: 0,
           objectForwardingPreference: ObjectForwardingPreference.Subgroup,
+        }).then((audioEncoderResult) => {
+          audioEncoderObjRef.current = audioEncoderResult
+          audioEncoderObjRef.current.setEncoding(isMicOn)
+          return audioEncoderResult
         })
         chatSenderRef.current = initializeChatMessageSender({
           chatFullTrackName,
@@ -1573,6 +1581,10 @@ function SessionPage() {
       //console.log('Stopping video encoder...');
       videoEncoderObjRef.current.stop()
       videoEncoderObjRef.current = null
+    }
+
+    if (audioEncoderObjRef.current) {
+      audioEncoderObjRef.current = null
     }
 
     if (selfVideoRef.current) {
