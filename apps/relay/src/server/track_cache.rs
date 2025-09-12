@@ -56,12 +56,7 @@ pub enum CacheConsumeEvent {
 }
 
 impl TrackCache {
-  pub fn new(
-    track_alias: u64,
-    cache_size: usize,
-    _cache_grow_ratio_before_evicting: f64,
-    config: &AppConfig,
-  ) -> Self {
+  pub fn new(track_alias: u64, cache_size: usize, config: &AppConfig) -> Self {
     let log_folder = config.log_folder.clone();
     let log_folder_for_listener = log_folder.clone();
 

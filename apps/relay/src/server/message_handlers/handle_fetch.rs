@@ -200,7 +200,7 @@ pub async fn handle_fetch_messages(
                   };
                 }
                 let object_id = object.object_id;
-                if let Err(e) = client
+                let is_sent = if let Err(e) = client
                   .write_object_to_stream(
                     &stream_id,
                     object_id,
@@ -213,7 +213,45 @@ pub async fn handle_fetch_messages(
                     "handle_fetch_messages | Error writing object to stream: {:?}",
                     e
                   );
+                  false
+                } else {
+                  true
+                };
+
+                if !is_sent {
                   return Err(TerminationCode::InternalError);
+                }
+
+                // Log fetch stream object if enabled
+                if context.server_config.enable_object_logging {
+                  let sending_time = crate::server::utils::passed_time_since_start();
+                  let fetch_object = moqtail::model::data::object::Object {
+                    track_alias: track.track_alias,
+                    location: moqtail::model::common::location::Location::new(
+                      object.group_id,
+                      object.object_id,
+                    ),
+                    publisher_priority: object.publisher_priority,
+                    forwarding_preference:
+                      moqtail::model::data::constant::ObjectForwardingPreference::Subgroup,
+                    subgroup_id: Some(object.subgroup_id),
+                    status: object
+                      .object_status
+                      .unwrap_or(moqtail::model::data::constant::ObjectStatus::Normal),
+                    extensions: object.extension_headers.clone(),
+                    payload: object.payload.clone(),
+                  };
+                  track
+                    .object_logger
+                    .log_fetch_object(
+                      track.track_alias,
+                      context.connection_id,
+                      request_id,
+                      &fetch_object,
+                      is_sent,
+                      sending_time,
+                    )
+                    .await;
                 }
                 info!(
                   "handle_fetch_messages | Wrote object to stream: {} object_id: {}",

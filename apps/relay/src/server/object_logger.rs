@@ -18,12 +18,13 @@ impl ObjectLogger {
 
   /// Log object properties for subscription-level logging
   /// Filename format: <track_alias>_<subscriber_connection_id>.log
-  /// Fields: group_id, subgroup_id, object_id, payload_size, object_received_time
+  /// Fields: group_id, subgroup_id, object_id, payload_size, send_status, object_received_time
   pub async fn log_subscription_object(
     &self,
     track_alias: u64,
     subscriber_connection_id: usize,
     object: &Object,
+    send_status: bool,
     object_received_time: u128,
   ) {
     let group_id = object.location.group;
@@ -31,11 +32,11 @@ impl ObjectLogger {
     let subgroup_id = object.subgroup_id.unwrap_or(0);
     let payload_size = object.payload.as_ref().map(|p| p.len()).unwrap_or(0);
 
-    let log_filename = format!("{}_{}.log", track_alias, subscriber_connection_id);
+    let log_filename = format!("sub_{}_{}.log", track_alias, subscriber_connection_id);
 
     let log_entry = format!(
-      "{},{},{},{},{}\n",
-      group_id, subgroup_id, object_id, payload_size, object_received_time
+      "{},{},{},{},{},{}\n",
+      group_id, subgroup_id, object_id, payload_size, send_status, object_received_time
     );
 
     self.write_log_entry(&log_filename, &log_entry).await;
@@ -55,11 +56,41 @@ impl ObjectLogger {
     let subgroup_id = object.subgroup_id.unwrap_or(0);
     let payload_len = object.payload.as_ref().map(|p| p.len()).unwrap_or(0);
 
-    let log_filename = format!("{}.log", track_alias);
+    let log_filename = format!("track_{}.log", track_alias);
 
     let log_entry = format!(
       "{},{},{},{},{}\n",
       group_id, subgroup_id, object_id, payload_len, object_received_time
+    );
+
+    self.write_log_entry(&log_filename, &log_entry).await;
+  }
+
+  /// Log object properties for fetch stream logging
+  /// Filename format: fetch_<track_alias>_<request_id>.log
+  /// Fields: group_id, subgroup_id, object_id, payload_len, send_status, sending_time
+  pub async fn log_fetch_object(
+    &self,
+    track_alias: u64,
+    subscriber_connection_id: usize,
+    request_id: u64,
+    object: &Object,
+    send_status: bool,
+    sending_time: u128,
+  ) {
+    let group_id = object.location.group;
+    let object_id = object.location.object;
+    let subgroup_id = object.subgroup_id.unwrap_or(0);
+    let payload_len = object.payload.as_ref().map(|p| p.len()).unwrap_or(0);
+
+    let log_filename = format!(
+      "fetch_{}_{}_{}.log",
+      track_alias, subscriber_connection_id, request_id
+    );
+
+    let log_entry = format!(
+      "{},{},{},{},{},{}\n",
+      group_id, subgroup_id, object_id, payload_len, send_status, sending_time
     );
 
     self.write_log_entry(&log_filename, &log_entry).await;

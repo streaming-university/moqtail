@@ -1,6 +1,6 @@
-use super::config::AppConfig;
 use super::track_cache::TrackCache;
 use crate::server::client::MOQTClient;
+use crate::server::config::AppConfig;
 use crate::server::object_logger::ObjectLogger;
 use crate::server::stream_id::StreamId;
 use crate::server::subscription::Subscription;
@@ -44,8 +44,9 @@ pub struct Track {
   pub(crate) cache: TrackCache,
   subscriber_senders: Arc<RwLock<BTreeMap<usize, UnboundedSender<TrackEvent>>>>,
   pub largest_location: Arc<RwLock<Location>>,
-  object_logger: ObjectLogger,
+  pub object_logger: ObjectLogger,
   log_folder: String,
+  config: &'static AppConfig,
 }
 
 // TODO: this track implementation should be static? At least
@@ -56,7 +57,7 @@ impl Track {
     track_namespace: Tuple,
     track_name: String,
     publisher_connection_id: usize,
-    config: &AppConfig,
+    config: &'static AppConfig,
   ) -> Self {
     Track {
       track_alias,
@@ -64,16 +65,12 @@ impl Track {
       track_name,
       subscriptions: Arc::new(RwLock::new(BTreeMap::new())),
       publisher_connection_id,
-      cache: TrackCache::new(
-        track_alias,
-        config.cache_size.into(),
-        config.cache_grow_ratio_before_evicting,
-        config,
-      ),
+      cache: TrackCache::new(track_alias, config.cache_size.into(), config),
       subscriber_senders: Arc::new(RwLock::new(BTreeMap::new())),
       largest_location: Arc::new(RwLock::new(Location::new(0, 0))),
       object_logger: ObjectLogger::new(config.log_folder.clone()),
       log_folder: config.log_folder.clone(),
+      config,
     }
   }
 
@@ -99,6 +96,7 @@ impl Track {
       self.cache.clone(),
       connection_id,
       self.log_folder.clone(),
+      self.config,
     );
 
     let mut subscriptions = self.subscriptions.write().await;
@@ -177,12 +175,14 @@ impl Track {
     if let Ok(fetch_object) = object.clone().try_into_fetch() {
       self.cache.add_object(fetch_object).await;
 
-      // Track-level logging - log every object arrival
-      let object_received_time = utils::passed_time_since_start();
-      self
-        .object_logger
-        .log_track_object(self.track_alias, object, object_received_time)
-        .await;
+      // Track-level logging - log every object arrival if enabled
+      if self.config.enable_object_logging {
+        let object_received_time = utils::passed_time_since_start();
+        self
+          .object_logger
+          .log_track_object(self.track_alias, object, object_received_time)
+          .await;
+      }
 
       // update the largest location
       {

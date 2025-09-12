@@ -1,4 +1,5 @@
 use crate::server::client::MOQTClient;
+use crate::server::config::AppConfig;
 use crate::server::object_logger::ObjectLogger;
 use crate::server::stream_id::StreamId;
 use crate::server::track::TrackEvent;
@@ -32,6 +33,7 @@ pub struct Subscription {
   cache: TrackCache,
   client_connection_id: usize,
   object_logger: ObjectLogger,
+  config: &'static AppConfig,
 }
 
 impl Subscription {
@@ -42,6 +44,7 @@ impl Subscription {
     cache: TrackCache,
     client_connection_id: usize,
     log_folder: String,
+    config: &'static AppConfig,
   ) -> Self {
     Self {
       subscribe_message,
@@ -52,6 +55,7 @@ impl Subscription {
       cache,
       client_connection_id,
       object_logger: ObjectLogger::new(log_folder),
+      config,
     }
   }
   pub fn new(
@@ -61,6 +65,7 @@ impl Subscription {
     cache: TrackCache,
     client_connection_id: usize,
     log_folder: String,
+    config: &'static AppConfig,
   ) -> Self {
     let event_rx = Arc::new(Mutex::new(Some(event_rx)));
     let sub = Self::create_instance(
@@ -70,6 +75,7 @@ impl Subscription {
       cache,
       client_connection_id,
       log_folder,
+      config,
     );
 
     let mut instance = sub.clone();
@@ -223,20 +229,26 @@ impl Subscription {
                   self.client_connection_id, stream_id, self.subscribe_message.track_alias
                 );
 
-                // Log object properties
-                self
-                  .object_logger
-                  .log_subscription_object(
-                    self.subscribe_message.track_alias,
-                    self.client_connection_id,
-                    &object,
-                    object_received_time,
-                  )
+                // Log object properties with send status if enabled
+                let write_result = self
+                  .handle_object(object.clone(), &stream_id, send_stream.clone())
                   .await;
+                let send_status = write_result.is_ok();
 
-                let _ = self
-                  .handle_object(object, &stream_id, send_stream.clone())
-                  .await;
+                if self.config.enable_object_logging {
+                  self
+                    .object_logger
+                    .log_subscription_object(
+                      self.subscribe_message.track_alias,
+                      self.client_connection_id,
+                      &object,
+                      send_status,
+                      object_received_time,
+                    )
+                    .await;
+                }
+
+                let _ = write_result;
               } else {
                 error!(
                   "Received Object event without a valid send stream for subscriber: {} stream_id: {} track: {} object: {:?} now: {} received time: {}",
