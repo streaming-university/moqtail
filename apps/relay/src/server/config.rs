@@ -1,9 +1,18 @@
 use anyhow::Result;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::sync::OnceLock;
 use std::time::Duration;
 use tracing::error;
 use wtransport::{Identity, ServerConfig};
+
+/// Cache expiration strategy
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum CacheExpirationType {
+  /// Time-to-live: entries expire after a fixed duration from creation
+  Ttl,
+  /// Time-to-idle: entries expire after a period of inactivity
+  Tti,
+}
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -21,17 +30,24 @@ pub struct Cli {
   #[arg(long, default_value = "apps/relay/cert/key.pem")]
   pub key_file: String,
   /// Number of cached subgroups/fetches per track
-  #[arg(long, default_value_t = 500)]
+  #[arg(long, default_value_t = 1000)]
   pub cache_size: u16,
   /// Cache grow ratio before evicting - allows cache to grow to this multiple of cache_size before evicting
-  #[arg(long, default_value_t = 1.2)]
-  pub cache_grow_ratio_before_evicting: f64,
   #[arg(long, default_value_t = 7)]
   pub max_idle_timeout: u64,
   #[arg(long, default_value_t = 3)]
   pub keep_alive_interval: u64,
-  #[arg(long, default_value = ".")]
+  #[arg(long, default_value = "/tmp")]
   pub log_folder: String,
+  /// Cache expiration type (ttl or tti)
+  #[arg(long, value_enum, default_value = "ttl")]
+  pub cache_expiration_type: CacheExpirationType,
+  /// Cache expiration duration in minutes
+  #[arg(long, default_value_t = 30)]
+  pub cache_expiration_minutes: u64,
+  /// Enable object logging
+  #[arg(long, default_value_t = false)]
+  pub enable_object_logging: bool,
 }
 #[derive(Debug, Clone)]
 pub struct AppConfig {
@@ -42,8 +58,10 @@ pub struct AppConfig {
   pub max_idle_timeout: u64,
   pub keep_alive_interval: u64,
   pub cache_size: u16,
-  pub cache_grow_ratio_before_evicting: f64,
   pub log_folder: String,
+  pub cache_expiration_type: CacheExpirationType,
+  pub cache_expiration_minutes: u64,
+  pub enable_object_logging: bool,
 }
 
 impl AppConfig {
@@ -59,8 +77,10 @@ impl AppConfig {
         max_idle_timeout: cli.max_idle_timeout,
         keep_alive_interval: cli.keep_alive_interval,
         cache_size: cli.cache_size,
-        cache_grow_ratio_before_evicting: cli.cache_grow_ratio_before_evicting,
         log_folder: cli.log_folder,
+        cache_expiration_type: cli.cache_expiration_type,
+        cache_expiration_minutes: cli.cache_expiration_minutes,
+        enable_object_logging: cli.enable_object_logging,
       }
     })
   }
@@ -83,5 +103,22 @@ impl AppConfig {
       .build();
 
     Ok(config)
+  }
+
+  /// Get cache expiration duration
+  pub fn get_cache_expiration_duration(&self) -> Duration {
+    Duration::from_secs(self.cache_expiration_minutes * 60)
+  }
+
+  /// Check if cache uses time-to-live expiration
+  #[allow(dead_code)]
+  pub fn is_cache_ttl(&self) -> bool {
+    matches!(self.cache_expiration_type, CacheExpirationType::Ttl)
+  }
+
+  /// Check if cache uses time-to-idle expiration
+  #[allow(dead_code)]
+  pub fn is_cache_tti(&self) -> bool {
+    matches!(self.cache_expiration_type, CacheExpirationType::Tti)
   }
 }

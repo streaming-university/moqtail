@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
-use tracing::error;
 use wtransport::Connection;
 
 use moqtail::transport::data_stream_handler::{FetchRequest, SubscribeRequest};
@@ -22,7 +21,7 @@ pub struct SessionContext {
   pub(crate) relay_subscribe_requests: Arc<RwLock<BTreeMap<u64, SubscribeRequest>>>,
   pub(crate) client_subscribe_requests: Arc<RwLock<BTreeMap<u64, SubscribeRequest>>>,
   pub(crate) connection_id: usize,
-  pub(crate) client: Arc<RwLock<Option<Arc<RwLock<MOQTClient>>>>>, // the client that is connected to this session
+  pub(crate) client: Arc<RwLock<Option<Arc<MOQTClient>>>>, // the client that is connected to this session
   pub(crate) connection: Connection,
   pub(crate) server_config: &'static AppConfig,
   pub(crate) is_connection_closed: Arc<RwLock<bool>>,
@@ -54,19 +53,12 @@ impl SessionContext {
     }
   }
 
-  pub async fn set_client(&self, client: Arc<RwLock<MOQTClient>>) {
-    let mut c = self.client.write().await;
-    *c = Some(client);
+  pub async fn set_client(&self, client: Arc<MOQTClient>) {
+    let mut guard = self.client.write().await;
+    *guard = Some(client);
   }
 
-  pub async fn get_client(&self) -> Option<Arc<RwLock<MOQTClient>>> {
-    let c = self.client.read().await;
-    match c.as_ref() {
-      Some(client) => Some(client.clone()),
-      None => {
-        error!("no client found");
-        None
-      }
-    }
+  pub async fn get_client(&self) -> Option<Arc<MOQTClient>> {
+    self.client.read().await.clone()
   }
 }

@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, info};
 
 pub(crate) struct ClientManager {
-  pub clients: Arc<RwLock<BTreeMap<usize, Arc<RwLock<MOQTClient>>>>>,
+  pub clients: Arc<RwLock<BTreeMap<usize, Arc<MOQTClient>>>>,
 }
 
 impl ClientManager {
@@ -15,8 +15,8 @@ impl ClientManager {
     }
   }
 
-  pub(crate) async fn add(&mut self, client: Arc<RwLock<MOQTClient>>) {
-    let connection_id = client.read().await.connection_id;
+  pub(crate) async fn add(&mut self, client: Arc<MOQTClient>) {
+    let connection_id = client.connection_id;
     let mut clients = self.clients.write().await;
     clients.insert(connection_id, client);
     info!("Added client connection_id: {}", connection_id);
@@ -27,7 +27,7 @@ impl ClientManager {
     clients.remove(&connection_id);
   }
 
-  pub(crate) async fn get(&self, connection_id: usize) -> Option<Arc<RwLock<MOQTClient>>> {
+  pub(crate) async fn get(&self, connection_id: usize) -> Option<Arc<MOQTClient>> {
     let clients = self.clients.read().await;
     clients.get(&connection_id).cloned()
   }
@@ -39,11 +39,11 @@ impl ClientManager {
   pub(crate) async fn get_publisher_by_announced_track_namespace(
     &self,
     track_namespace: &Tuple,
-  ) -> Option<Arc<RwLock<MOQTClient>>> {
+  ) -> Option<Arc<MOQTClient>> {
     let clients = self.clients.read().await;
     for client_ref in clients.iter() {
       debug!("checking client: {:?}", client_ref.0);
-      let client = client_ref.1.read().await;
+      let client = client_ref.1;
 
       debug!(
         "client announced track namespaces: {:?} track namespace: {:?}",

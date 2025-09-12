@@ -12,7 +12,7 @@ use tokio::sync::RwLock;
 use tracing::{Instrument, debug, error, info, info_span, warn};
 use wtransport::{RecvStream, SendStream, endpoint::IncomingSession};
 
-use crate::server::Server;
+use crate::server::{Server, stream_id::StreamId};
 
 use super::{
   client::MOQTClient,
@@ -141,7 +141,7 @@ impl Session {
     loop {
       // see if we have a message to receive from the client
       let msg: ControlMessage;
-      let c = client.read().await; // this is the client that is connected to this session
+      let c = client.clone(); // this is the client that is connected to this session
       {
         tokio::select! {
           m = control_stream_handler.next_message() => {
@@ -336,7 +336,6 @@ impl Session {
       let tracks = tracks_cleanup.read().await;
       let client = context.get_client().await;
       if let Some(client) = client {
-        let client = client.read().await;
         let published_tracks = client.get_published_tracks().await;
         for track_alias in published_tracks {
           info!(
@@ -414,27 +413,26 @@ impl Session {
       None => return Err(TerminationCode::InternalError.into()),
     };
 
-    let client = client.read().await;
-
     debug!("client is {}", client.connection_id);
 
     let mut stream_handler = &RecvDataStream::new(stream, client.fetch_requests.clone());
 
     let mut first_object = true;
     let mut track_alias = 0u64;
-    let mut stream_id = String::new();
+    let mut stream_id: Option<StreamId> = None;
     let mut current_track: Option<Track> = None;
 
     let mut object_count = 0;
 
     loop {
       let next = stream_handler.next_object().await;
+
       match next {
         (handler, Some(object)) => {
           // Handle the object
           stream_handler = handler;
 
-          if first_object {
+          let header_info = if first_object {
             // debug!("First object received, processing header info");
             let header = handler.get_header_info().await;
             if header.is_none() {
@@ -476,15 +474,26 @@ impl Session {
               // TODO: get track for fetch requests as well
               return Err(anyhow::Error::msg(TerminationCode::InternalError.to_json()));
             };
-            let _ = current_track
-              .as_ref()
-              .unwrap()
-              .new_header(&header_info)
-              .await;
-            stream_id = utils::build_stream_id(track_alias, &header_info);
-          }
+            stream_id = Some(utils::build_stream_id(track_alias, &header_info));
+            Some(header_info)
+          } else {
+            None
+          };
+
           let track = current_track.as_ref().unwrap();
-          let _ = track.new_object(stream_id.clone(), &object).await;
+          let _ = if first_object {
+            track
+              .new_object_with_header(
+                &stream_id.clone().unwrap().clone(),
+                &object,
+                header_info.as_ref(),
+              )
+              .await
+          } else {
+            track
+              .new_object(&stream_id.clone().unwrap().clone(), &object)
+              .await
+          };
 
           object_count += 1;
           first_object = false; // reset the first object flag after processing the header
@@ -492,12 +501,15 @@ impl Session {
         (_, None) => {
           // error!("Failed to receive object: {:?}", e);
           info!(
-            "no more objects in the stream track: {}, stream_id: {}, objects: {}",
-            track_alias, stream_id, object_count
+            "no more objects in the stream client: {} track: {} stream_id: {} objects: {}",
+            context.connection_id,
+            track_alias,
+            stream_id.clone().unwrap().get_stream_id(),
+            object_count
           );
           // Close the stream for all subscribers
           if let Some(track) = &current_track {
-            return track.stream_closed(stream_id.clone()).await;
+            return track.stream_closed(&stream_id.unwrap()).await;
           }
           break;
         }
@@ -517,7 +529,7 @@ impl Session {
   async fn negotiate(
     context: Arc<SessionContext>,
     control_stream_handler: &mut ControlStreamHandler,
-  ) -> Result<Arc<RwLock<MOQTClient>>> {
+  ) -> Result<Arc<MOQTClient>> {
     debug!("Negotiating with client...");
     let client_setup = match control_stream_handler.next_message().await {
       Ok(ControlMessage::ClientSetup(m)) => *m,
@@ -555,7 +567,7 @@ impl Session {
         Arc::new(context.connection.clone()),
         Arc::new(client_setup),
       );
-      let client = Arc::new(RwLock::new(client));
+      let client = Arc::new(client);
       m.add(client.clone()).await;
       client
     } else {

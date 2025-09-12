@@ -1,5 +1,8 @@
 use super::track_cache::TrackCache;
 use crate::server::client::MOQTClient;
+use crate::server::config::AppConfig;
+use crate::server::object_logger::ObjectLogger;
+use crate::server::stream_id::StreamId;
 use crate::server::subscription::Subscription;
 use crate::server::utils;
 use anyhow::Result;
@@ -7,18 +10,25 @@ use moqtail::model::common::location::Location;
 use moqtail::model::control::subscribe::Subscribe;
 use moqtail::model::data::object::Object;
 use moqtail::{model::common::tuple::Tuple, transport::data_stream_handler::HeaderInfo};
-use std::time::Instant;
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info};
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum TrackEvent {
-  Header { header: HeaderInfo },
-  Object { stream_id: String, object: Object },
-  StreamClosed { stream_id: String },
-  PublisherDisconnected { reason: String },
+  Object {
+    stream_id: StreamId,
+    object: Object,
+    header_info: Option<HeaderInfo>,
+  },
+  StreamClosed {
+    stream_id: StreamId,
+  },
+  PublisherDisconnected {
+    reason: String,
+  },
 }
 #[derive(Debug, Clone)]
 pub struct Track {
@@ -34,6 +44,9 @@ pub struct Track {
   pub(crate) cache: TrackCache,
   subscriber_senders: Arc<RwLock<BTreeMap<usize, UnboundedSender<TrackEvent>>>>,
   pub largest_location: Arc<RwLock<Location>>,
+  pub object_logger: ObjectLogger,
+  log_folder: String,
+  config: &'static AppConfig,
 }
 
 // TODO: this track implementation should be static? At least
@@ -43,9 +56,8 @@ impl Track {
     track_alias: u64,
     track_namespace: Tuple,
     track_name: String,
-    cache_size: usize,
-    cache_grow_ratio_before_evicting: f64,
     publisher_connection_id: usize,
+    config: &'static AppConfig,
   ) -> Self {
     Track {
       track_alias,
@@ -53,18 +65,21 @@ impl Track {
       track_name,
       subscriptions: Arc::new(RwLock::new(BTreeMap::new())),
       publisher_connection_id,
-      cache: TrackCache::new(track_alias, cache_size, cache_grow_ratio_before_evicting),
+      cache: TrackCache::new(track_alias, config.cache_size.into(), config),
       subscriber_senders: Arc::new(RwLock::new(BTreeMap::new())),
       largest_location: Arc::new(RwLock::new(Location::new(0, 0))),
+      object_logger: ObjectLogger::new(config.log_folder.clone()),
+      log_folder: config.log_folder.clone(),
+      config,
     }
   }
 
   pub async fn add_subscription(
     &mut self,
-    subscriber: Arc<RwLock<MOQTClient>>,
+    subscriber: Arc<MOQTClient>,
     subscribe_message: Subscribe,
   ) -> Result<(), anyhow::Error> {
-    let connection_id = { subscriber.read().await.connection_id };
+    let connection_id = { subscriber.connection_id };
 
     info!(
       "Adding subscription for subscriber_id: {} to track: {}",
@@ -72,7 +87,7 @@ impl Track {
     );
 
     // Create a separate unbounded channel for this subscriber
-    let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<TrackEvent>();
 
     let subscription = Subscription::new(
       subscribe_message,
@@ -80,6 +95,8 @@ impl Track {
       event_rx,
       self.cache.clone(),
       connection_id,
+      self.log_folder.clone(),
+      self.config,
     );
 
     let mut subscriptions = self.subscriptions.write().await;
@@ -123,31 +140,49 @@ impl Track {
     }
   }
 
-  pub async fn new_header(&self, header: &HeaderInfo) -> Result<()> {
-    let header_event = TrackEvent::Header {
-      header: header.clone(),
-    };
-
-    self.send_event_to_subscribers(header_event).await?;
-
-    Ok(())
+  pub async fn new_object(
+    &self,
+    stream_id: &StreamId,
+    object: &Object,
+  ) -> Result<(), anyhow::Error> {
+    self.new_object_with_header(stream_id, object, None).await
   }
 
-  pub async fn new_object(&self, stream_id: String, object: &Object) -> Result<(), anyhow::Error> {
+  pub async fn new_object_with_header(
+    &self,
+    stream_id: &StreamId,
+    object: &Object,
+    header_info: Option<&HeaderInfo>,
+  ) -> Result<(), anyhow::Error> {
     debug!(
       "new_object: track: {:?} location: {:?} stream_id: {} diff_ms: {}",
       object.track_alias,
       object.location,
-      &stream_id,
-      (Instant::now() - *utils::BASE_TIME).as_millis()
+      stream_id,
+      utils::passed_time_since_start()
     );
+
+    if header_info.is_some() {
+      info!(
+        "new group: track: {:?} location: {:?} stream_id: {} time: {}",
+        object.track_alias,
+        object.location,
+        stream_id,
+        utils::passed_time_since_start()
+      );
+    }
 
     if let Ok(fetch_object) = object.clone().try_into_fetch() {
       self.cache.add_object(fetch_object).await;
-      let object_event = TrackEvent::Object {
-        stream_id: stream_id.clone(),
-        object: object.clone(),
-      };
+
+      // Track-level logging - log every object arrival if enabled
+      if self.config.enable_object_logging {
+        let object_received_time = utils::passed_time_since_start();
+        self
+          .object_logger
+          .log_track_object(self.track_alias, object, object_received_time)
+          .await;
+      }
 
       // update the largest location
       {
@@ -161,7 +196,14 @@ impl Track {
         }
       }
 
-      self.send_event_to_subscribers(object_event).await?;
+      // Send single Object event with optional header info
+      let event = TrackEvent::Object {
+        stream_id: stream_id.clone(),
+        object: object.clone(),
+        header_info: header_info.cloned(),
+      };
+
+      self.send_event_to_subscribers(event).await?;
       Ok(())
     } else {
       error!(
@@ -169,14 +211,14 @@ impl Track {
         object.track_alias,
         object.location,
         stream_id,
-        (Instant::now() - *utils::BASE_TIME).as_millis(),
+        utils::passed_time_since_start(),
         object
       );
       Err(anyhow::anyhow!("Object is not a fetch object"))
     }
   }
 
-  pub async fn stream_closed(&self, stream_id: String) -> Result<(), anyhow::Error> {
+  pub async fn stream_closed(&self, stream_id: &StreamId) -> Result<(), anyhow::Error> {
     let event = TrackEvent::StreamClosed {
       stream_id: stream_id.clone(),
     };
@@ -209,6 +251,7 @@ impl Track {
   ) -> Result<Vec<usize>, anyhow::Error> {
     let senders = self.subscriber_senders.read().await;
     let mut failed_subscribers = Vec::new();
+
     if !senders.is_empty() {
       for (subscriber_id, sender) in senders.iter() {
         if let Err(e) = sender.send(event.clone()) {

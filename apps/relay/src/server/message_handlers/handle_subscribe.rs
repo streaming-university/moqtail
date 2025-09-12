@@ -10,11 +10,10 @@ use moqtail::model::{
 use moqtail::transport::control_stream_handler::ControlStreamHandler;
 use moqtail::transport::data_stream_handler::SubscribeRequest;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 pub async fn handle_subscribe_messages(
-  _client: Arc<RwLock<MOQTClient>>,
+  _client: Arc<MOQTClient>,
   control_stream_handler: &mut ControlStreamHandler,
   msg: ControlMessage,
   context: Arc<SessionContext>,
@@ -60,16 +59,11 @@ pub async fn handle_subscribe_messages(
       };
 
       {
-        publisher
-          .read()
-          .await
-          .add_subscriber(context.connection_id)
-          .await;
+        publisher.add_subscriber(context.connection_id).await;
       }
       info!(
         "Subscriber ({}) added to the publisher ({})",
-        context.connection_id,
-        publisher.read().await.connection_id
+        context.connection_id, publisher.connection_id
       );
 
       let original_request_id = sub.request_id;
@@ -86,9 +80,8 @@ pub async fn handle_subscribe_messages(
             sub.track_alias,
             sub.track_namespace.clone(),
             sub.track_name.clone(),
-            context.server_config.cache_size.into(),
-            context.server_config.cache_grow_ratio_before_evicting,
-            publisher.read().await.connection_id,
+            publisher.connection_id,
+            context.server_config,
           );
           {
             context
@@ -105,7 +98,6 @@ pub async fn handle_subscribe_messages(
           new_sub.request_id =
             Session::get_next_relay_request_id(context.relay_next_request_id.clone()).await;
 
-          let publisher = publisher.read().await;
           publisher
             .queue_message(ControlMessage::Subscribe(Box::new(new_sub.clone())))
             .await;
@@ -156,7 +148,6 @@ pub async fn handle_subscribe_messages(
         );
 
         // also insert the request to the client's subscribe requests
-        let client = client.read().await.clone();
         let mut requests = client.subscribe_requests.write().await;
         let orig_req =
           SubscribeRequest::new(original_request_id, context.connection_id, sub.clone());
@@ -228,8 +219,6 @@ pub async fn handle_subscribe_messages(
       );
 
       subscriber
-        .read()
-        .await
         .queue_message(ControlMessage::SubscribeOk(Box::new(subscribe_ok)))
         .await;
       drop(subscriber);
@@ -265,7 +254,6 @@ pub async fn handle_subscribe_messages(
           return Err(TerminationCode::InternalError);
         }
       };
-      let client = client.read().await.clone();
 
       // find the track alias by using the request id
       let requests = client.subscribe_requests.read().await;
