@@ -21,7 +21,6 @@ use super::{
   track::Track,
   utils,
 };
-use bytes::Bytes;
 
 pub struct Session {}
 
@@ -177,76 +176,28 @@ impl Session {
         } // end of tokio::select!
       }
 
-      match &msg {
-        ControlMessage::Announce(_m) => {
-          if let Err(termination_code) =
-            message_handlers::handle_announce::handle_announce_messages(
-              client.clone(),
-              &mut control_stream_handler,
-              msg,
-              context.clone(),
-            )
-            .await
-          {
-            error!("Error handling Announce message: {:?}", termination_code);
-            Self::close_session(
-              context.clone(),
-              termination_code,
-              "Error handling Announce message",
-            );
-            return Err(termination_code);
-          }
-        }
-        ControlMessage::Subscribe(_)
-        | ControlMessage::SubscribeOk(_)
-        | ControlMessage::Unsubscribe(_) => {
-          if let Err(termination_code) =
-            message_handlers::handle_subscribe::handle_subscribe_messages(
-              client.clone(),
-              &mut control_stream_handler,
-              msg,
-              context.clone(),
-            )
-            .await
-          {
-            error!(
-              "Error handling Subscribe/Unsubscribe message: {:?}",
-              termination_code
-            );
-            Self::close_session(
-              context.clone(),
-              termination_code,
-              "Error handling Subscribe/Unsubscribe message",
-            );
-            return Err(termination_code);
-          }
-        }
-        ControlMessage::Fetch(_) | ControlMessage::FetchOk(_) => {
-          if let Err(termination_code) = message_handlers::handle_fetch::handle_fetch_messages(
-            client.clone(),
-            &mut control_stream_handler,
-            msg,
-            context.clone(),
-          )
-          .await
-          {
-            error!("Error handling Fetch message: {:?}", termination_code);
-            Self::close_session(
-              context.clone(),
-              termination_code,
-              "Error handling Fetch message",
-            );
-            return Err(termination_code);
-          }
-        }
+      let message_type = &msg.get_type();
 
-        m => {
-          info!("some message received");
-          let a = m.serialize().unwrap();
-          let buf = Bytes::from_iter(a);
-          utils::print_bytes(&buf);
-        }
-      } // end of match &msg
+      let handling_result = message_handlers::MessageHandler::handle(
+        client.clone(),
+        &mut control_stream_handler,
+        msg,
+        context.clone(),
+      )
+      .await;
+
+      if let Err(termination_code) = handling_result {
+        error!(
+          "Error handling {} message: {:?}",
+          termination_code, message_type
+        );
+        Self::close_session(
+          context.clone(),
+          termination_code,
+          "Error handling Announce message",
+        );
+        return Err(termination_code);
+      }
     } // end of loop
   }
 
@@ -551,7 +502,16 @@ impl Session {
 
     utils::print_msg_bytes(&client_setup);
 
-    let server_setup = ServerSetup::new(constant::DRAFT_11, vec![]);
+    let max_request_id_param = {
+      let max_request_id = context.max_request_id.read().await;
+      moqtail::model::parameter::setup_parameter::SetupParameter::new_max_request_id(
+        *max_request_id + 1,
+      )
+      .try_into()
+      .unwrap()
+    };
+
+    let server_setup = ServerSetup::new(constant::DRAFT_11, vec![max_request_id_param]);
 
     debug!("client setup: {:?}", client_setup.supported_versions);
     debug!("server setup: {:?}", server_setup);

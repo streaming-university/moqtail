@@ -26,6 +26,7 @@ pub struct SessionContext {
   pub(crate) server_config: &'static AppConfig,
   pub(crate) is_connection_closed: Arc<RwLock<bool>>,
   pub(crate) relay_next_request_id: Arc<RwLock<u64>>,
+  pub(crate) max_request_id: Arc<RwLock<u64>>,
 }
 
 impl SessionContext {
@@ -50,6 +51,7 @@ impl SessionContext {
       server_config,
       is_connection_closed: Arc::new(RwLock::new(false)),
       relay_next_request_id,
+      max_request_id: Arc::new(RwLock::new(server_config.initial_max_request_id)),
     }
   }
 

@@ -48,6 +48,9 @@ pub struct Cli {
   /// Enable object logging
   #[arg(long, default_value_t = false)]
   pub enable_object_logging: bool,
+  /// Initial maximum request ID
+  #[arg(long, default_value_t = u64::MAX / 8)]
+  pub initial_max_request_id: u64,
 }
 #[derive(Debug, Clone)]
 pub struct AppConfig {
@@ -62,6 +65,7 @@ pub struct AppConfig {
   pub cache_expiration_type: CacheExpirationType,
   pub cache_expiration_minutes: u64,
   pub enable_object_logging: bool,
+  pub initial_max_request_id: u64,
 }
 
 impl AppConfig {
@@ -81,6 +85,7 @@ impl AppConfig {
         cache_expiration_type: cli.cache_expiration_type,
         cache_expiration_minutes: cli.cache_expiration_minutes,
         enable_object_logging: cli.enable_object_logging,
+        initial_max_request_id: cli.initial_max_request_id,
       }
     })
   }
@@ -120,5 +125,46 @@ impl AppConfig {
   #[allow(dead_code)]
   pub fn is_cache_tti(&self) -> bool {
     matches!(self.cache_expiration_type, CacheExpirationType::Tti)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_default_initial_max_request_id() {
+    // Test that the default value for initial_max_request_id is u64::MAX
+    let cli = Cli {
+      port: 4433,
+      host: "localhost".to_string(),
+      cert_file: "apps/relay/cert/cert.pem".to_string(),
+      key_file: "apps/relay/cert/key.pem".to_string(),
+      cache_size: 1000,
+      max_idle_timeout: 7,
+      keep_alive_interval: 3,
+      log_folder: "/tmp".to_string(),
+      cache_expiration_type: CacheExpirationType::Ttl,
+      cache_expiration_minutes: 30,
+      enable_object_logging: false,
+      initial_max_request_id: u64::MAX / 8,
+    };
+
+    let config = AppConfig {
+      port: cli.port,
+      host: cli.host,
+      cert_file: cli.cert_file,
+      key_file: cli.key_file,
+      max_idle_timeout: cli.max_idle_timeout,
+      keep_alive_interval: cli.keep_alive_interval,
+      cache_size: cli.cache_size,
+      log_folder: cli.log_folder,
+      cache_expiration_type: cli.cache_expiration_type,
+      cache_expiration_minutes: cli.cache_expiration_minutes,
+      enable_object_logging: cli.enable_object_logging,
+      initial_max_request_id: cli.initial_max_request_id,
+    };
+
+    assert_eq!(config.initial_max_request_id, u64::MAX / 8);
   }
 }
