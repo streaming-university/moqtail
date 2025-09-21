@@ -1,5 +1,13 @@
 # client-js
 
+## 0.4.0
+
+### Minor Changes
+
+- [#56](https://github.com/streaming-university/moqtail/pull/56) [`371c004`](https://github.com/streaming-university/moqtail/commit/371c0042fc28505acaa470678b34dfbee1cec17e) Thanks [@kerembkmz](https://github.com/kerembkmz)! - Audio data sent error fixed while mic is off
+
+- [#56](https://github.com/streaming-university/moqtail/pull/56) [`ec3ce03`](https://github.com/streaming-university/moqtail/commit/ec3ce03c8a762c844a23342dde8efc77ee956704) Thanks [@kerembkmz](https://github.com/kerembkmz)! - Audio fetch request prevented, only video plays in the rewind player by choice
+
 ## 0.3.1
 
 ### Patch Changes
