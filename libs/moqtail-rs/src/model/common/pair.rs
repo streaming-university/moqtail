@@ -47,6 +47,7 @@ impl KeyValuePair {
       Self::VarInt { type_value, value } => {
         buf.put_vi(*type_value)?;
         buf.put_vi(*value)?;
+        println!("***** type_value: {:?}, value: {:?}", type_value, value);
       }
       Self::Bytes { type_value, value } => {
         buf.put_vi(*type_value)?;

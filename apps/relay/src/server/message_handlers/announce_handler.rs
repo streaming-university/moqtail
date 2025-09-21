@@ -5,18 +5,32 @@ use moqtail::model::control::{announce_ok::AnnounceOk, control_message::ControlM
 use moqtail::model::error::TerminationCode;
 use moqtail::transport::control_stream_handler::ControlStreamHandler;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, warn};
 
-pub async fn handle_announce_messages(
+pub async fn handle(
   client: Arc<MOQTClient>,
   control_stream_handler: &mut ControlStreamHandler,
   msg: ControlMessage,
-  _context: Arc<SessionContext>,
+  context: Arc<SessionContext>,
 ) -> Result<(), TerminationCode> {
   match msg {
     ControlMessage::Announce(m) => {
       // TODO: the namespace is already announced, return error
       info!("received Announce message");
+      let request_id = m.request_id;
+
+      // check request id
+      {
+        let max_request_id = context.max_request_id.read().await;
+        if request_id >= *max_request_id {
+          warn!(
+            "request id ({}) is greater than max request id ({})",
+            request_id, max_request_id
+          );
+          return Err(TerminationCode::TooManyRequests);
+        }
+      }
+
       // this is a publisher, add it to the client manager
       // send announce_ok
       client

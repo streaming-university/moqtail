@@ -12,7 +12,7 @@ use moqtail::transport::data_stream_handler::SubscribeRequest;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
-pub async fn handle_subscribe_messages(
+pub async fn handle(
   _client: Arc<MOQTClient>,
   control_stream_handler: &mut ControlStreamHandler,
   msg: ControlMessage,
@@ -24,6 +24,19 @@ pub async fn handle_subscribe_messages(
       let sub = *m;
       let track_namespace = sub.track_namespace.clone();
       let client = context.get_client().await;
+      let request_id = sub.request_id;
+
+      // check request id
+      {
+        let max_request_id = context.max_request_id.read().await;
+        if request_id >= *max_request_id {
+          warn!(
+            "request id ({}) is greater than max request id ({})",
+            request_id, max_request_id
+          );
+          return Err(TerminationCode::TooManyRequests);
+        }
+      }
 
       // find who is the publisher
       let publisher = {

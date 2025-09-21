@@ -5,7 +5,7 @@ use bytes::{Bytes, BytesMut};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetupParameter {
   Path { moqt_path: String },
-  MaxRequestId { max_id: u64 },
+  MaxRequestId { request_id: u64 },
   MaxAuthTokenCacheSize { max_size: u64 },
 }
 impl SetupParameter {
@@ -13,8 +13,8 @@ impl SetupParameter {
     SetupParameter::Path { moqt_path }
   }
 
-  pub fn new_max_request_id(max_id: u64) -> Self {
-    SetupParameter::MaxRequestId { max_id }
+  pub fn new_max_request_id(request_id: u64) -> Self {
+    SetupParameter::MaxRequestId { request_id }
   }
 
   pub fn new_max_auth_token_cache_size(max_size: u64) -> Self {
@@ -33,8 +33,9 @@ impl SetupParameter {
         let slice = kvp.serialize()?;
         bytes.extend_from_slice(&slice);
       }
-      Self::MaxRequestId { max_id } => {
-        let kvp = KeyValuePair::try_new_varint(SetupParameterType::MaxRequestId as u64, *max_id)?;
+      Self::MaxRequestId { request_id } => {
+        let kvp =
+          KeyValuePair::try_new_varint(SetupParameterType::MaxRequestId as u64, *request_id)?;
         let slice = kvp.serialize()?;
         bytes.extend_from_slice(&slice);
       }
@@ -54,7 +55,9 @@ impl SetupParameter {
       KeyValuePair::VarInt { type_value, value } => {
         let type_value = SetupParameterType::try_from(*type_value)?;
         match type_value {
-          SetupParameterType::MaxRequestId => Ok(SetupParameter::MaxRequestId { max_id: *value }),
+          SetupParameterType::MaxRequestId => {
+            Ok(SetupParameter::MaxRequestId { request_id: *value })
+          }
           SetupParameterType::MaxAuthTokenCacheSize => {
             Ok(SetupParameter::MaxAuthTokenCacheSize { max_size: *value })
           }
@@ -78,6 +81,27 @@ impl SetupParameter {
             context: "SetupParameter::deserialize",
           }),
         }
+      }
+    }
+  }
+}
+
+impl TryInto<KeyValuePair> for SetupParameter {
+  type Error = ParseError;
+  fn try_into(self) -> Result<KeyValuePair, Self::Error> {
+    match self {
+      SetupParameter::Path { moqt_path } => {
+        let data = moqt_path.as_bytes();
+        KeyValuePair::try_new_bytes(
+          SetupParameterType::Path as u64,
+          Bytes::copy_from_slice(data),
+        )
+      }
+      SetupParameter::MaxRequestId { request_id } => {
+        KeyValuePair::try_new_varint(SetupParameterType::MaxRequestId as u64, request_id)
+      }
+      SetupParameter::MaxAuthTokenCacheSize { max_size } => {
+        KeyValuePair::try_new_varint(SetupParameterType::MaxAuthTokenCacheSize as u64, max_size)
       }
     }
   }

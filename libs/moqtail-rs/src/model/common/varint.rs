@@ -1,5 +1,6 @@
 use crate::model::error::ParseError;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+use tracing::debug;
 
 pub trait BufVarIntExt {
   fn get_vi(&mut self) -> Result<u64, ParseError>;
@@ -83,6 +84,7 @@ where
         v as u8,
       ]);
     } else {
+      debug!("varint overflow");
       return Err(ParseError::VarIntOverflow {
         context: "varint put_vi",
         value: v,

@@ -18,7 +18,7 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tracing::{error, info, warn};
 
-pub async fn handle_fetch_messages(
+pub async fn handle(
   client: Arc<MOQTClient>,
   _control_stream_handler: &mut ControlStreamHandler,
   msg: ControlMessage,
@@ -29,6 +29,18 @@ pub async fn handle_fetch_messages(
       info!("received Fetch message: {:?}", m);
       let fetch = *m;
       let request_id = fetch.clone().request_id;
+
+      // check request id
+      {
+        let max_request_id = context.max_request_id.read().await;
+        if request_id >= *max_request_id {
+          warn!(
+            "request id ({}) is greater than max request id ({})",
+            request_id, max_request_id
+          );
+          return Err(TerminationCode::TooManyRequests);
+        }
+      }
 
       let fn_ = async {
         if let Some(joining_fetch_props) = fetch.clone().joining_fetch_props {

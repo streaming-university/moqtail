@@ -50,9 +50,11 @@ impl ControlMessageTrait for ServerSetup {
   }
 
   fn parse_payload(payload: &mut Bytes) -> Result<Box<Self>, ParseError> {
+    println!("************* lahsdlahsdlh");
     let selected_version = payload.get_vi()? as u32;
 
     let number_of_parameters = payload.get_vi()?;
+    println!("number of parameters: {}", number_of_parameters);
     let mut setup_parameters = Vec::new();
 
     for _ in 0..number_of_parameters {
