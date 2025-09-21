@@ -1,6 +1,6 @@
 use bytes::{BufMut, Bytes, BytesMut};
 
-use super::constant::AnnounceErrorCode;
+use super::constant::PublishNamespaceErrorCode;
 
 use crate::model::common::reason_phrase::ReasonPhrase;
 
@@ -11,14 +11,18 @@ use crate::model::error::ParseError;
 
 #[derive(Debug, Clone, PartialEq)]
 
-pub struct AnnounceError {
+pub struct PublishNamespaceError {
   pub request_id: u64,
-  pub error_code: AnnounceErrorCode,
+  pub error_code: PublishNamespaceErrorCode,
   pub reason_phrase: ReasonPhrase,
 }
-impl AnnounceError {
-  pub fn new(request_id: u64, error_code: AnnounceErrorCode, reason_phrase: ReasonPhrase) -> Self {
-    AnnounceError {
+impl PublishNamespaceError {
+  pub fn new(
+    request_id: u64,
+    error_code: PublishNamespaceErrorCode,
+    reason_phrase: ReasonPhrase,
+  ) -> Self {
+    PublishNamespaceError {
       request_id,
       error_code,
       reason_phrase,
@@ -26,10 +30,10 @@ impl AnnounceError {
   }
 }
 
-impl ControlMessageTrait for AnnounceError {
+impl ControlMessageTrait for PublishNamespaceError {
   fn serialize(&self) -> Result<Bytes, ParseError> {
     let mut buf = BytesMut::new();
-    buf.put_vi(ControlMessageType::AnnounceError)?;
+    buf.put_vi(ControlMessageType::PublishNamespaceError)?;
 
     let mut payload = BytesMut::new();
     payload.put_vi(self.request_id)?;
@@ -40,7 +44,7 @@ impl ControlMessageTrait for AnnounceError {
       .len()
       .try_into()
       .map_err(|e: std::num::TryFromIntError| ParseError::CastingError {
-        context: "AnnounceError::serialize(payload_length)",
+        context: "PublishNamespaceError::serialize(payload_length)",
         from_type: "usize",
         to_type: "u16",
         details: e.to_string(),
@@ -55,11 +59,11 @@ impl ControlMessageTrait for AnnounceError {
     let request_id = payload.get_vi()?;
 
     let error_code_raw = payload.get_vi()?;
-    let error_code = AnnounceErrorCode::try_from(error_code_raw)?;
+    let error_code = PublishNamespaceErrorCode::try_from(error_code_raw)?;
 
     let reason_phrase = ReasonPhrase::deserialize(payload)?;
 
-    Ok(Box::new(AnnounceError {
+    Ok(Box::new(PublishNamespaceError {
       request_id,
       error_code,
       reason_phrase,
@@ -67,7 +71,7 @@ impl ControlMessageTrait for AnnounceError {
   }
 
   fn get_type(&self) -> ControlMessageType {
-    ControlMessageType::AnnounceError
+    ControlMessageType::PublishNamespaceError
   }
 }
 
@@ -79,16 +83,16 @@ mod tests {
   #[test]
   fn test_roundtrip() {
     let request_id = 12345;
-    let error_code = AnnounceErrorCode::ExpiredAuthToken;
+    let error_code = PublishNamespaceErrorCode::ExpiredAuthToken;
     let reason_phrase = ReasonPhrase::try_new("tis I sir lancelot of camelot".to_string()).unwrap();
-    let announce_error = AnnounceError::new(request_id, error_code, reason_phrase.clone());
+    let announce_error = PublishNamespaceError::new(request_id, error_code, reason_phrase.clone());
 
     let mut buf = announce_error.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();
-    assert_eq!(msg_type, ControlMessageType::AnnounceError as u64);
+    assert_eq!(msg_type, ControlMessageType::PublishNamespaceError as u64);
     let msg_length = buf.get_u16();
     assert_eq!(msg_length as usize, buf.remaining());
-    let deserialized = AnnounceError::parse_payload(&mut buf).unwrap();
+    let deserialized = PublishNamespaceError::parse_payload(&mut buf).unwrap();
     assert_eq!(*deserialized, announce_error);
     assert!(!buf.has_remaining());
   }
@@ -96,9 +100,9 @@ mod tests {
   #[test]
   fn test_excess_roundtrip() {
     let request_id = 67890;
-    let error_code = AnnounceErrorCode::InternalError;
+    let error_code = PublishNamespaceErrorCode::InternalError;
     let reason_phrase = ReasonPhrase::try_new("wake me up".to_string()).unwrap();
-    let announce_error = AnnounceError::new(request_id, error_code, reason_phrase.clone());
+    let announce_error = PublishNamespaceError::new(request_id, error_code, reason_phrase.clone());
 
     let serialized = announce_error.serialize().unwrap();
     let mut excess = BytesMut::new();
@@ -107,10 +111,10 @@ mod tests {
     let mut buf = excess.freeze();
 
     let msg_type = buf.get_vi().unwrap();
-    assert_eq!(msg_type, ControlMessageType::AnnounceError as u64);
+    assert_eq!(msg_type, ControlMessageType::PublishNamespaceError as u64);
     let msg_length = buf.get_u16();
     assert_eq!(msg_length as usize, buf.remaining() - 3);
-    let deserialized = AnnounceError::parse_payload(&mut buf).unwrap();
+    let deserialized = PublishNamespaceError::parse_payload(&mut buf).unwrap();
     assert_eq!(*deserialized, announce_error);
     assert_eq!(buf.chunk(), &[9u8, 1u8, 1u8]);
   }
@@ -118,19 +122,19 @@ mod tests {
   #[test]
   fn test_partial_message() {
     let request_id = 112233;
-    let error_code = AnnounceErrorCode::MalformedAuthToken;
+    let error_code = PublishNamespaceErrorCode::MalformedAuthToken;
     let reason_phrase = ReasonPhrase::try_new("Uvuvwevwevwe".to_string()).unwrap();
-    let announce_error = AnnounceError::new(request_id, error_code, reason_phrase.clone());
+    let announce_error = PublishNamespaceError::new(request_id, error_code, reason_phrase.clone());
 
     let mut buf = announce_error.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();
-    assert_eq!(msg_type, ControlMessageType::AnnounceError as u64);
+    assert_eq!(msg_type, ControlMessageType::PublishNamespaceError as u64);
     let msg_length = buf.get_u16();
     assert_eq!(msg_length as usize, buf.remaining());
 
     let upper = buf.remaining() / 2;
     let mut partial = buf.slice(..upper);
-    let deserialized = AnnounceError::parse_payload(&mut partial);
+    let deserialized = PublishNamespaceError::parse_payload(&mut partial);
     assert!(deserialized.is_err());
   }
 }

@@ -88,7 +88,7 @@ The `ObjectCache` interface provides two simple implementations for static conte
 3. **Choose Content Source**: Select `LiveContentSource`, `StaticContentSource`, or `HybridContentSource`
 4. **Define Track**: Create a `Track` with your content source and metadata
 5. **Add to Client**: Register the track with `addOrUpdateTrack()`
-6. **Announce**: Use `announce()` to make the track discoverable by subscribers
+6. **Publish Namespace**: Use `publishNamespace()` to make the track discoverable by subscribers
 7. **Manage Lifecycle**: The library handles incoming subscribe/fetch requests and data delivery
 
 ### Example
@@ -116,7 +116,7 @@ const fileTrack: Track = {
 client.addOrUpdateTrack(videoTrack)
 client.addOrUpdateTrack(fileTrack)
 
-await client.announce(new Announce(client.nextClientRequestId, Tuple.tryNew(['live', 'conference'])))
+await client.publishNamespace(new PublishNamespace(client.nextClientRequestId, Tuple.tryNew(['live', 'conference'])))
 ```
 
 The library automatically manages active requests, handles protocol negotiation, and ensures efficient data delivery based on subscriber demands and network conditions.
@@ -368,27 +368,27 @@ async function createSubscriber() {
 
 The MOQtail client supports additional operations for track discovery and status management:
 
-#### Announce Operations
+#### PublishNamespace Operations
 
 Publishers use announce operations to make their tracks discoverable:
 
 ```typescript
-// Announce a namespace
-const announce = new Announce(
+// PublishNamespace a namespace
+const announce = new PublishNamespace(
   client.nextClientRequestId,
   Tuple.tryNew(['live', 'conference']), // Track namespace
 )
 
-const result = await client.announce(announce)
-if (result instanceof AnnounceError) {
-  console.error(`Announce failed: ${result.reasonPhrase}`)
+const result = await client.publishNamespace(announce)
+if (result instanceof PublishNamespaceError) {
+  console.error(`Publishing the namespace failed: ${result.reasonPhrase}`)
 } else {
-  console.log('Namespace announced successfully')
+  console.log('Namespace published successfully')
 }
 
 // Stop announcing a namespace
-const unannounce = new Unannounce(Tuple.tryNew(['live', 'conference']))
-await client.unannounce(unannounce)
+const unannounce = new publishNamespaceDone(Tuple.tryNew(['live', 'conference']))
+await client.publishNamespaceDone(unannounce)
 ```
 
 #### Subscribe to Announcements

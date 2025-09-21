@@ -1,9 +1,9 @@
 import { FrozenByteBuffer } from '../common/byte_buffer'
 import { ControlMessageType, controlMessageTypeFromBigInt, FetchType, GroupOrder } from './constant'
-import { Announce } from './announce'
-import { AnnounceCancel } from './announce_cancel'
-import { AnnounceError } from './announce_error'
-import { AnnounceOk } from './announce_ok'
+import { PublishNamespace } from './publish_namespace'
+import { PublishNamespaceCancel } from './publish_namespace_cancel'
+import { PublishNamespaceError } from './publish_namespace_error'
+import { PublishNamespaceOk } from './publish_namespace_ok'
 import { ClientSetup } from './client_setup'
 import { Fetch } from './fetch'
 import { FetchCancel } from './fetch_cancel'
@@ -20,7 +20,7 @@ import { SubscribeUpdate } from './subscribe_update'
 import { RequestsBlocked } from './requests_blocked'
 import { TrackStatus } from './track_status'
 import { TrackStatusRequest } from './track_status_request'
-import { Unannounce } from './unannounce'
+import { PublishNamespaceDone } from './publish_namespace_done'
 import { Unsubscribe } from './unsubscribe'
 import { SubscribeAnnounces } from './subscribe_announces'
 import { SubscribeAnnouncesOk } from './subscribe_announces_ok'
@@ -30,10 +30,10 @@ import { NotEnoughBytesError } from '../error/error'
 import { Tuple, KeyValuePair } from '../common'
 
 export type ControlMessage =
-  | Announce
-  | AnnounceCancel
-  | AnnounceError
-  | AnnounceOk
+  | PublishNamespace
+  | PublishNamespaceCancel
+  | PublishNamespaceError
+  | PublishNamespaceOk
   | ClientSetup
   | Fetch
   | FetchCancel
@@ -50,7 +50,7 @@ export type ControlMessage =
   | RequestsBlocked
   | TrackStatus
   | TrackStatusRequest
-  | Unannounce
+  | PublishNamespaceDone
   | Unsubscribe
   | SubscribeAnnounces
   | SubscribeAnnouncesOk
@@ -67,14 +67,14 @@ export namespace ControlMessage {
     const payloadBytes = buf.getBytes(payloadLength)
     const payload = new FrozenByteBuffer(payloadBytes)
     switch (messageType) {
-      case ControlMessageType.Announce:
-        return Announce.parsePayload(payload)
-      case ControlMessageType.AnnounceCancel:
-        return AnnounceCancel.parsePayload(payload)
-      case ControlMessageType.AnnounceError:
-        return AnnounceError.parsePayload(payload)
-      case ControlMessageType.AnnounceOk:
-        return AnnounceOk.parsePayload(payload)
+      case ControlMessageType.PublishNamespace:
+        return PublishNamespace.parsePayload(payload)
+      case ControlMessageType.PublishNamespaceCancel:
+        return PublishNamespaceCancel.parsePayload(payload)
+      case ControlMessageType.PublishNamespaceError:
+        return PublishNamespaceError.parsePayload(payload)
+      case ControlMessageType.PublishNamespaceOk:
+        return PublishNamespaceOk.parsePayload(payload)
       case ControlMessageType.ClientSetup:
         return ClientSetup.parsePayload(payload)
       case ControlMessageType.Fetch:
@@ -107,8 +107,8 @@ export namespace ControlMessage {
         return TrackStatus.parsePayload(payload)
       case ControlMessageType.TrackStatusRequest:
         return TrackStatusRequest.parsePayload(payload)
-      case ControlMessageType.Unannounce:
-        return Unannounce.parsePayload(payload)
+      case ControlMessageType.PublishNamespaceDone:
+        return PublishNamespaceDone.parsePayload(payload)
       case ControlMessageType.Unsubscribe:
         return Unsubscribe.parsePayload(payload)
       case ControlMessageType.SubscribeAnnounces:
@@ -136,23 +136,23 @@ if (import.meta.vitest) {
   const { describe, test, expect } = import.meta.vitest
 
   describe('ControlMessage', () => {
-    describe('Announce', () => {
-      function buildTestAnnounce(): Announce {
-        return new Announce(12345n, Tuple.fromUtf8Path('god/dayyum'), [
+    describe('PublishNamespace', () => {
+      function buildTestPublishNamespace(): PublishNamespace {
+        return new PublishNamespace(12345n, Tuple.fromUtf8Path('god/dayyum'), [
           KeyValuePair.tryNewVarInt(0, 10),
           KeyValuePair.tryNewBytes(1, new TextEncoder().encode('wololoo')),
         ])
       }
 
-      test('should roundtrip Announce correctly', () => {
-        const announce = buildTestAnnounce()
+      test('should roundtrip PublishNamespace correctly', () => {
+        const announce = buildTestPublishNamespace()
         const serialized = ControlMessage.serialize(announce)
         const deserialized = ControlMessage.deserialize(serialized)
         expect(deserialized).toEqual(announce)
       })
 
-      test('should roundtrip Announce with excess trailing bytes', () => {
-        const announce = buildTestAnnounce()
+      test('should roundtrip PublishNamespace with excess trailing bytes', () => {
+        const announce = buildTestPublishNamespace()
         const serialized = ControlMessage.serialize(announce).toUint8Array()
         const excessBytes = new Uint8Array(serialized.length + 3)
         excessBytes.set(serialized)
@@ -165,8 +165,8 @@ if (import.meta.vitest) {
         expect(Array.from(buf.getBytes(3))).toEqual([9, 1, 1])
       })
 
-      test('should throw on partial Announce message', () => {
-        const announce = buildTestAnnounce()
+      test('should throw on partial PublishNamespace message', () => {
+        const announce = buildTestPublishNamespace()
         const serialized = ControlMessage.serialize(announce).toUint8Array()
         const partial = serialized.slice(0, Math.floor(serialized.length / 2))
         const buf = new FrozenByteBuffer(partial)

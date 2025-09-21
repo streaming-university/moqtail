@@ -176,12 +176,12 @@ mod tests {
   use crate::model::common::reason_phrase::ReasonPhrase;
   use crate::model::common::tuple::Tuple;
   use crate::model::common::varint::BufMutVarIntExt;
-  use crate::model::control::announce::Announce;
-  use crate::model::control::announce_cancel::AnnounceCancel;
-  use crate::model::control::announce_ok::AnnounceOk;
   use crate::model::control::client_setup::ClientSetup;
-  use crate::model::control::constant::{AnnounceErrorCode, DRAFT_11};
   use crate::model::control::constant::{ControlMessageType, FilterType, GroupOrder};
+  use crate::model::control::constant::{DRAFT_11, PublishNamespaceErrorCode};
+  use crate::model::control::publish_namespace::PublishNamespace;
+  use crate::model::control::publish_namespace_cancel::PublishNamespaceCancel;
+  use crate::model::control::publish_namespace_ok::PublishNamespaceOk;
   use crate::model::control::server_setup::ServerSetup;
   use crate::model::control::subscribe::Subscribe;
   use crate::model::control::subscribe_ok::SubscribeOk;
@@ -300,30 +300,30 @@ mod tests {
     }
   }
 
-  fn create_test_announce() -> Announce {
+  fn create_test_publishNamespace() -> PublishNamespace {
     let request_id = 12345;
     let track_namespace = Tuple::from_utf8_path("god/dayyum");
     let parameters = vec![
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"wololoo")).unwrap(),
     ];
-    Announce {
+    PublishNamespace {
       request_id,
       track_namespace,
       parameters,
     }
   }
 
-  fn create_test_announce_ok() -> AnnounceOk {
+  fn create_test_announce_ok() -> PublishNamespaceOk {
     let request_id = 12345;
-    AnnounceOk { request_id }
+    PublishNamespaceOk { request_id }
   }
 
-  fn create_test_announce_cancel() -> AnnounceCancel {
-    let error_code = AnnounceErrorCode::InternalError;
+  fn create_test_announce_cancel() -> PublishNamespaceCancel {
+    let error_code = PublishNamespaceErrorCode::InternalError;
     let reason_phrase = ReasonPhrase::try_new("bomboclad".to_string()).unwrap();
     let track_namespace = Tuple::from_utf8_path("another/valid/track/namespace");
-    AnnounceCancel {
+    PublishNamespaceCancel {
       error_code,
       reason_phrase,
       track_namespace,
@@ -445,7 +445,7 @@ mod tests {
     let setup = TestSetup::new().await?;
     let (mut plane, mut server_send) = setup.create_control_plane().await?;
     let mut bytes = BytesMut::new();
-    bytes.put_vi(ControlMessageType::Announce)?;
+    bytes.put_vi(ControlMessageType::PublishNamespace)?;
     let bytes = bytes.freeze();
     // Send only the message type to cause a partial message
     server_send.write_all(&bytes).await?; // ANNOUNCE_CANCEL type
@@ -463,7 +463,7 @@ mod tests {
     let (mut plane, mut server_send) = setup.create_control_plane().await?;
 
     // Create and send a valid message using helper
-    let announce = Box::new(create_test_announce());
+    let announce = Box::new(create_test_publishNamespace());
     let msg = announce.clone(); // Clone announce for assertion
 
     let bytes = msg.serialize().unwrap();
@@ -473,7 +473,7 @@ mod tests {
 
     // Assert based on the original created struct, not the enum variant
     match received {
-      ControlMessage::Announce(rec_announce) => assert_eq!(rec_announce, announce),
+      ControlMessage::PublishNamespace(rec_announce) => assert_eq!(rec_announce, announce),
       _ => panic!("Received incorrect message type"),
     }
 
@@ -487,7 +487,7 @@ mod tests {
 
     // Create a valid message using helper
     let announce_cancel = Box::new(create_test_announce_cancel());
-    let msg = ControlMessage::AnnounceCancel(announce_cancel.clone()); // Clone for assertion
+    let msg = ControlMessage::PublishNamespaceCancel(announce_cancel.clone()); // Clone for assertion
     let bytes = msg.serialize().unwrap();
 
     // Send first half
@@ -504,7 +504,7 @@ mod tests {
     // Should successfully receive the complete message
     let received = plane.next_message().await.unwrap();
     match received {
-      ControlMessage::AnnounceCancel(rec_cancel) => assert_eq!(rec_cancel, announce_cancel),
+      ControlMessage::PublishNamespaceCancel(rec_cancel) => assert_eq!(rec_cancel, announce_cancel),
       _ => panic!("Received incorrect message type"),
     }
 
@@ -519,7 +519,7 @@ mod tests {
     let server_send = Arc::new(Mutex::new(server_send));
 
     // Create messages using helpers
-    let announce1 = Box::new(create_test_announce());
+    let announce1 = Box::new(create_test_publishNamespace());
     let announce_ok1 = Box::new(create_test_announce_ok());
     let subscribe1 = Box::new(create_test_subscribe());
     let subscribe_ok1 = Box::new(create_test_subscribe_ok());
@@ -530,11 +530,11 @@ mod tests {
     let messages_to_send = vec![
       ControlMessage::ClientSetup(client_setup),
       ControlMessage::ServerSetup(server_setup),
-      ControlMessage::Announce(announce1),
-      ControlMessage::AnnounceOk(announce_ok1),
+      ControlMessage::PublishNamespace(announce1),
+      ControlMessage::PublishNamespaceOk(announce_ok1),
       ControlMessage::Subscribe(subscribe1),
       ControlMessage::SubscribeOk(subscribe_ok1),
-      ControlMessage::AnnounceCancel(announce_cancel1),
+      ControlMessage::PublishNamespaceCancel(announce_cancel1),
     ];
 
     // Clone messages for sending task

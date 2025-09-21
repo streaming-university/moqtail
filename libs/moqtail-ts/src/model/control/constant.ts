@@ -31,11 +31,11 @@ export enum ControlMessageType {
   FetchCancel = 0x17,
   TrackStatusRequest = 0x0d,
   TrackStatus = 0x0e,
-  Announce = 0x06,
-  AnnounceOk = 0x07,
-  AnnounceError = 0x08,
-  Unannounce = 0x09,
-  AnnounceCancel = 0x0c,
+  PublishNamespace = 0x06,
+  PublishNamespaceOk = 0x07,
+  PublishNamespaceError = 0x08,
+  PublishNamespaceDone = 0x09,
+  PublishNamespaceCancel = 0x0c,
   SubscribeAnnounces = 0x11,
   SubscribeAnnouncesOk = 0x12,
   SubscribeAnnouncesError = 0x13,
@@ -91,15 +91,15 @@ export function controlMessageTypeFromBigInt(v: bigint): ControlMessageType {
     case 0x0en:
       return ControlMessageType.TrackStatus
     case 0x06n:
-      return ControlMessageType.Announce
+      return ControlMessageType.PublishNamespace
     case 0x07n:
-      return ControlMessageType.AnnounceOk
+      return ControlMessageType.PublishNamespaceOk
     case 0x08n:
-      return ControlMessageType.AnnounceError
+      return ControlMessageType.PublishNamespaceError
     case 0x09n:
-      return ControlMessageType.Unannounce
+      return ControlMessageType.PublishNamespaceDone
     case 0x0cn:
-      return ControlMessageType.AnnounceCancel
+      return ControlMessageType.PublishNamespaceCancel
     case 0x11n:
       return ControlMessageType.SubscribeAnnounces
     case 0x12n:
@@ -115,9 +115,9 @@ export function controlMessageTypeFromBigInt(v: bigint): ControlMessageType {
 
 /**
  * @public
- * Error codes for Announce control messages.
+ * Error codes for PublishNamespace control messages.
  */
-export enum AnnounceErrorCode {
+export enum PublishNamespaceErrorCode {
   InternalError = 0x0,
   Unauthorized = 0x1,
   Timeout = 0x2,
@@ -129,31 +129,31 @@ export enum AnnounceErrorCode {
 }
 
 /**
- * Converts a bigint value to an AnnounceErrorCode enum.
+ * Converts a bigint value to an  enum.
  * @param v - The bigint value.
- * @returns The corresponding AnnounceErrorCode.
+ * @returns The corresponding PublishNamespaceErrorCode.
  * @throws Error if the value is not a valid announce error code.
  */
-export function announceErrorCodeFromBigInt(v: bigint): AnnounceErrorCode {
+export function publishNamespaceErrorCodeFromBigInt(v: bigint): PublishNamespaceErrorCode {
   switch (v) {
     case 0x0n:
-      return AnnounceErrorCode.InternalError
+      return PublishNamespaceErrorCode.InternalError
     case 0x1n:
-      return AnnounceErrorCode.Unauthorized
+      return PublishNamespaceErrorCode.Unauthorized
     case 0x2n:
-      return AnnounceErrorCode.Timeout
+      return PublishNamespaceErrorCode.Timeout
     case 0x3n:
-      return AnnounceErrorCode.NotSupported
+      return PublishNamespaceErrorCode.NotSupported
     case 0x4n:
-      return AnnounceErrorCode.Uninterested
+      return PublishNamespaceErrorCode.Uninterested
     case 0x10n:
-      return AnnounceErrorCode.MalformedAuthToken
+      return PublishNamespaceErrorCode.MalformedAuthToken
     case 0x11n:
-      return AnnounceErrorCode.UnknownAuthTokenAlias
+      return PublishNamespaceErrorCode.UnknownAuthTokenAlias
     case 0x12n:
-      return AnnounceErrorCode.ExpiredAuthToken
+      return PublishNamespaceErrorCode.ExpiredAuthToken
     default:
-      throw new Error(`Invalid AnnounceErrorCode: ${v}`)
+      throw new Error(`Invalid PublishNamespaceErrorCode: ${v}`)
   }
 }
 
@@ -258,9 +258,7 @@ export enum SubscribeErrorCode {
   NotSupported = 0x3,
   TrackDoesNotExist = 0x4,
   InvalidRange = 0x5,
-  RetryTrackAlias = 0x6,
   MalformedAuthToken = 0x10,
-  UnknownAuthTokenAlias = 0x11,
   ExpiredAuthToken = 0x12,
 }
 
@@ -284,12 +282,8 @@ export function subscribeErrorCodeFromBigInt(v: bigint): SubscribeErrorCode {
       return SubscribeErrorCode.TrackDoesNotExist
     case 0x5n:
       return SubscribeErrorCode.InvalidRange
-    case 0x6n:
-      return SubscribeErrorCode.RetryTrackAlias
     case 0x10n:
       return SubscribeErrorCode.MalformedAuthToken
-    case 0x11n:
-      return SubscribeErrorCode.UnknownAuthTokenAlias
     case 0x12n:
       return SubscribeErrorCode.ExpiredAuthToken
     default:
@@ -400,7 +394,6 @@ export enum SubscribeAnnouncesErrorCode {
   NamespacePrefixUnknown = 0x4,
   NamespacePrefixOverlap = 0x5,
   MalformedAuthToken = 0x10,
-  UnknownAuthTokenAlias = 0x11,
   ExpiredAuthToken = 0x12,
 }
 
@@ -426,8 +419,6 @@ export function subscribeAnnouncesErrorCodeFromBigInt(v: bigint): SubscribeAnnou
       return SubscribeAnnouncesErrorCode.NamespacePrefixOverlap
     case 0x10n:
       return SubscribeAnnouncesErrorCode.MalformedAuthToken
-    case 0x11n:
-      return SubscribeAnnouncesErrorCode.UnknownAuthTokenAlias
     case 0x12n:
       return SubscribeAnnouncesErrorCode.ExpiredAuthToken
     default:

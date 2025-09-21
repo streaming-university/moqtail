@@ -7,16 +7,16 @@ use crate::model::error::ParseError;
 use bytes::{BufMut, Bytes, BytesMut};
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Announce {
+pub struct PublishNamespace {
   pub request_id: u64,
   pub track_namespace: Tuple,
   pub parameters: Vec<KeyValuePair>,
 }
 
-impl Announce {
-  /// * Creates a new Announce message.
+impl PublishNamespace {
+  /// * Creates a new PublishNamespace message.
   pub fn new(request_id: u64, track_namespace: Tuple, parameters: &[KeyValuePair]) -> Self {
-    Announce {
+    PublishNamespace {
       request_id,
       track_namespace,
       parameters: parameters.to_vec(),
@@ -24,10 +24,10 @@ impl Announce {
   }
 }
 
-impl ControlMessageTrait for Announce {
+impl ControlMessageTrait for PublishNamespace {
   fn serialize(&self) -> Result<Bytes, ParseError> {
     let mut buf = BytesMut::new();
-    buf.put_vi(ControlMessageType::Announce)?;
+    buf.put_vi(ControlMessageType::PublishNamespace)?;
 
     let mut payload = BytesMut::new();
     payload.put_vi(self.request_id)?;
@@ -42,7 +42,7 @@ impl ControlMessageTrait for Announce {
       .len()
       .try_into()
       .map_err(|e: std::num::TryFromIntError| ParseError::CastingError {
-        context: "Announce::serialize(payload_length)",
+        context: "PublishNamespace::serialize(payload_length)",
         from_type: "usize",
         to_type: "u16",
         details: e.to_string(),
@@ -61,7 +61,7 @@ impl ControlMessageTrait for Announce {
       param_count_u64
         .try_into()
         .map_err(|e: std::num::TryFromIntError| ParseError::CastingError {
-          context: "Announce::deserialize(param_count)",
+          context: "PublishNamespace::deserialize(param_count)",
           from_type: "u64",
           to_type: "usize",
           details: e.to_string(),
@@ -73,7 +73,7 @@ impl ControlMessageTrait for Announce {
       parameters.push(param);
     }
 
-    Ok(Box::new(Announce {
+    Ok(Box::new(PublishNamespace {
       request_id,
       track_namespace,
       parameters,
@@ -81,7 +81,7 @@ impl ControlMessageTrait for Announce {
   }
 
   fn get_type(&self) -> ControlMessageType {
-    ControlMessageType::Announce
+    ControlMessageType::PublishNamespace
   }
 }
 
@@ -98,7 +98,7 @@ mod tests {
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"wololoo")).unwrap(),
     ];
-    let announce = Announce {
+    let announce = PublishNamespace {
       request_id,
       track_namespace,
       parameters,
@@ -106,10 +106,10 @@ mod tests {
 
     let mut buf = announce.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();
-    assert_eq!(msg_type, ControlMessageType::Announce as u64);
+    assert_eq!(msg_type, ControlMessageType::PublishNamespace as u64);
     let msg_length = buf.get_u16();
     assert_eq!(msg_length as usize, buf.remaining());
-    let deserialized = Announce::parse_payload(&mut buf).unwrap();
+    let deserialized = PublishNamespace::parse_payload(&mut buf).unwrap();
     assert_eq!(*deserialized, announce);
     assert!(!buf.has_remaining());
   }
@@ -122,7 +122,7 @@ mod tests {
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"wololoo")).unwrap(),
     ];
-    let announce = Announce {
+    let announce = PublishNamespace {
       request_id,
       track_namespace,
       parameters,
@@ -135,11 +135,11 @@ mod tests {
     let mut buf = excess.freeze();
 
     let msg_type = buf.get_vi().unwrap();
-    assert_eq!(msg_type, ControlMessageType::Announce as u64);
+    assert_eq!(msg_type, ControlMessageType::PublishNamespace as u64);
     let msg_length = buf.get_u16();
 
     assert_eq!(msg_length as usize, buf.remaining() - 3);
-    let deserialized = Announce::parse_payload(&mut buf).unwrap();
+    let deserialized = PublishNamespace::parse_payload(&mut buf).unwrap();
     assert_eq!(*deserialized, announce);
     assert_eq!(buf.chunk(), &[9u8, 1u8, 1u8]);
   }
@@ -152,7 +152,7 @@ mod tests {
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"wololoo")).unwrap(),
     ];
-    let announce = Announce {
+    let announce = PublishNamespace {
       request_id,
       track_namespace,
       parameters,
@@ -160,13 +160,13 @@ mod tests {
 
     let mut buf = announce.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();
-    assert_eq!(msg_type, ControlMessageType::Announce as u64);
+    assert_eq!(msg_type, ControlMessageType::PublishNamespace as u64);
     let msg_length = buf.get_u16();
     assert_eq!(msg_length as usize, buf.remaining());
 
     let upper = buf.remaining() / 2;
     let mut partial = buf.slice(..upper);
-    let deserialized = Announce::parse_payload(&mut partial);
+    let deserialized = PublishNamespace::parse_payload(&mut partial);
     assert!(deserialized.is_err());
   }
 }

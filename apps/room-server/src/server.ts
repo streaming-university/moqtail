@@ -872,7 +872,7 @@ io.on('connection', (socket) => {
     // Broadcast to all users in the room (including the sender)
     io.to(roomName).emit('screen-share-toggled', { userId, hasScreenshare })
   })
-  // This is called after the publisher gets AnnounceOk or
+  // This is called after the publisher gets PublishNamespaceOk or
   // it starts transmitting data to the relay (this is not implemented yet)
   socket.on('update-track', (request: UpdateTrackRequest) => {
     console.debug('update-track', request, socket.id)

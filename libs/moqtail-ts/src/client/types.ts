@@ -8,7 +8,7 @@ import {
   SetupParameters,
   ControlMessage,
 } from '@/model'
-import { AnnounceRequest } from './request/announce'
+import { PublishNamespaceRequest } from './request/publish_namespace'
 import { FetchRequest } from './request/fetch'
 import { SubscribeRequest } from './request/subscribe'
 import { SubscribeAnnouncesRequest } from './request/subscribe_announces'
@@ -25,7 +25,7 @@ import { MOQtailClient } from './client'
  * multiple heterogeneous collections.
  *
  * Variants:
- * - {@link AnnounceRequest} – pending ANNOUNCE / ANNOUNCE_OK / ANNOUNCE_ERROR.
+ * - {@link PublishNamespaceRequest} – pending PUBLISH_NAMESPACE / PUBLISH_NAMESPACE_OK / PUBLISH_NAMESPACE_ERROR.
  * - {@link SubscribeAnnouncesRequest} – pending SUBSCRIBE_ANNOUNCES sequence.
  * - {@link FetchRequest} – pending FETCH handshake producing a data stream.
  * - {@link SubscribeRequest} – pending SUBSCRIBE producing subgroup object streams.
@@ -45,7 +45,7 @@ import { MOQtailClient } from './client'
  * ```
  */
 export type MOQtailRequest =
-  | AnnounceRequest
+  | PublishNamespaceRequest
   | SubscribeAnnouncesRequest
   | FetchRequest
   | SubscribeRequest

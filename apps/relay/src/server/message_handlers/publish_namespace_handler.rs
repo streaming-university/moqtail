@@ -1,7 +1,9 @@
 use crate::server::client::MOQTClient;
 use crate::server::session_context::SessionContext;
 use core::result::Result;
-use moqtail::model::control::{announce_ok::AnnounceOk, control_message::ControlMessage};
+use moqtail::model::control::{
+  control_message::ControlMessage, publish_namespace_ok::PublishNamespaceOk,
+};
 use moqtail::model::error::TerminationCode;
 use moqtail::transport::control_stream_handler::ControlStreamHandler;
 use std::sync::Arc;
@@ -14,9 +16,9 @@ pub async fn handle(
   context: Arc<SessionContext>,
 ) -> Result<(), TerminationCode> {
   match msg {
-    ControlMessage::Announce(m) => {
+    ControlMessage::PublishNamespace(m) => {
       // TODO: the namespace is already announced, return error
-      info!("received Announce message");
+      info!("received PublishNamespace message");
       let request_id = m.request_id;
 
       // check request id
@@ -37,11 +39,11 @@ pub async fn handle(
         .add_announced_track_namespace(m.track_namespace.clone())
         .await;
 
-      let announce_ok = Box::new(AnnounceOk {
+      let announce_ok = Box::new(PublishNamespaceOk {
         request_id: m.request_id,
       });
       control_stream_handler
-        .send(&ControlMessage::AnnounceOk(announce_ok))
+        .send(&ControlMessage::PublishNamespaceOk(announce_ok))
         .await
     }
     _ => {

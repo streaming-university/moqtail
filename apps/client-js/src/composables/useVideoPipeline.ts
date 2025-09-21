@@ -32,7 +32,7 @@ export async function connectToRelay(url: string) {
 }
 
 export async function announceNamespaces(moqClient: MOQtailClient, namespace: Tuple) {
-  await moqClient.announce(namespace)
+  await moqClient.publishNamespace(namespace)
 }
 
 export function setupTracks(

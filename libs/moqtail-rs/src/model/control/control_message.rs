@@ -3,24 +3,25 @@ use crate::model::error::ParseError;
 use bytes::{Buf, Bytes};
 
 use super::{
-  announce::Announce, announce_cancel::AnnounceCancel, announce_error::AnnounceError,
-  announce_ok::AnnounceOk, client_setup::ClientSetup, constant::ControlMessageType, fetch::Fetch,
-  fetch_cancel::FetchCancel, fetch_error::FetchError, fetch_ok::FetchOk, goaway::GoAway,
-  max_request_id::MaxRequestId, requests_blocked::RequestsBlocked, server_setup::ServerSetup,
-  subscribe::Subscribe, subscribe_announces::SubscribeAnnounces,
+  client_setup::ClientSetup, constant::ControlMessageType, fetch::Fetch, fetch_cancel::FetchCancel,
+  fetch_error::FetchError, fetch_ok::FetchOk, goaway::GoAway, max_request_id::MaxRequestId,
+  publish_namespace::PublishNamespace, publish_namespace_cancel::PublishNamespaceCancel,
+  publish_namespace_done::PublishNamespaceDone, publish_namespace_error::PublishNamespaceError,
+  publish_namespace_ok::PublishNamespaceOk, requests_blocked::RequestsBlocked,
+  server_setup::ServerSetup, subscribe::Subscribe, subscribe_announces::SubscribeAnnounces,
   subscribe_announces_error::SubscribeAnnouncesError, subscribe_announces_ok::SubscribeAnnouncesOk,
   subscribe_done::SubscribeDone, subscribe_error::SubscribeError, subscribe_ok::SubscribeOk,
   subscribe_update::SubscribeUpdate, track_status::TrackStatus,
-  track_status_request::TrackStatusRequest, unannounce::Unannounce, unsubscribe::Unsubscribe,
+  track_status_request::TrackStatusRequest, unsubscribe::Unsubscribe,
   unsubscribe_announces::UnsubscribeAnnounces,
 };
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ControlMessage {
-  Announce(Box<Announce>),
-  AnnounceCancel(Box<AnnounceCancel>),
-  AnnounceError(Box<AnnounceError>),
-  AnnounceOk(Box<AnnounceOk>),
+  PublishNamespace(Box<PublishNamespace>),
+  PublishNamespaceCancel(Box<PublishNamespaceCancel>),
+  PublishNamespaceError(Box<PublishNamespaceError>),
+  PublishNamespaceOk(Box<PublishNamespaceOk>),
   ClientSetup(Box<ClientSetup>),
   Fetch(Box<Fetch>),
   FetchCancel(Box<FetchCancel>),
@@ -37,7 +38,7 @@ pub enum ControlMessage {
   RequestsBlocked(Box<RequestsBlocked>),
   TrackStatus(Box<TrackStatus>),
   TrackStatusRequest(Box<TrackStatusRequest>),
-  Unannounce(Box<Unannounce>),
+  PublishNamespaceDone(Box<PublishNamespaceDone>),
   Unsubscribe(Box<Unsubscribe>),
   SubscribeAnnounces(Box<SubscribeAnnounces>),
   SubscribeAnnouncesOk(Box<SubscribeAnnouncesOk>),
@@ -77,26 +78,22 @@ impl ControlMessage {
 
     let mut payload = bytes.copy_to_bytes(payload_length);
     let message = match msg_type {
-      ControlMessageType::ReservedClientSetupV10 => {
-        unimplemented!()
+      ControlMessageType::PublishNamespace => {
+        PublishNamespace::parse_payload(&mut payload).map(ControlMessage::PublishNamespace)
       }
-      ControlMessageType::ReservedServerSetupV10 => {
-        unimplemented!()
+      ControlMessageType::PublishNamespaceCancel => {
+        PublishNamespaceCancel::parse_payload(&mut payload)
+          .map(ControlMessage::PublishNamespaceCancel)
       }
-      ControlMessageType::ReservedSetupV00 => {
-        unimplemented!()
+      ControlMessageType::PublishNamespaceDone => {
+        PublishNamespaceDone::parse_payload(&mut payload).map(ControlMessage::PublishNamespaceDone)
       }
-      ControlMessageType::Announce => {
-        Announce::parse_payload(&mut payload).map(ControlMessage::Announce)
+      ControlMessageType::PublishNamespaceError => {
+        PublishNamespaceError::parse_payload(&mut payload)
+          .map(ControlMessage::PublishNamespaceError)
       }
-      ControlMessageType::AnnounceCancel => {
-        AnnounceCancel::parse_payload(&mut payload).map(ControlMessage::AnnounceCancel)
-      }
-      ControlMessageType::AnnounceError => {
-        AnnounceError::parse_payload(&mut payload).map(ControlMessage::AnnounceError)
-      }
-      ControlMessageType::AnnounceOk => {
-        AnnounceOk::parse_payload(&mut payload).map(ControlMessage::AnnounceOk)
+      ControlMessageType::PublishNamespaceOk => {
+        PublishNamespaceOk::parse_payload(&mut payload).map(ControlMessage::PublishNamespaceOk)
       }
       ControlMessageType::ClientSetup => {
         ClientSetup::parse_payload(&mut payload).map(ControlMessage::ClientSetup)
@@ -142,9 +139,6 @@ impl ControlMessage {
       ControlMessageType::TrackStatusRequest => {
         TrackStatusRequest::parse_payload(&mut payload).map(ControlMessage::TrackStatusRequest)
       }
-      ControlMessageType::Unannounce => {
-        Unannounce::parse_payload(&mut payload).map(ControlMessage::Unannounce)
-      }
       ControlMessageType::Unsubscribe => {
         Unsubscribe::parse_payload(&mut payload).map(ControlMessage::Unsubscribe)
       }
@@ -181,10 +175,11 @@ impl ControlMessage {
 
   pub fn serialize(&self) -> Result<Bytes, ParseError> {
     match self {
-      ControlMessage::Announce(msg) => msg.serialize(),
-      ControlMessage::AnnounceCancel(msg) => msg.serialize(),
-      ControlMessage::AnnounceError(msg) => msg.serialize(),
-      ControlMessage::AnnounceOk(msg) => msg.serialize(),
+      ControlMessage::PublishNamespace(msg) => msg.serialize(),
+      ControlMessage::PublishNamespaceCancel(msg) => msg.serialize(),
+      ControlMessage::PublishNamespaceDone(msg) => msg.serialize(),
+      ControlMessage::PublishNamespaceError(msg) => msg.serialize(),
+      ControlMessage::PublishNamespaceOk(msg) => msg.serialize(),
       ControlMessage::ClientSetup(msg) => msg.serialize(),
       ControlMessage::Fetch(msg) => msg.serialize(),
       ControlMessage::FetchCancel(msg) => msg.serialize(),
@@ -201,7 +196,6 @@ impl ControlMessage {
       ControlMessage::RequestsBlocked(msg) => msg.serialize(),
       ControlMessage::TrackStatus(msg) => msg.serialize(),
       ControlMessage::TrackStatusRequest(msg) => msg.serialize(),
-      ControlMessage::Unannounce(msg) => msg.serialize(),
       ControlMessage::Unsubscribe(msg) => msg.serialize(),
       ControlMessage::SubscribeAnnounces(msg) => msg.serialize(),
       ControlMessage::SubscribeAnnouncesOk(msg) => msg.serialize(),
@@ -213,10 +207,11 @@ impl ControlMessage {
   /// Returns the message type of the control message.
   pub fn get_type(&self) -> ControlMessageType {
     match self {
-      ControlMessage::Announce(_) => ControlMessageType::Announce,
-      ControlMessage::AnnounceCancel(_) => ControlMessageType::AnnounceCancel,
-      ControlMessage::AnnounceError(_) => ControlMessageType::AnnounceError,
-      ControlMessage::AnnounceOk(_) => ControlMessageType::AnnounceOk,
+      ControlMessage::PublishNamespace(_) => ControlMessageType::PublishNamespace,
+      ControlMessage::PublishNamespaceCancel(_) => ControlMessageType::PublishNamespaceCancel,
+      ControlMessage::PublishNamespaceDone(_) => ControlMessageType::PublishNamespaceDone,
+      ControlMessage::PublishNamespaceError(_) => ControlMessageType::PublishNamespaceError,
+      ControlMessage::PublishNamespaceOk(_) => ControlMessageType::PublishNamespaceOk,
       ControlMessage::ClientSetup(_) => ControlMessageType::ClientSetup,
       ControlMessage::Fetch(_) => ControlMessageType::Fetch,
       ControlMessage::FetchCancel(_) => ControlMessageType::FetchCancel,
@@ -233,7 +228,6 @@ impl ControlMessage {
       ControlMessage::RequestsBlocked(_) => ControlMessageType::RequestsBlocked,
       ControlMessage::TrackStatus(_) => ControlMessageType::TrackStatus,
       ControlMessage::TrackStatusRequest(_) => ControlMessageType::TrackStatusRequest,
-      ControlMessage::Unannounce(_) => ControlMessageType::Unannounce,
       ControlMessage::Unsubscribe(_) => ControlMessageType::Unsubscribe,
       ControlMessage::SubscribeAnnounces(_) => ControlMessageType::SubscribeAnnounces,
       ControlMessage::SubscribeAnnouncesOk(_) => ControlMessageType::SubscribeAnnouncesOk,
@@ -257,7 +251,7 @@ mod tests {
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"wololoo")).unwrap(),
     ];
-    let announce = Announce {
+    let announce = PublishNamespace {
       request_id,
       track_namespace,
       parameters,
@@ -265,10 +259,10 @@ mod tests {
 
     let mut buf = announce.serialize().unwrap();
     let deserialized = ControlMessage::deserialize(&mut buf).unwrap();
-    if let ControlMessage::Announce(deserialized_announce) = deserialized {
+    if let ControlMessage::PublishNamespace(deserialized_announce) = deserialized {
       assert_eq!(*deserialized_announce, announce);
     } else {
-      panic!("Expected ControlMessage::Announce variant");
+      panic!("Expected ControlMessage::PublishNamespace variant");
     }
     assert!(!buf.has_remaining());
   }

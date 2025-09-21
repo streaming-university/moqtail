@@ -2,11 +2,11 @@ use bytes::Bytes;
 use moqtail::model::common::location::Location;
 use moqtail::model::common::pair::KeyValuePair;
 use moqtail::model::common::tuple::{Tuple, TupleField};
-use moqtail::model::control::announce::Announce;
 use moqtail::model::control::client_setup::ClientSetup;
 use moqtail::model::control::constant::{self, GroupOrder};
 use moqtail::model::control::control_message::ControlMessage;
 use moqtail::model::control::fetch::{Fetch, StandAloneFetchProps};
+use moqtail::model::control::publish_namespace::PublishNamespace;
 use moqtail::model::control::subscribe::Subscribe;
 use moqtail::model::control::subscribe_ok::SubscribeOk;
 use moqtail::model::control::unsubscribe::Unsubscribe;
@@ -132,11 +132,11 @@ impl Client {
 
     // start by sending an announce message
     self
-      .send_announce_and_wait(request_id, my_namespace.clone())
+      .publish_namespace_and_wait(request_id, my_namespace.clone())
       .await
       .unwrap();
 
-    info!("Announce sent successfully");
+    info!("PublishNamespace sent successfully");
 
     // wait for subscribe or fetch, enter loop
     loop {
@@ -445,7 +445,7 @@ impl Client {
     self.message_notify.notify_waiters();
   }
 
-  async fn send_announce_and_wait(
+  async fn publish_namespace_and_wait(
     &self,
     request_id: u64,
     my_namespace: Tuple,
@@ -453,12 +453,12 @@ impl Client {
     let control_stream_handler = self.control_stream_handler.clone().unwrap();
     let mut control_stream_handler = control_stream_handler.lock().await;
     // send announce, request id 0
-    let announce = Announce::new(request_id, my_namespace, &[]);
+    let announce = PublishNamespace::new(request_id, my_namespace, &[]);
     control_stream_handler.send_impl(&announce).await.unwrap();
 
     let announce_ok = control_stream_handler.next_message().await;
     match announce_ok {
-      Ok(ControlMessage::AnnounceOk(m)) => {
+      Ok(ControlMessage::PublishNamespaceOk(m)) => {
         info!("Received announce ok message: {:?}", m);
         Ok(())
       }

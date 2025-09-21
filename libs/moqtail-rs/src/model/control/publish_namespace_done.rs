@@ -7,18 +7,18 @@ use crate::model::control::constant::ControlMessageType;
 use crate::model::error::ParseError;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Unannounce {
+pub struct PublishNamespaceDone {
   pub track_namespace: Tuple,
 }
-impl Unannounce {
+impl PublishNamespaceDone {
   pub fn new(track_namespace: Tuple) -> Self {
-    Unannounce { track_namespace }
+    PublishNamespaceDone { track_namespace }
   }
 }
-impl ControlMessageTrait for Unannounce {
+impl ControlMessageTrait for PublishNamespaceDone {
   fn serialize(&self) -> Result<Bytes, ParseError> {
     let mut buf = BytesMut::new();
-    buf.put_vi(ControlMessageType::Unannounce)?;
+    buf.put_vi(ControlMessageType::PublishNamespaceDone)?;
 
     let mut payload = BytesMut::new();
     payload.extend_from_slice(&self.track_namespace.serialize()?);
@@ -27,7 +27,7 @@ impl ControlMessageTrait for Unannounce {
       .len()
       .try_into()
       .map_err(|e: std::num::TryFromIntError| ParseError::CastingError {
-        context: "Unannounce::serialize(payload_length)",
+        context: "PublishNamespaceDone::serialize(payload_length)",
         from_type: "usize",
         to_type: "u16",
         details: e.to_string(),
@@ -40,11 +40,11 @@ impl ControlMessageTrait for Unannounce {
 
   fn parse_payload(payload: &mut Bytes) -> Result<Box<Self>, ParseError> {
     let track_namespace = Tuple::deserialize(payload)?;
-    Ok(Box::new(Unannounce { track_namespace }))
+    Ok(Box::new(PublishNamespaceDone { track_namespace }))
   }
 
   fn get_type(&self) -> ControlMessageType {
-    ControlMessageType::Unannounce
+    ControlMessageType::PublishNamespaceDone
   }
 }
 
@@ -58,13 +58,13 @@ mod tests {
   #[test]
   fn test_roundtrip() {
     let track_namespace = Tuple::from_utf8_path("un/announce/me");
-    let unannounce = Unannounce { track_namespace };
+    let unannounce = PublishNamespaceDone { track_namespace };
     let mut buf = unannounce.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();
-    assert_eq!(msg_type, ControlMessageType::Unannounce as u64);
+    assert_eq!(msg_type, ControlMessageType::PublishNamespaceDone as u64);
     let msg_length = buf.get_u16();
     assert_eq!(msg_length as usize, buf.remaining());
-    let deserialized = Unannounce::parse_payload(&mut buf).unwrap();
+    let deserialized = PublishNamespaceDone::parse_payload(&mut buf).unwrap();
     assert_eq!(*deserialized, unannounce);
     assert!(!buf.has_remaining());
   }
@@ -72,7 +72,7 @@ mod tests {
   #[test]
   fn test_excess_roundtrip() {
     let track_namespace = Tuple::from_utf8_path("un/announce/me");
-    let unannounce = Unannounce { track_namespace };
+    let unannounce = PublishNamespaceDone { track_namespace };
 
     let serialized = unannounce.serialize().unwrap();
     let mut excess = BytesMut::new();
@@ -80,10 +80,10 @@ mod tests {
     excess.extend_from_slice(&[9u8, 1u8, 1u8]);
     let mut buf = excess.freeze();
     let msg_type = buf.get_vi().unwrap();
-    assert_eq!(msg_type, ControlMessageType::Unannounce as u64);
+    assert_eq!(msg_type, ControlMessageType::PublishNamespaceDone as u64);
     let msg_length = buf.get_u16();
     assert_eq!(msg_length as usize, buf.remaining() - 3);
-    let deserialized = Unannounce::parse_payload(&mut buf).unwrap();
+    let deserialized = PublishNamespaceDone::parse_payload(&mut buf).unwrap();
     assert_eq!(*deserialized, unannounce);
     assert_eq!(buf.chunk(), &[9u8, 1u8, 1u8]);
   }
@@ -91,15 +91,15 @@ mod tests {
   #[test]
   fn test_partial_message() {
     let track_namespace = Tuple::from_utf8_path("un/announce/me");
-    let unannounce = Unannounce { track_namespace };
+    let unannounce = PublishNamespaceDone { track_namespace };
     let mut buf = unannounce.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();
-    assert_eq!(msg_type, ControlMessageType::Unannounce as u64);
+    assert_eq!(msg_type, ControlMessageType::PublishNamespaceDone as u64);
     let msg_length = buf.get_u16();
     assert_eq!(msg_length as usize, buf.remaining());
     let upper = buf.remaining() / 2;
     let mut partial = buf.slice(..upper);
-    let deserialized = Unannounce::parse_payload(&mut partial);
+    let deserialized = PublishNamespaceDone::parse_payload(&mut partial);
     assert!(deserialized.is_err());
   }
 }

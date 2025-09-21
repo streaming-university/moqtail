@@ -7,9 +7,9 @@ use tracing::info;
 
 use crate::server::{client::MOQTClient, session_context::SessionContext};
 use std::sync::Arc;
-mod announce_handler;
 mod fetch_handler;
 mod max_request_id_handler;
+mod publish_namespace_handler;
 mod subscribe_handler;
 use super::utils;
 
@@ -23,8 +23,14 @@ impl MessageHandler {
     context: Arc<SessionContext>,
   ) -> Result<(), TerminationCode> {
     let handling_result = match &msg {
-      ControlMessage::Announce(_) => {
-        announce_handler::handle(client.clone(), control_stream_handler, msg, context.clone()).await
+      ControlMessage::PublishNamespace(_) => {
+        publish_namespace_handler::handle(
+          client.clone(),
+          control_stream_handler,
+          msg,
+          context.clone(),
+        )
+        .await
       }
       ControlMessage::MaxRequestId(_) => {
         max_request_id_handler::handle(client.clone(), control_stream_handler, msg, context.clone())

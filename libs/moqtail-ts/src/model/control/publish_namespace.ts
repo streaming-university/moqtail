@@ -5,16 +5,16 @@ import { ControlMessageType } from './constant'
 import { NotEnoughBytesError, LengthExceedsMaxError } from '../error/error'
 
 /**
- * Represents a protocol Announce message, used to announce a track and its parameters.
+ * Represents a protocol PublishNamespace message, used to announce a track and its parameters.
  *
  * @public
  */
-export class Announce {
+export class PublishNamespace {
   /**
    * @public
-   * Constructs an Announce message.
+   * Constructs a PublishNamespace message.
    *
-   * @param requestId - The request ID for this announce message.
+   * @param requestId - The request ID for this publish namespace message.
    * @param trackNamespace - The track namespace as a Tuple.
    * @param parameters - The list of key-value parameters for the track.
    */
@@ -26,24 +26,24 @@ export class Announce {
 
   /**
    * @public
-   * Gets the message type for this Announce message.
+   * Gets the message type for this PublishNamespace message.
    *
    * @returns The ControlMessageType.Announce value.
    */
   getType(): ControlMessageType {
-    return ControlMessageType.Announce
+    return ControlMessageType.PublishNamespace
   }
 
   /**
    * @public
-   * Serializes the Announce message into a {@link FrozenByteBuffer}.
+   * Serializes the PublishNamespace message into a {@link FrozenByteBuffer}.
    *
    * @returns The serialized buffer.
    * @throws :{@link LengthExceedsMaxError} If the payload exceeds 65535 bytes.
    */
   serialize(): FrozenByteBuffer {
     const buf = new ByteBuffer()
-    buf.putVI(ControlMessageType.Announce)
+    buf.putVI(ControlMessageType.PublishNamespace)
 
     const payload = new ByteBuffer()
     payload.putVI(this.requestId)
@@ -54,7 +54,7 @@ export class Announce {
     }
     const payloadBytes = payload.toUint8Array()
     if (payloadBytes.length > 0xffff) {
-      throw new LengthExceedsMaxError('Announce::serialize(payloadBytes.length)', 0xffff, payloadBytes.length)
+      throw new LengthExceedsMaxError('PublishNamespace::serialize(payloadBytes.length)', 0xffff, payloadBytes.length)
     }
     buf.putU16(payloadBytes.length)
     buf.putBytes(payloadBytes)
@@ -63,13 +63,13 @@ export class Announce {
 
   /**
    * @public
-   * Parses an Announce message from the given buffer.
+   * Parses a PublishNamespace message from the given buffer.
    *
    * @param buf - The buffer to parse from.
-   * @returns The parsed Announce message.
+   * @returns The parsed PublishNamespace message.
    * @throws :{@link NotEnoughBytesError} If the buffer does not contain enough bytes.
    */
-  static parsePayload(buf: BaseByteBuffer): Announce {
+  static parsePayload(buf: BaseByteBuffer): PublishNamespace {
     const requestId = buf.getVI()
     const trackNamespace = buf.getTuple()
     const paramCount = buf.getNumberVI()
@@ -77,13 +77,13 @@ export class Announce {
     for (let i = 0; i < paramCount; i++) {
       parameters[i] = buf.getKeyValuePair()
     }
-    return new Announce(requestId, trackNamespace, parameters)
+    return new PublishNamespace(requestId, trackNamespace, parameters)
   }
 }
 
 if (import.meta.vitest) {
   const { describe, test, expect } = import.meta.vitest
-  describe('Announce', () => {
+  describe('PublishNamespace', () => {
     test('roundtrip', () => {
       const requestId = 12345n
       const trackNamespace = Tuple.fromUtf8Path('god/dayyum')
@@ -91,16 +91,16 @@ if (import.meta.vitest) {
         KeyValuePair.tryNewVarInt(0, 10),
         KeyValuePair.tryNewBytes(1, new TextEncoder().encode('wololoo')),
       ]
-      const announce = new Announce(requestId, trackNamespace, parameters)
+      const announce = new PublishNamespace(requestId, trackNamespace, parameters)
       const serialized = announce.serialize()
       const buf = new ByteBuffer()
       buf.putBytes(serialized.toUint8Array())
       const frozen = buf.freeze()
       const msgType = frozen.getVI()
-      expect(msgType).toBe(BigInt(ControlMessageType.Announce))
+      expect(msgType).toBe(BigInt(ControlMessageType.PublishNamespace))
       const msgLength = frozen.getU16()
       expect(msgLength).toBe(frozen.remaining)
-      const deserialized = Announce.parsePayload(frozen)
+      const deserialized = PublishNamespace.parsePayload(frozen)
       expect(deserialized.requestId).toBe(announce.requestId)
       expect(deserialized.trackNamespace.equals(announce.trackNamespace)).toBe(true)
       expect(deserialized.parameters.length).toBe(announce.parameters.length)
@@ -116,7 +116,7 @@ if (import.meta.vitest) {
         KeyValuePair.tryNewVarInt(0, 10),
         KeyValuePair.tryNewBytes(1, new TextEncoder().encode('wololoo')),
       ]
-      const announce = new Announce(requestId, trackNamespace, parameters)
+      const announce = new PublishNamespace(requestId, trackNamespace, parameters)
       const serialized = announce.serialize().toUint8Array()
       const excess = new Uint8Array(serialized.length + 3)
       excess.set(serialized)
@@ -125,10 +125,10 @@ if (import.meta.vitest) {
       buf.putBytes(excess)
       const frozen = buf.freeze()
       const msgType = frozen.getVI()
-      expect(msgType).toBe(BigInt(ControlMessageType.Announce))
+      expect(msgType).toBe(BigInt(ControlMessageType.PublishNamespace))
       const msgLength = frozen.getU16()
       expect(msgLength).toBe(frozen.remaining - 3)
-      const deserialized = Announce.parsePayload(frozen)
+      const deserialized = PublishNamespace.parsePayload(frozen)
       expect(deserialized.requestId).toBe(announce.requestId)
       expect(deserialized.trackNamespace.equals(announce.trackNamespace)).toBe(true)
       expect(deserialized.parameters.length).toBe(announce.parameters.length)
@@ -145,7 +145,7 @@ if (import.meta.vitest) {
         KeyValuePair.tryNewVarInt(0, 10),
         KeyValuePair.tryNewBytes(1, new TextEncoder().encode('wololoo')),
       ]
-      const announce = new Announce(requestId, trackNamespace, parameters)
+      const announce = new PublishNamespace(requestId, trackNamespace, parameters)
       const serialized = announce.serialize().toUint8Array()
       const upper = Math.floor(serialized.length / 2)
       const partial = serialized.slice(0, upper)
@@ -156,7 +156,7 @@ if (import.meta.vitest) {
       try {
         frozen.getVI()
         frozen.getU16()
-        Announce.parsePayload(frozen)
+        PublishNamespace.parsePayload(frozen)
       } catch (e) {
         threw = true
         expect(e).toBeInstanceOf(NotEnoughBytesError)

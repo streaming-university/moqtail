@@ -194,7 +194,7 @@ impl Session {
         Self::close_session(
           context.clone(),
           termination_code,
-          "Error handling Announce message",
+          "Error handling PublishNamespace message",
         );
         return Err(termination_code);
       }
