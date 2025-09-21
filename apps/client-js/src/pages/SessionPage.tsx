@@ -91,6 +91,7 @@ function SessionPage() {
   const [pendingRoomClosedMessage, setPendingRoomClosedMessage] = useState<string | null>(null)
   const originalTitle = useRef<string>(document.title)
   const videoEncoderObjRef = useRef<any>(null)
+  const audioEncoderObjRef = useRef<any>(null)
   const chatSenderRef = useRef<{ send: (msg: string) => void } | null>(null)
   const offsetRef = useRef<number>(0)
   const [mediaReady, setMediaReady] = useState(false)
@@ -330,109 +331,20 @@ function SessionPage() {
         console.warn('Video fetch failed or returned error:', videoResult)
       }
 
-      // Add a small delay before audio fetch to prevent timing issues
-      console.log('Waiting 1 second before fetching audio...')
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      console.log('Skipping audio fetch to avoid AV sync issues during demo')
 
-      // Fetch audio track
-      const audioTrackName = getTrackname(roomState.name, userId, 'audio')
-      console.log('Fetching audio track:', audioTrackName.toString())
+      console.log(`Fetch complete for user ${userId}: ${videoObjects.length} video objects (audio skipped for demo)`)
 
-      /*
-      const audioResult = await moqClient.fetch({
-        priority: 0,
-        groupOrder: GroupOrder.Original,
-        typeAndProps: {
-          type: FetchType.StandAlone,
-          props: {
-            fullTrackName: audioTrackName,
-            startLocation: new Location(0n, 0n),
-            endLocation: new Location(60n, 0n),
-          },
-        },
-      })
-      */
-
-      // get request id from the audio track subscription
-      const audioRequestId = userSubscriptions[userId]?.audioRequestId
-      if (audioRequestId === undefined) {
-        console.error('No audio request id found for user:', userId)
-        return
-      }
-      console.log('SessionPage: About to fetch audio with joiningRequestId:', audioRequestId)
-      console.log(
-        'SessionPage: All moqClient requestIds before audio fetch:',
-        moqClient ? Array.from(moqClient.requests.keys()) : 'no client',
-      )
-
-      // Verify the joiningRequestId exists and is valid
-      console.log('SessionPage: Audio subscription validation:', {
-        audioRequestId,
-        requestExists: moqClient?.requests.has(audioRequestId),
-        requestType: moqClient?.requests.get(audioRequestId)?.constructor.name,
-        allUserSubscriptions: userSubscriptions,
-      })
-
-      // NOTE: Using standalone fetch for audio due to server-side issue with relative fetch for audio tracks
-      // TODO: Switch back to relative fetch once server-side bug is fixed
-      const audioResult = await moqClient.fetch({
-        priority: 0,
-        groupOrder: GroupOrder.Original,
-        typeAndProps: {
-          type: FetchType.Relative,
-          props: {
-            fullTrackName: audioTrackName,
-            joiningRequestId: audioRequestId,
-            joiningStart: 5n, // last 5 groups
-          },
-        },
-      })
-
-      if (!(audioResult instanceof FetchError)) {
-        const reader = audioResult.stream.getReader()
-        console.log('Reading audio objects from fetch stream...')
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-
-            if (value && value.payload) {
-              audioObjects.push({
-                object: value,
-                timestamp: Date.now(),
-                type: 'audio',
-              })
-              console.log('Fetched audio object:', {
-                group: value.location.group.toString(),
-                object: value.location.object.toString(),
-                payloadSize: value.payload.length,
-              })
-            }
-          }
-        } finally {
-          reader.releaseLock()
-        }
-      } else {
-        console.warn('Audio fetch failed or returned error:', audioResult)
-      }
-
-      console.log(
-        `Fetch complete for user ${userId}: ${videoObjects.length} video, ${audioObjects.length} audio objects`,
-      )
-
-      // Store the fetched data
       setFetchedRewindData((prev) => ({
         ...prev,
         [userId]: { video: videoObjects, audio: audioObjects },
       }))
 
-      // Open the rewind player if we have any data
-      if (videoObjects.length > 0 || audioObjects.length > 0) {
+      if (videoObjects.length > 0) {
         setSelectedRewindUserId(userId)
         setIsRewindPlayerOpen(true)
       } else {
-        console.warn('No rewind data available for user:', userId)
+        console.warn('No video data available for user:', userId)
       }
     } catch (error) {
       console.error('Error fetching rewind data:', error)
@@ -665,6 +577,9 @@ function SessionPage() {
         if (kind === 'mic') {
           users[userId] = { ...u, hasAudio: newValue }
           toggleMediaStreamAudio(newValue)
+          if (audioEncoderObjRef.current) {
+            audioEncoderObjRef.current.setEncoding(newValue)
+          }
         } else if (kind === 'cam') {
           users[userId] = { ...u, hasVideo: newValue }
           // --- Video track switching logic ---
@@ -907,6 +822,10 @@ function SessionPage() {
           publisherPriority: 1,
           audioGroupId: 0,
           objectForwardingPreference: ObjectForwardingPreference.Subgroup,
+        }).then((audioEncoderResult) => {
+          audioEncoderObjRef.current = audioEncoderResult
+          audioEncoderObjRef.current.setEncoding(isMicOn)
+          return audioEncoderResult
         })
         chatSenderRef.current = initializeChatMessageSender({
           chatFullTrackName,
@@ -1573,6 +1492,10 @@ function SessionPage() {
       //console.log('Stopping video encoder...');
       videoEncoderObjRef.current.stop()
       videoEncoderObjRef.current = null
+    }
+
+    if (audioEncoderObjRef.current) {
+      audioEncoderObjRef.current = null
     }
 
     if (selfVideoRef.current) {
