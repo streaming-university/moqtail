@@ -1,5 +1,11 @@
 # moqtail-rs
 
+## 0.4.0
+
+### Minor Changes
+
+- [#58](https://github.com/streaming-university/moqtail/pull/58) [`7946290`](https://github.com/streaming-university/moqtail/commit/7946290b732367bac5bd2f81144c470f173c95b6) Thanks [@zafergurel](https://github.com/zafergurel)! - Handle MaxRequestId message
+
 ## 0.3.0
 
 ### Minor Changes
