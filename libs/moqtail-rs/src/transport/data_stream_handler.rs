@@ -635,7 +635,6 @@ mod tests {
   #[allow(dead_code)]
   fn make_subgroup_header_and_request() -> (SubgroupHeader, Subscribe) {
     let request_id = 128242;
-    let track_alias = 999;
     let track_namespace = Tuple::from_utf8_path("nein/nein/nein");
     let track_name = "${Name}".to_string();
     let subscriber_priority = 31;
@@ -653,7 +652,6 @@ mod tests {
     ];
     let subscribe = Subscribe {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,

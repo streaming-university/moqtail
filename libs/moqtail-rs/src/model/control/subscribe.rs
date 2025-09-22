@@ -4,13 +4,13 @@ use crate::model::common::location::Location;
 use crate::model::common::pair::KeyValuePair;
 use crate::model::common::tuple::Tuple;
 use crate::model::common::varint::{BufMutVarIntExt, BufVarIntExt};
+use crate::model::data::full_track_name::FullTrackName;
 use crate::model::error::ParseError;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Subscribe {
   pub request_id: u64,
-  pub track_alias: u64,
   pub track_namespace: Tuple,
   pub track_name: String,
   pub subscriber_priority: u8,
@@ -27,7 +27,6 @@ pub struct Subscribe {
 impl Subscribe {
   pub fn new_next_group_start(
     request_id: u64,
-    track_alias: u64,
     track_namespace: Tuple,
     track_name: String,
     subscriber_priority: u8,
@@ -37,7 +36,6 @@ impl Subscribe {
   ) -> Self {
     Self {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -52,7 +50,6 @@ impl Subscribe {
 
   pub fn new_latest_object(
     request_id: u64,
-    track_alias: u64,
     track_namespace: Tuple,
     track_name: String,
     subscriber_priority: u8,
@@ -62,7 +59,6 @@ impl Subscribe {
   ) -> Self {
     Self {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -77,7 +73,6 @@ impl Subscribe {
 
   pub fn new_absolute_start(
     request_id: u64,
-    track_alias: u64,
     track_namespace: Tuple,
     track_name: String,
     subscriber_priority: u8,
@@ -88,7 +83,6 @@ impl Subscribe {
   ) -> Self {
     Self {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -103,7 +97,6 @@ impl Subscribe {
 
   pub fn new_absolute_range(
     request_id: u64,
-    track_alias: u64,
     track_namespace: Tuple,
     track_name: String,
     subscriber_priority: u8,
@@ -119,7 +112,6 @@ impl Subscribe {
     );
     Self {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -131,6 +123,13 @@ impl Subscribe {
       subscribe_parameters,
     }
   }
+
+  pub fn get_full_track_name(&self) -> FullTrackName {
+    FullTrackName {
+      namespace: self.track_namespace.clone(),
+      name: self.track_name.clone().into(),
+    }
+  }
 }
 impl ControlMessageTrait for Subscribe {
   fn serialize(&self) -> Result<Bytes, ParseError> {
@@ -139,7 +138,6 @@ impl ControlMessageTrait for Subscribe {
 
     let mut payload = BytesMut::new();
     payload.put_vi(self.request_id)?;
-    payload.put_vi(self.track_alias)?;
 
     payload.extend_from_slice(&self.track_namespace.serialize()?);
     payload.put_vi(self.track_name.len())?;
@@ -190,7 +188,6 @@ impl ControlMessageTrait for Subscribe {
 
   fn parse_payload(payload: &mut Bytes) -> Result<Box<Self>, ParseError> {
     let request_id = payload.get_vi()?;
-    let track_alias = payload.get_vi()?;
     let track_namespace = Tuple::deserialize(payload)?;
 
     let name_len_u64 = payload.get_vi()?;
@@ -285,7 +282,6 @@ impl ControlMessageTrait for Subscribe {
 
     Ok(Box::new(Subscribe {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -309,7 +305,6 @@ mod tests {
   #[test]
   fn test_roundtrip() {
     let request_id = 128242;
-    let track_alias = 999;
     let track_namespace = Tuple::from_utf8_path("nein/nein/nein");
     let track_name = "${Name}".to_string();
     let subscriber_priority = 31;
@@ -327,7 +322,6 @@ mod tests {
     ];
     let subscribe = Subscribe {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -352,7 +346,6 @@ mod tests {
   #[test]
   fn test_excess_roundtrip() {
     let request_id = 128242;
-    let track_alias = 999;
     let track_namespace = Tuple::from_utf8_path("nein/nein/nein");
     let track_name = "${Name}".to_string();
     let subscriber_priority = 31;
@@ -370,7 +363,6 @@ mod tests {
     ];
     let subscribe = Subscribe {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -401,7 +393,6 @@ mod tests {
   #[test]
   fn test_partial_message() {
     let request_id = 128242;
-    let track_alias = 999;
     let track_namespace = Tuple::from_utf8_path("nein/nein/nein");
     let track_name = "${Name}".to_string();
     let subscriber_priority = 31;
@@ -419,7 +410,6 @@ mod tests {
     ];
     let subscribe = Subscribe {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,

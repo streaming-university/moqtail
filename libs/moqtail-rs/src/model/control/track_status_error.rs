@@ -10,7 +10,6 @@ pub struct TrackStatusError {
   pub request_id: u64,
   pub error_code: SubscribeErrorCode,
   pub reason_phrase: ReasonPhrase,
-  pub track_alias: u64,
 }
 
 impl TrackStatusError {
@@ -24,7 +23,6 @@ impl TrackStatusError {
       request_id,
       error_code,
       reason_phrase,
-      track_alias,
     }
   }
 }
@@ -38,7 +36,6 @@ impl ControlMessageTrait for TrackStatusError {
     payload.put_vi(self.request_id)?;
     payload.put_vi(self.error_code as u64)?;
     payload.extend_from_slice(&self.reason_phrase.serialize()?);
-    payload.put_vi(self.track_alias)?;
 
     let payload_len: u16 = payload
       .len()
@@ -64,13 +61,10 @@ impl ControlMessageTrait for TrackStatusError {
 
     let reason_phrase = ReasonPhrase::deserialize(payload)?;
 
-    let track_alias = payload.get_vi()?;
-
     Ok(Box::new(TrackStatusError {
       request_id,
       error_code,
       reason_phrase,
-      track_alias,
     }))
   }
 
@@ -90,12 +84,10 @@ mod tests {
     let request_id = 160669;
     let error_code = SubscribeErrorCode::Timeout;
     let reason_phrase = ReasonPhrase::try_new("They see me rollin'".to_string()).unwrap();
-    let track_alias = 666;
     let subscribe_error = TrackStatusError {
       request_id,
       error_code,
       reason_phrase,
-      track_alias,
     };
     let mut buf = subscribe_error.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();
@@ -112,12 +104,10 @@ mod tests {
     let request_id = 160669;
     let error_code = SubscribeErrorCode::Timeout;
     let reason_phrase = ReasonPhrase::try_new("They see me rollin'".to_string()).unwrap();
-    let track_alias = 666;
     let subscribe_error = TrackStatusError {
       request_id,
       error_code,
       reason_phrase,
-      track_alias,
     };
     let serialized = subscribe_error.serialize().unwrap();
     let mut excess = BytesMut::new();
@@ -140,12 +130,10 @@ mod tests {
     let request_id = 160669;
     let error_code = SubscribeErrorCode::Timeout;
     let reason_phrase = ReasonPhrase::try_new("They see me rollin'".to_string()).unwrap();
-    let track_alias = 666;
     let subscribe_error = TrackStatusError {
       request_id,
       error_code,
       reason_phrase,
-      track_alias,
     };
     let mut buf = subscribe_error.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();

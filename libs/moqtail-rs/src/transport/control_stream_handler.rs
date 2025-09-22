@@ -300,7 +300,7 @@ mod tests {
     }
   }
 
-  fn create_test_publishNamespace() -> PublishNamespace {
+  fn create_test_publish_namespace() -> PublishNamespace {
     let request_id = 12345;
     let track_namespace = Tuple::from_utf8_path("god/dayyum");
     let parameters = vec![
@@ -332,7 +332,6 @@ mod tests {
 
   fn create_test_subscribe() -> Subscribe {
     let request_id = 128242;
-    let track_alias = 999;
     let track_namespace = Tuple::from_utf8_path("nein/nein/nein");
     let track_name = "${Name}".to_string();
     let subscriber_priority = 31;
@@ -350,7 +349,6 @@ mod tests {
     ];
     Subscribe {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -365,6 +363,7 @@ mod tests {
 
   fn create_test_subscribe_ok() -> SubscribeOk {
     let request_id = 145136;
+    let track_alias = 999;
     let expires = 16;
     let group_order = GroupOrder::Ascending;
     let content_exists = true;
@@ -379,6 +378,7 @@ mod tests {
     ];
     SubscribeOk {
       request_id,
+      track_alias,
       expires,
       group_order,
       content_exists,
@@ -463,7 +463,7 @@ mod tests {
     let (mut plane, mut server_send) = setup.create_control_plane().await?;
 
     // Create and send a valid message using helper
-    let announce = Box::new(create_test_publishNamespace());
+    let announce = Box::new(create_test_publish_namespace());
     let msg = announce.clone(); // Clone announce for assertion
 
     let bytes = msg.serialize().unwrap();
@@ -519,7 +519,7 @@ mod tests {
     let server_send = Arc::new(Mutex::new(server_send));
 
     // Create messages using helpers
-    let announce1 = Box::new(create_test_publishNamespace());
+    let announce1 = Box::new(create_test_publish_namespace());
     let announce_ok1 = Box::new(create_test_announce_ok());
     let subscribe1 = Box::new(create_test_subscribe());
     let subscribe_ok1 = Box::new(create_test_subscribe_ok());

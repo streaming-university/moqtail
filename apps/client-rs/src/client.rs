@@ -152,7 +152,7 @@ impl Client {
           info!("Received subscribe message: {:?}", m);
           // Handle the subscribe message
           // send Subscribe_ok
-          self.send_subscribe_ok(m.request_id).await;
+          let track_alias = self.send_subscribe_ok(m.request_id).await;
 
           // open a unidirectional stream
           let connection = connection.clone();
@@ -168,7 +168,7 @@ impl Client {
               info!("Opening unidirectional stream for group_id: {}", group_id);
               let stream = connection.open_uni().await.unwrap().await.unwrap();
               let sub_header =
-                SubgroupHeader::new_with_explicit_id(m.track_alias, group_id, 1, 1, false);
+                SubgroupHeader::new_with_explicit_id(track_alias, group_id, 1, 1, false);
 
               let header_info = HeaderInfo::Subgroup {
                 header: sub_header,
@@ -179,27 +179,28 @@ impl Client {
 
               match stream_handler {
                 Ok(mut handler) => {
-                  for object_id in 1..10 {
-                    info!("Sending object with id: {}", object_id);
+                  for i in 1..10 {
+                    info!("Sending object: i: {}", &i);
                     let payload = format!(
                       "payload {}",
                       "x"
                         .to_string()
-                        .repeat(object_id as usize)
+                        .repeat(i as usize)
                         .chars()
                         .collect::<String>()
                     );
+                    // object id starts with zero and other object ids are deltas
                     let object = SubgroupObject {
-                      object_id,
+                      object_id: 0u64,
                       extension_headers: None,
                       object_status: None,
                       payload: Some(Bytes::from(payload)),
                     };
                     let object =
-                      Object::try_from_subgroup(object, m.track_alias, group_id, Some(group_id), 1)
+                      Object::try_from_subgroup(object, track_alias, group_id, Some(group_id), 1)
                         .unwrap();
                     match handler.send_object(&object).await {
-                      Ok(_) => info!("Object sent successfully - object_id: {}", object_id),
+                      Ok(_) => info!("Object sent successfully - i: {}", &i),
                       Err(e) => error!("Failed to send object: {:?}", e),
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -366,7 +367,6 @@ impl Client {
     let subscribe_parameters = vec![];
     let sub = Subscribe::new_latest_object(
       request_id,
-      1,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -424,14 +424,16 @@ impl Client {
     info!("Fetch message sent successfully");
   }
 
-  async fn send_subscribe_ok(&self, request_id: u64) {
+  async fn send_subscribe_ok(&self, request_id: u64) -> u64 {
     info!("Sending SubscribeOk message");
+    let track_alias = 1u64;
     let control_stream_handler = self.control_stream_handler.clone().unwrap();
     let mut control_stream_handler = control_stream_handler.lock().await;
     info!("Control stream handler locked");
-    let msg = SubscribeOk::new_ascending_with_content(request_id, 0, None, None);
+    let msg = SubscribeOk::new_ascending_with_content(request_id, track_alias, 0, None, None);
     control_stream_handler.send_impl(&msg).await.unwrap();
     info!("SubscribeOk message sent successfully");
+    track_alias
   }
 
   async fn send_unsubscribe(&self, request_id: u64) {

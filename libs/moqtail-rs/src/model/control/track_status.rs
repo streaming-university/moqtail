@@ -10,7 +10,6 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 #[derive(Debug, PartialEq, Clone)]
 pub struct TrackStatus {
   pub request_id: u64,
-  pub track_alias: u64,
   pub track_namespace: Tuple,
   pub track_name: String,
   pub subscriber_priority: u8,
@@ -27,7 +26,6 @@ pub struct TrackStatus {
 impl TrackStatus {
   pub fn new_next_group_start(
     request_id: u64,
-    track_alias: u64,
     track_namespace: Tuple,
     track_name: String,
     subscriber_priority: u8,
@@ -37,7 +35,6 @@ impl TrackStatus {
   ) -> Self {
     Self {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -52,7 +49,6 @@ impl TrackStatus {
 
   pub fn new_latest_object(
     request_id: u64,
-    track_alias: u64,
     track_namespace: Tuple,
     track_name: String,
     subscriber_priority: u8,
@@ -62,7 +58,6 @@ impl TrackStatus {
   ) -> Self {
     Self {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -77,7 +72,6 @@ impl TrackStatus {
 
   pub fn new_absolute_start(
     request_id: u64,
-    track_alias: u64,
     track_namespace: Tuple,
     track_name: String,
     subscriber_priority: u8,
@@ -88,7 +82,6 @@ impl TrackStatus {
   ) -> Self {
     Self {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -103,7 +96,6 @@ impl TrackStatus {
 
   pub fn new_absolute_range(
     request_id: u64,
-    track_alias: u64,
     track_namespace: Tuple,
     track_name: String,
     subscriber_priority: u8,
@@ -119,7 +111,6 @@ impl TrackStatus {
     );
     Self {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -139,7 +130,6 @@ impl ControlMessageTrait for TrackStatus {
 
     let mut payload = BytesMut::new();
     payload.put_vi(self.request_id)?;
-    payload.put_vi(self.track_alias)?;
 
     payload.extend_from_slice(&self.track_namespace.serialize()?);
     payload.put_vi(self.track_name.len())?;
@@ -190,7 +180,6 @@ impl ControlMessageTrait for TrackStatus {
 
   fn parse_payload(payload: &mut Bytes) -> Result<Box<Self>, ParseError> {
     let request_id = payload.get_vi()?;
-    let track_alias = payload.get_vi()?;
     let track_namespace = Tuple::deserialize(payload)?;
 
     let name_len_u64 = payload.get_vi()?;
@@ -285,7 +274,6 @@ impl ControlMessageTrait for TrackStatus {
 
     Ok(Box::new(TrackStatus {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -309,7 +297,6 @@ mod tests {
   #[test]
   fn test_roundtrip() {
     let request_id = 128242;
-    let track_alias = 999;
     let track_namespace = Tuple::from_utf8_path("nein/nein/nein");
     let track_name = "${Name}".to_string();
     let subscriber_priority = 31;
@@ -325,9 +312,8 @@ mod tests {
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"I'll sync you up")).unwrap(),
     ];
-    let trackStatus = TrackStatus {
+    let track_status = TrackStatus {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -339,20 +325,19 @@ mod tests {
       subscribe_parameters,
     };
 
-    let mut buf = trackStatus.serialize().unwrap();
+    let mut buf = track_status.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();
     assert_eq!(msg_type, ControlMessageType::TrackStatus as u64);
     let msg_length = buf.get_u16();
     assert_eq!(msg_length as usize, buf.remaining());
     let deserialized = TrackStatus::parse_payload(&mut buf).unwrap();
-    assert_eq!(*deserialized, trackStatus);
+    assert_eq!(*deserialized, track_status);
     assert!(!buf.has_remaining());
   }
 
   #[test]
   fn test_excess_roundtrip() {
     let request_id = 128242;
-    let track_alias = 999;
     let track_namespace = Tuple::from_utf8_path("nein/nein/nein");
     let track_name = "${Name}".to_string();
     let subscriber_priority = 31;
@@ -368,9 +353,8 @@ mod tests {
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"I'll sync you up")).unwrap(),
     ];
-    let trackStatus = TrackStatus {
+    let track_status = TrackStatus {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -382,7 +366,7 @@ mod tests {
       subscribe_parameters,
     };
 
-    let serialized = trackStatus.serialize().unwrap();
+    let serialized = track_status.serialize().unwrap();
     let mut excess = BytesMut::new();
     excess.extend_from_slice(&serialized);
     excess.extend_from_slice(&[9u8, 1u8, 1u8]);
@@ -394,14 +378,13 @@ mod tests {
 
     assert_eq!(msg_length as usize, buf.remaining() - 3);
     let deserialized = TrackStatus::parse_payload(&mut buf).unwrap();
-    assert_eq!(*deserialized, trackStatus);
+    assert_eq!(*deserialized, track_status);
     assert_eq!(buf.chunk(), &[9u8, 1u8, 1u8]);
   }
 
   #[test]
   fn test_partial_message() {
     let request_id = 128242;
-    let track_alias = 999;
     let track_namespace = Tuple::from_utf8_path("nein/nein/nein");
     let track_name = "${Name}".to_string();
     let subscriber_priority = 31;
@@ -417,9 +400,8 @@ mod tests {
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"I'll sync you up")).unwrap(),
     ];
-    let trackStatus = TrackStatus {
+    let track_status = TrackStatus {
       request_id,
-      track_alias,
       track_namespace,
       track_name,
       subscriber_priority,
@@ -431,7 +413,7 @@ mod tests {
       subscribe_parameters,
     };
 
-    let mut buf = trackStatus.serialize().unwrap();
+    let mut buf = track_status.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();
     assert_eq!(msg_type, ControlMessageType::TrackStatus as u64);
     let msg_length = buf.get_u16();
