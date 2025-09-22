@@ -19,7 +19,6 @@ import { SubscribeOk } from './subscribe_ok'
 import { SubscribeUpdate } from './subscribe_update'
 import { RequestsBlocked } from './requests_blocked'
 import { TrackStatus } from './track_status'
-import { TrackStatusRequest } from './track_status_request'
 import { PublishNamespaceDone } from './publish_namespace_done'
 import { Unsubscribe } from './unsubscribe'
 import { SubscribeAnnounces } from './subscribe_announces'
@@ -28,6 +27,8 @@ import { SubscribeAnnouncesError } from './subscribe_announces_error'
 import { UnsubscribeAnnounces } from './unsubscribe_announces'
 import { NotEnoughBytesError } from '../error/error'
 import { Tuple, KeyValuePair } from '../common'
+import { TrackStatusOk } from './track_status_ok'
+import { TrackStatusError } from './track_status_error'
 
 export type ControlMessage =
   | PublishNamespace
@@ -49,7 +50,8 @@ export type ControlMessage =
   | SubscribeUpdate
   | RequestsBlocked
   | TrackStatus
-  | TrackStatusRequest
+  | TrackStatusOk
+  | TrackStatusError
   | PublishNamespaceDone
   | Unsubscribe
   | SubscribeAnnounces
@@ -105,8 +107,8 @@ export namespace ControlMessage {
         return RequestsBlocked.parsePayload(payload)
       case ControlMessageType.TrackStatus:
         return TrackStatus.parsePayload(payload)
-      case ControlMessageType.TrackStatusRequest:
-        return TrackStatusRequest.parsePayload(payload)
+      case ControlMessageType.TrackStatus:
+        return TrackStatus.parsePayload(payload)
       case ControlMessageType.PublishNamespaceDone:
         return PublishNamespaceDone.parsePayload(payload)
       case ControlMessageType.Unsubscribe:

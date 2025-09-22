@@ -18,7 +18,6 @@ import {
   SubscribeAnnounces,
   SubscribeError,
   SubscribeUpdate,
-  TrackStatusRequestMessage,
   Unsubscribe,
   UnsubscribeAnnounces,
 } from '../model/control'
@@ -46,7 +45,6 @@ import { Track } from './track/track'
 import { PublishNamespaceRequest } from './request/publish_namespace'
 import { FetchRequest } from './request/fetch'
 import { SubscribeRequest } from './request/subscribe'
-import { TrackStatusRequest } from './request/track_status_request'
 import { getHandlerForControlMessage } from './handler/handler'
 import { SubscribePublication } from './publication/subscribe'
 import { FetchPublication } from './publication/fetch'
@@ -966,22 +964,6 @@ export class MOQtailClient {
     } catch (error) {
       await this.disconnect(
         new InternalError('MOQtailClient.fetchCancel', error instanceof Error ? error.message : String(error)),
-      )
-      throw error
-    }
-  }
-
-  async trackStatusRequest(fullTrackName: FullTrackName, parameters?: VersionSpecificParameters) {
-    this.#ensureActive()
-    try {
-      const params = parameters ? parameters.build() : new VersionSpecificParameters().build()
-      const msg = new TrackStatusRequestMessage(this.#nextClientRequestId, fullTrackName, params)
-      const request = new TrackStatusRequest(msg.requestId, msg)
-      this.controlStream.send(msg)
-      return await request
-    } catch (error) {
-      await this.disconnect(
-        new InternalError('MOQtailClient.trackStatusRequest', error instanceof Error ? error.message : String(error)),
       )
       throw error
     }

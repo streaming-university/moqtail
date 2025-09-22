@@ -58,23 +58,23 @@ mod tests {
   #[test]
   fn test_roundtrip() {
     let track_namespace = Tuple::from_utf8_path("un/announce/me");
-    let unannounce = PublishNamespaceDone { track_namespace };
-    let mut buf = unannounce.serialize().unwrap();
+    let publish_namespace_done = PublishNamespaceDone { track_namespace };
+    let mut buf = publish_namespace_done.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();
     assert_eq!(msg_type, ControlMessageType::PublishNamespaceDone as u64);
     let msg_length = buf.get_u16();
     assert_eq!(msg_length as usize, buf.remaining());
     let deserialized = PublishNamespaceDone::parse_payload(&mut buf).unwrap();
-    assert_eq!(*deserialized, unannounce);
+    assert_eq!(*deserialized, publish_namespace_done);
     assert!(!buf.has_remaining());
   }
 
   #[test]
   fn test_excess_roundtrip() {
     let track_namespace = Tuple::from_utf8_path("un/announce/me");
-    let unannounce = PublishNamespaceDone { track_namespace };
+    let publish_namespace_done = PublishNamespaceDone { track_namespace };
 
-    let serialized = unannounce.serialize().unwrap();
+    let serialized = publish_namespace_done.serialize().unwrap();
     let mut excess = BytesMut::new();
     excess.extend_from_slice(&serialized);
     excess.extend_from_slice(&[9u8, 1u8, 1u8]);
@@ -84,15 +84,15 @@ mod tests {
     let msg_length = buf.get_u16();
     assert_eq!(msg_length as usize, buf.remaining() - 3);
     let deserialized = PublishNamespaceDone::parse_payload(&mut buf).unwrap();
-    assert_eq!(*deserialized, unannounce);
+    assert_eq!(*deserialized, publish_namespace_done);
     assert_eq!(buf.chunk(), &[9u8, 1u8, 1u8]);
   }
 
   #[test]
   fn test_partial_message() {
     let track_namespace = Tuple::from_utf8_path("un/announce/me");
-    let unannounce = PublishNamespaceDone { track_namespace };
-    let mut buf = unannounce.serialize().unwrap();
+    let publish_namespace_done = PublishNamespaceDone { track_namespace };
+    let mut buf = publish_namespace_done.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();
     assert_eq!(msg_type, ControlMessageType::PublishNamespaceDone as u64);
     let msg_length = buf.get_u16();

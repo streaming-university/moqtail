@@ -23,6 +23,7 @@ pub mod subscribe_error;
 pub mod subscribe_ok;
 pub mod subscribe_update;
 pub mod track_status;
-pub mod track_status_request;
+pub mod track_status_error;
+pub mod track_status_ok;
 pub mod unsubscribe;
 pub mod unsubscribe_announces;

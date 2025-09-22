@@ -5,18 +5,18 @@ import { LengthExceedsMaxError } from '../error/error'
 
 /**
  * @public
- * Represents a protocol Unannounce message, used to unannounce a track namespace.
+ * Represents a protocol PublishNamespaceDone message, used to unpublish a track namespace.
  */
 export class PublishNamespaceDone {
   /**
    * Constructs a PublishNamespaceDone message.
-   * @param trackNamespace - The track namespace to unannounce.
+   * @param trackNamespace - The track namespace to unpublish.
    */
   constructor(public readonly trackNamespace: Tuple) {}
 
   /**
    * Gets the control message type for this PublishNamespaceDone message.
-   * @returns The ControlMessageType.Unannounce enum value.
+   * @returns The ControlMessageType.PublishNamespaceDone enum value.
    */
   getType(): ControlMessageType {
     return ControlMessageType.PublishNamespaceDone

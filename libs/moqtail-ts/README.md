@@ -163,9 +163,6 @@ if (result instanceof SubscribeError) {
     case SubscribeErrorCode.InvalidRange:
       // Adjust range and retry
       break
-    case SubscribeErrorCode.RetryTrackAlias:
-      // Use different track alias
-      break
     default:
       console.error(`Unknown error: ${result.reasonPhrase}`)
   }
@@ -387,8 +384,8 @@ if (result instanceof PublishNamespaceError) {
 }
 
 // Stop announcing a namespace
-const unannounce = new publishNamespaceDone(Tuple.tryNew(['live', 'conference']))
-await client.publishNamespaceDone(unannounce)
+const publish_namespace_done = new publishNamespaceDone(Tuple.tryNew(['live', 'conference']))
+await client.publishNamespaceDone(publish_namespace_done)
 ```
 
 #### Subscribe to Announcements
@@ -415,12 +412,9 @@ await client.unsubscribeAnnounces(unsubscribeAnnounces)
 Query the status of specific tracks:
 
 ```typescript
-const trackStatusRequest = new TrackStatusRequestMessage(
-  client.nextClientRequestId,
-  FullTrackName.tryNew('live/conference', 'video'),
-)
+const trackStatus = new TrackStatusMessage(client.nextClientRequestId, FullTrackName.tryNew('live/conference', 'video'))
 
-const result = await client.trackStatusRequest(trackStatusRequest)
+const result = await client.trackStatus(trackStatus)
 if (result instanceof TrackStatusError) {
   console.error(`Track status request failed: ${result.reasonPhrase}`)
 } else {

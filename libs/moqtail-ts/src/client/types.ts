@@ -12,7 +12,6 @@ import { PublishNamespaceRequest } from './request/publish_namespace'
 import { FetchRequest } from './request/fetch'
 import { SubscribeRequest } from './request/subscribe'
 import { SubscribeAnnouncesRequest } from './request/subscribe_announces'
-import { TrackStatusRequest } from './request'
 import { MOQtailClient } from './client'
 /**
  * Discriminated union of every in‑flight MOQ‑tail control request tracked by the {@link MOQtailClient}.
@@ -29,8 +28,8 @@ import { MOQtailClient } from './client'
  * - {@link SubscribeAnnouncesRequest} – pending SUBSCRIBE_ANNOUNCES sequence.
  * - {@link FetchRequest} – pending FETCH handshake producing a data stream.
  * - {@link SubscribeRequest} – pending SUBSCRIBE producing subgroup object streams.
- * - {@link TrackStatusRequest} – pending TRACK_STATUS request.
- *
+ 
+*
  * @example Looking up a request by id
  * ```ts
  * function isActive(requests: Map<bigint, MOQtailRequest>, id: bigint) {
@@ -44,12 +43,7 @@ import { MOQtailClient } from './client'
  * }
  * ```
  */
-export type MOQtailRequest =
-  | PublishNamespaceRequest
-  | SubscribeAnnouncesRequest
-  | FetchRequest
-  | SubscribeRequest
-  | TrackStatusRequest
+export type MOQtailRequest = PublishNamespaceRequest | SubscribeAnnouncesRequest | FetchRequest | SubscribeRequest
 
 /**
  * Options for {@link MOQtailClient.new} controlling connection target, protocol negotiation, timeouts,

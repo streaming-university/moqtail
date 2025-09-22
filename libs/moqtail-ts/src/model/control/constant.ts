@@ -29,8 +29,9 @@ export enum ControlMessageType {
   FetchOk = 0x18,
   FetchError = 0x19,
   FetchCancel = 0x17,
-  TrackStatusRequest = 0x0d,
-  TrackStatus = 0x0e,
+  TrackStatus = 0x0d,
+  TrackStatusOk = 0x0e,
+  TrackStatusError = 0x0f,
   PublishNamespace = 0x06,
   PublishNamespaceOk = 0x07,
   PublishNamespaceError = 0x08,
@@ -87,7 +88,7 @@ export function controlMessageTypeFromBigInt(v: bigint): ControlMessageType {
     case 0x17n:
       return ControlMessageType.FetchCancel
     case 0x0dn:
-      return ControlMessageType.TrackStatusRequest
+      return ControlMessageType.TrackStatus
     case 0x0en:
       return ControlMessageType.TrackStatus
     case 0x06n:

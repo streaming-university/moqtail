@@ -15,7 +15,8 @@ import {
   handlerSubscribeOk,
   handlerSubscribeUpdate,
   handlerTrackStatus,
-  handlerTrackStatusRequest,
+  handlerTrackStatusError,
+  handlerTrackStatusOk,
   handlerUnsubscribe,
   handlerUnsubscribeAnnounces,
   handlerFetch,
@@ -46,7 +47,8 @@ import {
   SubscribeOk,
   SubscribeUpdate,
   TrackStatus,
-  TrackStatusRequestMessage,
+  TrackStatusError,
+  TrackStatusOk,
   Unsubscribe,
   UnsubscribeAnnounces,
 } from '../../model/control'
@@ -77,7 +79,8 @@ export function getHandlerForControlMessage(msg: ControlMessage): ControlMessage
   if (msg instanceof SubscribeUpdate) return handlerSubscribeUpdate
   if (msg instanceof RequestsBlocked) return handlerRequestsBlocked
   if (msg instanceof TrackStatus) return handlerTrackStatus
-  if (msg instanceof TrackStatusRequestMessage) return handlerTrackStatusRequest
+  if (msg instanceof TrackStatusError) return handlerTrackStatusError
+  if (msg instanceof TrackStatusOk) return handlerTrackStatusOk
   if (msg instanceof Unsubscribe) return handlerUnsubscribe
   if (msg instanceof UnsubscribeAnnounces) return handlerUnsubscribeAnnounces
   return undefined
