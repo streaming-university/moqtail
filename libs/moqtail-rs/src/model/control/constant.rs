@@ -31,10 +31,10 @@ pub enum ControlMessageType {
   PublishNamespaceError = 0x08,
   PublishNamespaceDone = 0x09,
   PublishNamespaceCancel = 0x0C,
-  SubscribeAnnounces = 0x11,
-  SubscribeAnnouncesOk = 0x12,
-  SubscribeAnnouncesError = 0x13,
-  UnsubscribeAnnounces = 0x14,
+  SubscribeNamespace = 0x11,
+  SubscribeNamespaceOk = 0x12,
+  SubscribeNamespaceError = 0x13,
+  UnsubscribeNamespace = 0x14,
 }
 
 impl TryFrom<u64> for ControlMessageType {
@@ -64,10 +64,10 @@ impl TryFrom<u64> for ControlMessageType {
       0x08 => Ok(ControlMessageType::PublishNamespaceError),
       0x09 => Ok(ControlMessageType::PublishNamespaceDone),
       0x0C => Ok(ControlMessageType::PublishNamespaceCancel),
-      0x11 => Ok(ControlMessageType::SubscribeAnnounces),
-      0x12 => Ok(ControlMessageType::SubscribeAnnouncesOk),
-      0x13 => Ok(ControlMessageType::SubscribeAnnouncesError),
-      0x14 => Ok(ControlMessageType::UnsubscribeAnnounces),
+      0x11 => Ok(ControlMessageType::SubscribeNamespace),
+      0x12 => Ok(ControlMessageType::SubscribeNamespaceOk),
+      0x13 => Ok(ControlMessageType::SubscribeNamespaceError),
+      0x14 => Ok(ControlMessageType::UnsubscribeNamespace),
       _ => Err(ParseError::InvalidType {
         context: " ControlMessageType::try_from(u64)",
         details: format!("Invalid type, got {value}"),
@@ -298,7 +298,7 @@ impl From<TrackStatusCode> for u64 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u64)]
-pub enum SubscribeAnnouncesErrorCode {
+pub enum SubscribeNamespaceErrorCode {
   InternalError = 0x0,
   Unauthorized = 0x1,
   Timeout = 0x2,
@@ -309,30 +309,30 @@ pub enum SubscribeAnnouncesErrorCode {
   UnknownAuthTokenAlias = 0x11,
   ExpiredAuthToken = 0x12,
 }
-impl TryFrom<u64> for SubscribeAnnouncesErrorCode {
+impl TryFrom<u64> for SubscribeNamespaceErrorCode {
   type Error = ParseError;
 
   fn try_from(value: u64) -> Result<Self, Self::Error> {
     match value {
-      0x0 => Ok(SubscribeAnnouncesErrorCode::InternalError),
-      0x1 => Ok(SubscribeAnnouncesErrorCode::Unauthorized),
-      0x2 => Ok(SubscribeAnnouncesErrorCode::Timeout),
-      0x3 => Ok(SubscribeAnnouncesErrorCode::NotSupported),
-      0x4 => Ok(SubscribeAnnouncesErrorCode::NamespacePrefixUnknown),
-      0x5 => Ok(SubscribeAnnouncesErrorCode::NamespacePrefixOverlap),
-      0x10 => Ok(SubscribeAnnouncesErrorCode::MalformedAuthToken),
-      0x11 => Ok(SubscribeAnnouncesErrorCode::UnknownAuthTokenAlias),
-      0x12 => Ok(SubscribeAnnouncesErrorCode::ExpiredAuthToken),
+      0x0 => Ok(SubscribeNamespaceErrorCode::InternalError),
+      0x1 => Ok(SubscribeNamespaceErrorCode::Unauthorized),
+      0x2 => Ok(SubscribeNamespaceErrorCode::Timeout),
+      0x3 => Ok(SubscribeNamespaceErrorCode::NotSupported),
+      0x4 => Ok(SubscribeNamespaceErrorCode::NamespacePrefixUnknown),
+      0x5 => Ok(SubscribeNamespaceErrorCode::NamespacePrefixOverlap),
+      0x10 => Ok(SubscribeNamespaceErrorCode::MalformedAuthToken),
+      0x11 => Ok(SubscribeNamespaceErrorCode::UnknownAuthTokenAlias),
+      0x12 => Ok(SubscribeNamespaceErrorCode::ExpiredAuthToken),
       _ => Err(ParseError::InvalidType {
-        context: "SubscribeAnnouncesErrorCode::try_from(u64)",
+        context: "SubscribeNamespaceErrorCode::try_from(u64)",
         details: format!("Invalid type, got {value}"),
       }),
     }
   }
 }
 
-impl From<SubscribeAnnouncesErrorCode> for u64 {
-  fn from(value: SubscribeAnnouncesErrorCode) -> Self {
+impl From<SubscribeNamespaceErrorCode> for u64 {
+  fn from(value: SubscribeNamespaceErrorCode) -> Self {
     value as u64
   }
 }

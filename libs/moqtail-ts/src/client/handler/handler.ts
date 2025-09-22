@@ -7,9 +7,9 @@ import {
   handlerMaxRequestId,
   handlerRequestsBlocked,
   handlerSubscribe,
-  handlerSubscribeAnnounces,
-  handlerSubscribeAnnouncesError,
-  handlerSubscribeAnnouncesOk,
+  handlerSubscribeNamespace,
+  handlerSubscribeNamespaceError,
+  handlerSubscribeNamespaceOk,
   handlerSubscribeDone,
   handlerSubscribeError,
   handlerSubscribeOk,
@@ -18,7 +18,7 @@ import {
   handlerTrackStatusError,
   handlerTrackStatusOk,
   handlerUnsubscribe,
-  handlerUnsubscribeAnnounces,
+  handlerUnsubscribeNamespace,
   handlerFetch,
   handlerFetchCancel,
   handlerFetchError,
@@ -39,9 +39,9 @@ import {
   MaxRequestId,
   RequestsBlocked,
   Subscribe,
-  SubscribeAnnounces,
-  SubscribeAnnouncesError,
-  SubscribeAnnouncesOk,
+  SubscribeNamespace,
+  SubscribeNamespaceError,
+  SubscribeNamespaceOk,
   SubscribeDone,
   SubscribeError,
   SubscribeOk,
@@ -50,7 +50,7 @@ import {
   TrackStatusError,
   TrackStatusOk,
   Unsubscribe,
-  UnsubscribeAnnounces,
+  UnsubscribeNamespace,
 } from '../../model/control'
 import { MOQtailClient } from '../client'
 import { ControlMessage } from '../../model/control'
@@ -70,9 +70,9 @@ export function getHandlerForControlMessage(msg: ControlMessage): ControlMessage
   if (msg instanceof GoAway) return handlerGoAway
   if (msg instanceof MaxRequestId) return handlerMaxRequestId
   if (msg instanceof Subscribe) return handlerSubscribe
-  if (msg instanceof SubscribeAnnounces) return handlerSubscribeAnnounces
-  if (msg instanceof SubscribeAnnouncesError) return handlerSubscribeAnnouncesError
-  if (msg instanceof SubscribeAnnouncesOk) return handlerSubscribeAnnouncesOk
+  if (msg instanceof SubscribeNamespace) return handlerSubscribeNamespace
+  if (msg instanceof SubscribeNamespaceError) return handlerSubscribeNamespaceError
+  if (msg instanceof SubscribeNamespaceOk) return handlerSubscribeNamespaceOk
   if (msg instanceof SubscribeDone) return handlerSubscribeDone
   if (msg instanceof SubscribeError) return handlerSubscribeError
   if (msg instanceof SubscribeOk) return handlerSubscribeOk
@@ -82,6 +82,6 @@ export function getHandlerForControlMessage(msg: ControlMessage): ControlMessage
   if (msg instanceof TrackStatusError) return handlerTrackStatusError
   if (msg instanceof TrackStatusOk) return handlerTrackStatusOk
   if (msg instanceof Unsubscribe) return handlerUnsubscribe
-  if (msg instanceof UnsubscribeAnnounces) return handlerUnsubscribeAnnounces
+  if (msg instanceof UnsubscribeNamespace) return handlerUnsubscribeNamespace
   return undefined
 }

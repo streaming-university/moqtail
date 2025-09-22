@@ -11,7 +11,7 @@ import {
 import { PublishNamespaceRequest } from './request/publish_namespace'
 import { FetchRequest } from './request/fetch'
 import { SubscribeRequest } from './request/subscribe'
-import { SubscribeAnnouncesRequest } from './request/subscribe_announces'
+import { SubscribeNamespaceRequest } from './request/subscribe_namespace'
 import { MOQtailClient } from './client'
 /**
  * Discriminated union of every in‑flight MOQ‑tail control request tracked by the {@link MOQtailClient}.
@@ -25,7 +25,7 @@ import { MOQtailClient } from './client'
  *
  * Variants:
  * - {@link PublishNamespaceRequest} – pending PUBLISH_NAMESPACE / PUBLISH_NAMESPACE_OK / PUBLISH_NAMESPACE_ERROR.
- * - {@link SubscribeAnnouncesRequest} – pending SUBSCRIBE_ANNOUNCES sequence.
+ * - {@link SubscribeNamespaceRequest} – pending SUBSCRIBE_NAMESPACE sequence.
  * - {@link FetchRequest} – pending FETCH handshake producing a data stream.
  * - {@link SubscribeRequest} – pending SUBSCRIBE producing subgroup object streams.
  
@@ -43,7 +43,7 @@ import { MOQtailClient } from './client'
  * }
  * ```
  */
-export type MOQtailRequest = PublishNamespaceRequest | SubscribeAnnouncesRequest | FetchRequest | SubscribeRequest
+export type MOQtailRequest = PublishNamespaceRequest | SubscribeNamespaceRequest | FetchRequest | SubscribeRequest
 
 /**
  * Options for {@link MOQtailClient.new} controlling connection target, protocol negotiation, timeouts,

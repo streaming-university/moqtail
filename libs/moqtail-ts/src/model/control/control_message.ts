@@ -21,10 +21,10 @@ import { RequestsBlocked } from './requests_blocked'
 import { TrackStatus } from './track_status'
 import { PublishNamespaceDone } from './publish_namespace_done'
 import { Unsubscribe } from './unsubscribe'
-import { SubscribeAnnounces } from './subscribe_announces'
-import { SubscribeAnnouncesOk } from './subscribe_announces_ok'
-import { SubscribeAnnouncesError } from './subscribe_announces_error'
-import { UnsubscribeAnnounces } from './unsubscribe_announces'
+import { SubscribeNamespace } from './subscribe_namespace'
+import { SubscribeNamespaceOk } from './subscribe_namespace_ok'
+import { SubscribeNamespaceError } from './subscribe_namespace_error'
+import { UnsubscribeNamespace } from './unsubscribe_namespace'
 import { NotEnoughBytesError } from '../error/error'
 import { Tuple, KeyValuePair } from '../common'
 import { TrackStatusOk } from './track_status_ok'
@@ -54,10 +54,10 @@ export type ControlMessage =
   | TrackStatusError
   | PublishNamespaceDone
   | Unsubscribe
-  | SubscribeAnnounces
-  | SubscribeAnnouncesOk
-  | SubscribeAnnouncesError
-  | UnsubscribeAnnounces
+  | SubscribeNamespace
+  | SubscribeNamespaceOk
+  | SubscribeNamespaceError
+  | UnsubscribeNamespace
 
 export namespace ControlMessage {
   export function deserialize(buf: FrozenByteBuffer): ControlMessage {
@@ -113,14 +113,14 @@ export namespace ControlMessage {
         return PublishNamespaceDone.parsePayload(payload)
       case ControlMessageType.Unsubscribe:
         return Unsubscribe.parsePayload(payload)
-      case ControlMessageType.SubscribeAnnounces:
-        return SubscribeAnnounces.parsePayload(payload)
-      case ControlMessageType.SubscribeAnnouncesOk:
-        return SubscribeAnnouncesOk.parsePayload(payload)
-      case ControlMessageType.SubscribeAnnouncesError:
-        return SubscribeAnnouncesError.parsePayload(payload)
-      case ControlMessageType.UnsubscribeAnnounces:
-        return UnsubscribeAnnounces.parsePayload(payload)
+      case ControlMessageType.SubscribeNamespace:
+        return SubscribeNamespace.parsePayload(payload)
+      case ControlMessageType.SubscribeNamespaceOk:
+        return SubscribeNamespaceOk.parsePayload(payload)
+      case ControlMessageType.SubscribeNamespaceError:
+        return SubscribeNamespaceError.parsePayload(payload)
+      case ControlMessageType.UnsubscribeNamespace:
+        return UnsubscribeNamespace.parsePayload(payload)
       default:
         // This case should ideally be unreachable if controlMessageTypeFromBigInt is exhaustive
         // or throws on unknown types. If it can return a type not in the switch,

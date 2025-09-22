@@ -8,12 +8,12 @@ use super::{
   publish_namespace::PublishNamespace, publish_namespace_cancel::PublishNamespaceCancel,
   publish_namespace_done::PublishNamespaceDone, publish_namespace_error::PublishNamespaceError,
   publish_namespace_ok::PublishNamespaceOk, requests_blocked::RequestsBlocked,
-  server_setup::ServerSetup, subscribe::Subscribe, subscribe_announces::SubscribeAnnounces,
-  subscribe_announces_error::SubscribeAnnouncesError, subscribe_announces_ok::SubscribeAnnouncesOk,
-  subscribe_done::SubscribeDone, subscribe_error::SubscribeError, subscribe_ok::SubscribeOk,
-  subscribe_update::SubscribeUpdate, track_status::TrackStatus,
+  server_setup::ServerSetup, subscribe::Subscribe, subscribe_done::SubscribeDone,
+  subscribe_error::SubscribeError, subscribe_namespace::SubscribeNamespace,
+  subscribe_namespace_error::SubscribeNamespaceError, subscribe_namespace_ok::SubscribeNamespaceOk,
+  subscribe_ok::SubscribeOk, subscribe_update::SubscribeUpdate, track_status::TrackStatus,
   track_status_error::TrackStatusError, track_status_ok::TrackStatusOk, unsubscribe::Unsubscribe,
-  unsubscribe_announces::UnsubscribeAnnounces,
+  unsubscribe_namespace::UnsubscribeNamespace,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,10 +41,10 @@ pub enum ControlMessage {
   TrackStatusError(Box<TrackStatusError>),
   PublishNamespaceDone(Box<PublishNamespaceDone>),
   Unsubscribe(Box<Unsubscribe>),
-  SubscribeAnnounces(Box<SubscribeAnnounces>),
-  SubscribeAnnouncesOk(Box<SubscribeAnnouncesOk>),
-  SubscribeAnnouncesError(Box<SubscribeAnnouncesError>),
-  UnsubscribeAnnounces(Box<UnsubscribeAnnounces>),
+  SubscribeNamespace(Box<SubscribeNamespace>),
+  SubscribeNamespaceOk(Box<SubscribeNamespaceOk>),
+  SubscribeNamespaceError(Box<SubscribeNamespaceError>),
+  UnsubscribeNamespace(Box<UnsubscribeNamespace>),
 }
 
 pub trait ControlMessageTrait: std::fmt::Debug {
@@ -146,18 +146,18 @@ impl ControlMessage {
       ControlMessageType::Unsubscribe => {
         Unsubscribe::parse_payload(&mut payload).map(ControlMessage::Unsubscribe)
       }
-      ControlMessageType::SubscribeAnnounces => {
-        SubscribeAnnounces::parse_payload(&mut payload).map(ControlMessage::SubscribeAnnounces)
+      ControlMessageType::SubscribeNamespace => {
+        SubscribeNamespace::parse_payload(&mut payload).map(ControlMessage::SubscribeNamespace)
       }
-      ControlMessageType::SubscribeAnnouncesOk => {
-        SubscribeAnnouncesOk::parse_payload(&mut payload).map(ControlMessage::SubscribeAnnouncesOk)
+      ControlMessageType::SubscribeNamespaceOk => {
+        SubscribeNamespaceOk::parse_payload(&mut payload).map(ControlMessage::SubscribeNamespaceOk)
       }
-      ControlMessageType::SubscribeAnnouncesError => {
-        SubscribeAnnouncesError::parse_payload(&mut payload)
-          .map(ControlMessage::SubscribeAnnouncesError)
+      ControlMessageType::SubscribeNamespaceError => {
+        SubscribeNamespaceError::parse_payload(&mut payload)
+          .map(ControlMessage::SubscribeNamespaceError)
       }
-      ControlMessageType::UnsubscribeAnnounces => {
-        UnsubscribeAnnounces::parse_payload(&mut payload).map(ControlMessage::UnsubscribeAnnounces)
+      ControlMessageType::UnsubscribeNamespace => {
+        UnsubscribeNamespace::parse_payload(&mut payload).map(ControlMessage::UnsubscribeNamespace)
       }
     }
     .map_err(|err| ParseError::ProtocolViolation {
@@ -202,10 +202,10 @@ impl ControlMessage {
       ControlMessage::TrackStatusOk(msg) => msg.serialize(),
       ControlMessage::TrackStatusError(msg) => msg.serialize(),
       ControlMessage::Unsubscribe(msg) => msg.serialize(),
-      ControlMessage::SubscribeAnnounces(msg) => msg.serialize(),
-      ControlMessage::SubscribeAnnouncesOk(msg) => msg.serialize(),
-      ControlMessage::SubscribeAnnouncesError(msg) => msg.serialize(),
-      ControlMessage::UnsubscribeAnnounces(msg) => msg.serialize(),
+      ControlMessage::SubscribeNamespace(msg) => msg.serialize(),
+      ControlMessage::SubscribeNamespaceOk(msg) => msg.serialize(),
+      ControlMessage::SubscribeNamespaceError(msg) => msg.serialize(),
+      ControlMessage::UnsubscribeNamespace(msg) => msg.serialize(),
     }
   }
 
@@ -235,10 +235,10 @@ impl ControlMessage {
       ControlMessage::TrackStatusOk(_) => ControlMessageType::TrackStatusOk,
       ControlMessage::TrackStatusError(_) => ControlMessageType::TrackStatusError,
       ControlMessage::Unsubscribe(_) => ControlMessageType::Unsubscribe,
-      ControlMessage::SubscribeAnnounces(_) => ControlMessageType::SubscribeAnnounces,
-      ControlMessage::SubscribeAnnouncesOk(_) => ControlMessageType::SubscribeAnnouncesOk,
-      ControlMessage::SubscribeAnnouncesError(_) => ControlMessageType::SubscribeAnnouncesError,
-      ControlMessage::UnsubscribeAnnounces(_) => ControlMessageType::UnsubscribeAnnounces,
+      ControlMessage::SubscribeNamespace(_) => ControlMessageType::SubscribeNamespace,
+      ControlMessage::SubscribeNamespaceOk(_) => ControlMessageType::SubscribeNamespaceOk,
+      ControlMessage::SubscribeNamespaceError(_) => ControlMessageType::SubscribeNamespaceError,
+      ControlMessage::UnsubscribeNamespace(_) => ControlMessageType::UnsubscribeNamespace,
     }
   }
 }

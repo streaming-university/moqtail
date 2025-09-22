@@ -37,10 +37,10 @@ export enum ControlMessageType {
   PublishNamespaceError = 0x08,
   PublishNamespaceDone = 0x09,
   PublishNamespaceCancel = 0x0c,
-  SubscribeAnnounces = 0x11,
-  SubscribeAnnouncesOk = 0x12,
-  SubscribeAnnouncesError = 0x13,
-  UnsubscribeAnnounces = 0x14,
+  SubscribeNamespace = 0x11,
+  SubscribeNamespaceOk = 0x12,
+  SubscribeNamespaceError = 0x13,
+  UnsubscribeNamespace = 0x14,
 }
 
 /**
@@ -102,13 +102,13 @@ export function controlMessageTypeFromBigInt(v: bigint): ControlMessageType {
     case 0x0cn:
       return ControlMessageType.PublishNamespaceCancel
     case 0x11n:
-      return ControlMessageType.SubscribeAnnounces
+      return ControlMessageType.SubscribeNamespace
     case 0x12n:
-      return ControlMessageType.SubscribeAnnouncesOk
+      return ControlMessageType.SubscribeNamespaceOk
     case 0x13n:
-      return ControlMessageType.SubscribeAnnouncesError
+      return ControlMessageType.SubscribeNamespaceError
     case 0x14n:
-      return ControlMessageType.UnsubscribeAnnounces
+      return ControlMessageType.UnsubscribeNamespace
     default:
       throw new Error(`Invalid ControlMessageType: ${v}`)
   }
@@ -385,9 +385,9 @@ export function trackStatusCodeFromBigInt(v: bigint): TrackStatusCode {
 
 /**
  * @public
- * Error codes for SubscribeAnnounces control messages.
+ * Error codes for SubscribeNamespace control messages.
  */
-export enum SubscribeAnnouncesErrorCode {
+export enum SubscribeNamespaceErrorCode {
   InternalError = 0x0,
   Unauthorized = 0x1,
   Timeout = 0x2,
@@ -399,31 +399,31 @@ export enum SubscribeAnnouncesErrorCode {
 }
 
 /**
- * Converts a bigint value to a SubscribeAnnouncesErrorCode enum.
+ * Converts a bigint value to a SubscribeNamespaceErrorCode enum.
  * @param v - The bigint value.
- * @returns The corresponding SubscribeAnnouncesErrorCode.
+ * @returns The corresponding SubscribeNamespaceErrorCode.
  * @throws Error if the value is not a valid subscribe announces error code.
  */
-export function subscribeAnnouncesErrorCodeFromBigInt(v: bigint): SubscribeAnnouncesErrorCode {
+export function subscribeNamespaceErrorCodeFromBigInt(v: bigint): SubscribeNamespaceErrorCode {
   switch (v) {
     case 0x0n:
-      return SubscribeAnnouncesErrorCode.InternalError
+      return SubscribeNamespaceErrorCode.InternalError
     case 0x1n:
-      return SubscribeAnnouncesErrorCode.Unauthorized
+      return SubscribeNamespaceErrorCode.Unauthorized
     case 0x2n:
-      return SubscribeAnnouncesErrorCode.Timeout
+      return SubscribeNamespaceErrorCode.Timeout
     case 0x3n:
-      return SubscribeAnnouncesErrorCode.NotSupported
+      return SubscribeNamespaceErrorCode.NotSupported
     case 0x4n:
-      return SubscribeAnnouncesErrorCode.NamespacePrefixUnknown
+      return SubscribeNamespaceErrorCode.NamespacePrefixUnknown
     case 0x5n:
-      return SubscribeAnnouncesErrorCode.NamespacePrefixOverlap
+      return SubscribeNamespaceErrorCode.NamespacePrefixOverlap
     case 0x10n:
-      return SubscribeAnnouncesErrorCode.MalformedAuthToken
+      return SubscribeNamespaceErrorCode.MalformedAuthToken
     case 0x12n:
-      return SubscribeAnnouncesErrorCode.ExpiredAuthToken
+      return SubscribeNamespaceErrorCode.ExpiredAuthToken
     default:
-      throw new Error(`Invalid SubscribeAnnouncesErrorCode: ${v}`)
+      throw new Error(`Invalid SubscribeNamespaceErrorCode: ${v}`)
   }
 }
 

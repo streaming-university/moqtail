@@ -15,11 +15,11 @@ import {
   GroupOrder,
   ServerSetup,
   Subscribe,
-  SubscribeAnnounces,
+  SubscribeNamespace,
   SubscribeError,
   SubscribeUpdate,
   Unsubscribe,
-  UnsubscribeAnnounces,
+  UnsubscribeNamespace,
 } from '../model/control'
 import {
   FetchHeader,
@@ -96,12 +96,12 @@ import { MOQtailRequest, SubscribeOptions, SubscribeUpdateOptions, FetchOptions,
  */
 export class MOQtailClient {
   /**
-   * Namespace prefixes (tuples) the peer has requested announce notifications for via SUBSCRIBE_ANNOUNCES.
+   * Namespace prefixes (tuples) the peer has requested announce notifications for via SUBSCRIBE_NAMESPACE.
    * Used to decide which locally issued ANNOUNCE messages should be forwarded (future optimization: prefix trie).
    */
-  readonly peerSubscribeAnnounces = new Set<Tuple>()
+  readonly peerSubscribeNamespace = new Set<Tuple>()
   /**
-   * Namespace prefixes this client has subscribed to (issued SUBSCRIBE_ANNOUNCES). Enables automatic filtering
+   * Namespace prefixes this client has subscribed to (issued SUBSCRIBE_NAMESPACE). Enables automatic filtering
    * of incoming PUBLISH_NAMESPACE / PUBLISH_NAMESPACE_DONE. Maintained locally; no dedupe of overlapping / shadowing prefixes yet.
    */
   readonly subscribedAnnounces = new Set<Tuple>()
@@ -969,10 +969,10 @@ export class MOQtailClient {
     }
   }
 
-  // TODO: Each announced track should checked against ongoing subscribe_announces
+  // TODO: Each announced track should checked against ongoing subscribe_namespace
   // If matches it should send an announce to that peer automatically
   /**
-   * Declare (publish) a track namespace to the peer so subscribers using matching prefixes (via {@link MOQtailClient.subscribeAnnounces})
+   * Declare (publish) a track namespace to the peer so subscribers using matching prefixes (via {@link MOQtailClient.subscribeNamespace})
    * can discover and begin subscribing/fetching its tracks.
    *
    * Typical flow (publisher side):
@@ -997,7 +997,7 @@ export class MOQtailClient {
    * @remarks
    * - Duplicate announce detection is TODO (currently a second call will still send another PUBLISH_NAMESPACE; receiver behavior may vary).
    * - Successful announces are tracked in `announcedNamespaces`; manual removal occurs via {@link MOQtailClient.publishNamespaceDone}.
-   * - Discovery subscribers (those who issued {@link MOQtailClient.subscribeAnnounces}) will receive the resulting {@link PublishNamespace} message.
+   * - Discovery subscribers (those who issued {@link MOQtailClient.subscribeNamespace}) will receive the resulting {@link PublishNamespace} message.
    *
    * @example Minimal announce
    * ```ts
@@ -1052,7 +1052,7 @@ export class MOQtailClient {
    * @throws (rethrows original error) Any lower-level failure while sending results in a disconnect (unwrapped TODO: future wrap with InternalError for consistency).
    *
    * @remarks
-   * Peers that issued {@link MOQtailClient.subscribeAnnounces} for a matching prefix should receive the resulting {@link PublishNamespaceDone}.
+   * Peers that issued {@link MOQtailClient.subscribeNamespace} for a matching prefix should receive the resulting {@link PublishNamespaceDone}.
    * Consider calling this before {@link MOQtailClient.disconnect} to give consumers prompt notice.
    *
    * @example Basic usage
@@ -1122,25 +1122,25 @@ export class MOQtailClient {
   }
 
   // INFO: Subscriber calls this the get matching announce messages with this prefix
-  async subscribeAnnounces(msg: SubscribeAnnounces) {
+  async subscribeNamespace(msg: SubscribeNamespace) {
     this.#ensureActive()
     try {
       await this.controlStream.send(msg)
     } catch (error) {
       await this.disconnect(
-        new InternalError('MOQtailClient.subscribeAnnounces', error instanceof Error ? error.message : String(error)),
+        new InternalError('MOQtailClient.subscribeNamespace', error instanceof Error ? error.message : String(error)),
       )
       throw error
     }
   }
 
-  async unsubscribeAnnounces(msg: UnsubscribeAnnounces) {
+  async unsubscribeNamespace(msg: UnsubscribeNamespace) {
     this.#ensureActive()
     try {
       await this.controlStream.send(msg)
     } catch (error) {
       await this.disconnect(
-        new InternalError('MOQtailClient.unsubscribeAnnounces', error instanceof Error ? error.message : String(error)),
+        new InternalError('MOQtailClient.unsubscribeNamespace', error instanceof Error ? error.message : String(error)),
       )
       throw error
     }

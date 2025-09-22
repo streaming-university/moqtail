@@ -7,13 +7,13 @@ use crate::model::error::ParseError;
 use bytes::{BufMut, Bytes, BytesMut};
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct SubscribeAnnounces {
+pub struct SubscribeNamespace {
   pub request_id: u64,
   pub track_namespace_prefix: Tuple,
   pub parameters: Vec<KeyValuePair>,
 }
 
-impl SubscribeAnnounces {
+impl SubscribeNamespace {
   pub fn new(
     request_id: u64,
     track_namespace_prefix: Tuple,
@@ -27,10 +27,10 @@ impl SubscribeAnnounces {
   }
 }
 
-impl ControlMessageTrait for SubscribeAnnounces {
+impl ControlMessageTrait for SubscribeNamespace {
   fn serialize(&self) -> Result<Bytes, ParseError> {
     let mut buf = BytesMut::new();
-    buf.put_vi(ControlMessageType::SubscribeAnnounces)?;
+    buf.put_vi(ControlMessageType::SubscribeNamespace)?;
 
     let mut payload = BytesMut::new();
     payload.put_vi(self.request_id)?;
@@ -64,7 +64,7 @@ impl ControlMessageTrait for SubscribeAnnounces {
       param_count_u64
         .try_into()
         .map_err(|e: std::num::TryFromIntError| ParseError::CastingError {
-          context: "SubscribeAnnounces::deserialize(param_count)",
+          context: "SubscribeNamespace::deserialize(param_count)",
           from_type: "u64",
           to_type: "usize",
           details: e.to_string(),
@@ -76,7 +76,7 @@ impl ControlMessageTrait for SubscribeAnnounces {
       parameters.push(param);
     }
 
-    Ok(Box::new(SubscribeAnnounces {
+    Ok(Box::new(SubscribeNamespace {
       request_id,
       track_namespace_prefix,
       parameters,
@@ -84,7 +84,7 @@ impl ControlMessageTrait for SubscribeAnnounces {
   }
 
   fn get_type(&self) -> ControlMessageType {
-    ControlMessageType::SubscribeAnnounces
+    ControlMessageType::SubscribeNamespace
   }
 }
 
@@ -101,19 +101,19 @@ mod tests {
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"Roggan?!")).unwrap(),
     ];
-    let subscribe_announces = SubscribeAnnounces {
+    let subscribe_namespace = SubscribeNamespace {
       request_id,
       track_namespace_prefix,
       parameters,
     };
 
-    let mut buf = subscribe_announces.serialize().unwrap();
+    let mut buf = subscribe_namespace.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();
-    assert_eq!(msg_type, ControlMessageType::SubscribeAnnounces as u64);
+    assert_eq!(msg_type, ControlMessageType::SubscribeNamespace as u64);
     let msg_length = buf.get_u16();
     assert_eq!(msg_length as usize, buf.remaining());
-    let deserialized = SubscribeAnnounces::parse_payload(&mut buf).unwrap();
-    assert_eq!(*deserialized, subscribe_announces);
+    let deserialized = SubscribeNamespace::parse_payload(&mut buf).unwrap();
+    assert_eq!(*deserialized, subscribe_namespace);
     assert!(!buf.has_remaining());
   }
 
@@ -125,25 +125,25 @@ mod tests {
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"Roggan?!")).unwrap(),
     ];
-    let subscribe_announces = SubscribeAnnounces {
+    let subscribe_namespace = SubscribeNamespace {
       request_id,
       track_namespace_prefix,
       parameters,
     };
 
-    let serialized = subscribe_announces.serialize().unwrap();
+    let serialized = subscribe_namespace.serialize().unwrap();
     let mut excess = BytesMut::new();
     excess.extend_from_slice(&serialized);
     excess.extend_from_slice(&[9u8, 1u8, 1u8]);
     let mut buf = excess.freeze();
 
     let msg_type = buf.get_vi().unwrap();
-    assert_eq!(msg_type, ControlMessageType::SubscribeAnnounces as u64);
+    assert_eq!(msg_type, ControlMessageType::SubscribeNamespace as u64);
     let msg_length = buf.get_u16();
 
     assert_eq!(msg_length as usize, buf.remaining() - 3);
-    let deserialized = SubscribeAnnounces::parse_payload(&mut buf).unwrap();
-    assert_eq!(*deserialized, subscribe_announces);
+    let deserialized = SubscribeNamespace::parse_payload(&mut buf).unwrap();
+    assert_eq!(*deserialized, subscribe_namespace);
     assert_eq!(buf.chunk(), &[9u8, 1u8, 1u8]);
   }
 
@@ -155,21 +155,21 @@ mod tests {
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"Roggan?!")).unwrap(),
     ];
-    let subscribe_announces = SubscribeAnnounces {
+    let subscribe_namespace = SubscribeNamespace {
       request_id,
       track_namespace_prefix,
       parameters,
     };
 
-    let mut buf = subscribe_announces.serialize().unwrap();
+    let mut buf = subscribe_namespace.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();
-    assert_eq!(msg_type, ControlMessageType::SubscribeAnnounces as u64);
+    assert_eq!(msg_type, ControlMessageType::SubscribeNamespace as u64);
     let msg_length = buf.get_u16();
     assert_eq!(msg_length as usize, buf.remaining());
 
     let upper = buf.remaining() / 2;
     let mut partial = buf.slice(..upper);
-    let deserialized = SubscribeAnnounces::parse_payload(&mut partial);
+    let deserialized = SubscribeNamespace::parse_payload(&mut partial);
     assert!(deserialized.is_err());
   }
 }

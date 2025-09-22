@@ -394,17 +394,17 @@ Subscribers can discover available tracks by subscribing to announcements:
 
 ```typescript
 // Subscribe to announcements for a namespace prefix
-const subscribeAnnounces = new SubscribeAnnounces(
+const subscribeNamespace = new SubscribeNamespace(
   Tuple.tryNew(['live']), // Namespace prefix
 )
-await client.subscribeAnnounces(subscribeAnnounces)
+await client.subscribeNamespace(subscribeNamespace)
 
 // The client will now receive announce messages for tracks
 // matching the 'live' prefix through its announcement handling
 
 // Stop subscribing to announcements
-const unsubscribeAnnounces = new UnsubscribeAnnounces(Tuple.tryNew(['live']))
-await client.unsubscribeAnnounces(unsubscribeAnnounces)
+const unsubscribeNamespace = new UnsubscribeNamespace(Tuple.tryNew(['live']))
+await client.unsubscribeNamespace(unsubscribeNamespace)
 ```
 
 #### Track Status Requests
