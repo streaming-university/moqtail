@@ -15,10 +15,20 @@ pub struct SubgroupObject {
 }
 
 impl SubgroupObject {
-  pub fn serialize(&self, has_extensions: bool) -> Result<Bytes, ParseError> {
+  pub fn serialize(
+    &self,
+    previous_object_id: Option<u64>,
+    has_extensions: bool,
+  ) -> Result<Bytes, ParseError> {
     let mut buf = BytesMut::new();
 
-    buf.put_vi(self.object_id)?;
+    let object_id_delta = if let Some(id) = previous_object_id {
+      self.object_id - id - 1
+    } else {
+      self.object_id
+    };
+
+    buf.put_vi(object_id_delta)?;
 
     if has_extensions {
       if let Some(ext_headers) = &self.extension_headers {
@@ -52,8 +62,18 @@ impl SubgroupObject {
     Ok(buf.freeze())
   }
 
-  pub fn deserialize(bytes: &mut Bytes, has_extensions: bool) -> Result<Self, ParseError> {
-    let object_id = bytes.get_vi()?;
+  pub fn deserialize(
+    bytes: &mut Bytes,
+    previous_object_id: Option<u64>,
+    has_extensions: bool,
+  ) -> Result<Self, ParseError> {
+    let object_id_delta = bytes.get_vi()?;
+
+    let object_id = if let Some(id) = previous_object_id {
+      id + object_id_delta + 1
+    } else {
+      object_id_delta
+    };
 
     let extension_headers = if has_extensions {
       let ext_len = bytes.get_vi()?;
@@ -145,6 +165,7 @@ mod tests {
   #[test]
   fn test_roundtrip() {
     let object_id: u64 = 10;
+    let prev_object_id = 9;
     let extension_headers = Some(vec![
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"wololoo")).unwrap(),
@@ -159,8 +180,10 @@ mod tests {
       object_status,
     };
 
-    let mut buf = subgroup_object.serialize(true).unwrap();
-    let deserialized = SubgroupObject::deserialize(&mut buf, true).unwrap();
+    let mut buf = subgroup_object
+      .serialize(Some(prev_object_id), true)
+      .unwrap();
+    let deserialized = SubgroupObject::deserialize(&mut buf, Some(prev_object_id), true).unwrap();
     assert_eq!(deserialized, subgroup_object);
     assert!(!buf.has_remaining());
   }
@@ -168,6 +191,7 @@ mod tests {
   #[test]
   fn test_excess_roundtrip() {
     let object_id: u64 = 10;
+    let prev_object_id = 9;
     let extension_headers = Some(vec![
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"wololoo")).unwrap(),
@@ -182,13 +206,15 @@ mod tests {
       object_status,
     };
 
-    let serialized = subgroup_object.serialize(true).unwrap();
+    let serialized = subgroup_object
+      .serialize(Some(prev_object_id), true)
+      .unwrap();
     let mut excess = BytesMut::new();
     excess.extend_from_slice(&serialized);
     excess.extend_from_slice(&[9u8, 1u8, 1u8]);
     let mut buf = excess.freeze();
 
-    let deserialized = SubgroupObject::deserialize(&mut buf, true).unwrap();
+    let deserialized = SubgroupObject::deserialize(&mut buf, Some(prev_object_id), true).unwrap();
     assert_eq!(deserialized, subgroup_object);
     assert_eq!(buf.chunk(), &[9u8, 1u8, 1u8]);
   }
@@ -196,6 +222,7 @@ mod tests {
   #[test]
   fn test_partial_message() {
     let object_id: u64 = 10;
+    let prev_object_id = 9;
     let extension_headers = Some(vec![
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"wololoo")).unwrap(),
@@ -210,10 +237,12 @@ mod tests {
       object_status,
     };
 
-    let buf = subgroup_object.serialize(true).unwrap();
+    let buf = subgroup_object
+      .serialize(Some(prev_object_id), true)
+      .unwrap();
     let upper = buf.remaining() / 2;
     let mut partial = buf.slice(..upper);
-    let deserialized = SubgroupObject::deserialize(&mut partial, true);
+    let deserialized = SubgroupObject::deserialize(&mut partial, Some(prev_object_id), true);
     assert!(deserialized.is_err());
   }
 }

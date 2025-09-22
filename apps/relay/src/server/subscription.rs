@@ -14,6 +14,7 @@ use moqtail::model::control::subscribe::Subscribe;
 use moqtail::model::control::subscribe_done::SubscribeDone;
 use moqtail::model::data::object::Object;
 use moqtail::transport::data_stream_handler::HeaderInfo;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
@@ -28,7 +29,7 @@ pub struct Subscription {
   pub subscribe_message: Subscribe,
   subscriber: Arc<MOQTClient>,
   event_rx: Arc<Mutex<Option<UnboundedReceiver<TrackEvent>>>>,
-  send_stream_ids: Arc<RwLock<Vec<StreamId>>>,
+  send_stream_last_object_ids: Arc<RwLock<HashMap<StreamId, Option<u64>>>>,
   finished: Arc<RwLock<bool>>, // Indicates if the subscription is finished
   #[allow(dead_code)]
   cache: TrackCache,
@@ -53,7 +54,7 @@ impl Subscription {
       subscribe_message,
       subscriber,
       event_rx,
-      send_stream_ids: Arc::new(RwLock::new(Vec::new())),
+      send_stream_last_object_ids: Arc::new(RwLock::new(HashMap::new())),
       finished: Arc::new(RwLock::new(false)),
       cache,
       client_connection_id,
@@ -125,9 +126,12 @@ impl Subscription {
 
     // Close all send streams asynchronously to avoid blocking subscription cleanup
     let stream_ids = {
-      let mut send_stream_ids = self.send_stream_ids.write().await;
-      let ids = send_stream_ids.clone();
-      send_stream_ids.clear();
+      let mut send_stream_last_object_ids = self.send_stream_last_object_ids.write().await;
+      let ids = send_stream_last_object_ids
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+      send_stream_last_object_ids.clear();
       ids
     };
 
@@ -202,7 +206,11 @@ impl Subscription {
                     object.location
                   );
                   if let Ok((stream_id, send_stream)) = self.handle_header(header.clone()).await {
-                    self.send_stream_ids.write().await.push(stream_id.clone());
+                    {
+                      let mut send_stream_last_object_ids =
+                        self.send_stream_last_object_ids.write().await;
+                      send_stream_last_object_ids.insert(stream_id.clone(), None);
+                    }
                     info!(
                       "Stream created - subscriber: {} stream_id: {} track: {} now: {} received time: {} object: {:?}",
                       self.client_connection_id,
@@ -234,11 +242,33 @@ impl Subscription {
                   self.client_connection_id, stream_id, self.track_alias
                 );
 
+                // Get the previous object ID for this stream
+                let previous_object_id = {
+                  let send_stream_last_object_ids = self.send_stream_last_object_ids.read().await;
+                  send_stream_last_object_ids
+                    .get(&stream_id)
+                    .cloned()
+                    .flatten()
+                };
+
                 // Log object properties with send status if enabled
                 let write_result = self
-                  .handle_object(object.clone(), &stream_id, send_stream.clone())
+                  .handle_object(
+                    object.clone(),
+                    previous_object_id,
+                    &stream_id,
+                    send_stream.clone(),
+                  )
                   .await;
                 let send_status = write_result.is_ok();
+
+                // Update the last object ID for this stream if successful
+                if send_status {
+                  let mut send_stream_last_object_ids =
+                    self.send_stream_last_object_ids.write().await;
+                  send_stream_last_object_ids
+                    .insert(stream_id.clone(), Some(object.location.object));
+                }
 
                 if self.config.enable_object_logging {
                   self
@@ -252,8 +282,6 @@ impl Subscription {
                     )
                     .await;
                 }
-
-                let _ = write_result;
               } else {
                 error!(
                   "Received Object event without a valid send stream for subscriber: {} stream_id: {} track: {} object: {:?} now: {} received time: {}",
@@ -362,6 +390,7 @@ impl Subscription {
   async fn handle_object(
     &self,
     object: Object,
+    previous_object_id: Option<u64>,
     stream_id: &StreamId,
     send_stream: Arc<Mutex<SendStream>>,
   ) -> Result<()> {
@@ -377,7 +406,7 @@ impl Subscription {
     // TODO: revisit this logic to handle also fetch requests
     if let Ok(sub_object) = object.try_into_subgroup() {
       let has_extensions = sub_object.extension_headers.is_some();
-      let object_bytes = match sub_object.serialize(has_extensions) {
+      let object_bytes = match sub_object.serialize(previous_object_id, has_extensions) {
         Ok(data) => data,
         Err(e) => {
           error!(
@@ -422,10 +451,10 @@ impl Subscription {
     // Handle the stream closed event
     debug!("Stream closed: {}", stream_id.get_stream_id());
 
-    // remove the stream id from stream ids array immediately
-    let mut stream_ids = self.send_stream_ids.write().await;
-    stream_ids.retain(|x| *x != *stream_id);
-    drop(stream_ids); // Release the lock immediately
+    // remove the stream id from send_stream_last_object_ids immediately
+    let mut send_stream_last_object_ids = self.send_stream_last_object_ids.write().await;
+    send_stream_last_object_ids.remove(stream_id);
+    drop(send_stream_last_object_ids); // Release the lock immediately
 
     // Perform graceful stream closure in a separate task to avoid blocking
     // the main subscription event loop. This is critical for real-time media streaming

@@ -179,19 +179,20 @@ impl Client {
 
               match stream_handler {
                 Ok(mut handler) => {
-                  for i in 1..10 {
-                    info!("Sending object: i: {}", &i);
+                  let mut prev_object_id = None;
+                  for object_id in 0..10 {
+                    info!("Sending object: object_id: {}", &object_id);
                     let payload = format!(
                       "payload {}",
                       "x"
                         .to_string()
-                        .repeat(i as usize)
+                        .repeat(object_id as usize)
                         .chars()
                         .collect::<String>()
                     );
                     // object id starts with zero and other object ids are deltas
                     let object = SubgroupObject {
-                      object_id: 0u64,
+                      object_id,
                       extension_headers: None,
                       object_status: None,
                       payload: Some(Bytes::from(payload)),
@@ -199,10 +200,11 @@ impl Client {
                     let object =
                       Object::try_from_subgroup(object, track_alias, group_id, Some(group_id), 1)
                         .unwrap();
-                    match handler.send_object(&object).await {
-                      Ok(_) => info!("Object sent successfully - i: {}", &i),
+                    match handler.send_object(&object, prev_object_id).await {
+                      Ok(_) => info!("Object sent successfully - i: {}", &object_id),
                       Err(e) => error!("Failed to send object: {:?}", e),
                     }
+                    prev_object_id = Some(object_id);
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                   }
                   // TODO: normally, we need to finish the stream but the peer does not
