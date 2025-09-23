@@ -1,5 +1,5 @@
 use bytes::{Buf, Bytes, BytesMut};
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::model::common::pair::KeyValuePair;
 use crate::model::common::varint::{BufMutVarIntExt, BufVarIntExt};
@@ -19,7 +19,7 @@ impl SubgroupObject {
   pub fn serialize(
     &self,
     previous_object_id: Option<u64>,
-    has_extensions: bool,
+    _has_extensions: bool,
   ) -> Result<Bytes, ParseError> {
     let mut buf = BytesMut::new();
 
@@ -36,19 +36,21 @@ impl SubgroupObject {
 
     buf.put_vi(object_id_delta)?;
 
-    if has_extensions {
-      if let Some(ext_headers) = &self.extension_headers {
+    info!(
+      "SubgroupObject::serialize || ext_headers: {:?}",
+      &self.extension_headers
+    );
+
+    if let Some(ext_headers) = &self.extension_headers {
+      if ext_headers.is_empty() {
+        buf.put_vi(0)?;
+      } else {
         let mut ext_buf = BytesMut::new();
         for header in ext_headers {
           ext_buf.extend_from_slice(&header.serialize()?);
         }
         buf.put_vi(ext_buf.len())?;
         buf.extend_from_slice(&ext_buf);
-      } else {
-        return Err(ParseError::ProtocolViolation {
-          context: "SubgroupObject::serialize(ext)",
-          details: "Has extensions but length 0".to_string(),
-        });
       }
     }
 
@@ -125,7 +127,9 @@ impl SubgroupObject {
 
         Some(headers)
       } else {
-        None
+        // TODO: this is a hack to deal with the fact that we can understand
+        // whether we need to serialize this object with extensions
+        Some(vec![])
       }
     } else {
       None

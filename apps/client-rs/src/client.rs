@@ -167,14 +167,8 @@ impl Client {
 
               info!("Opening unidirectional stream for group_id: {}", group_id);
               let stream = connection.open_uni().await.unwrap().await.unwrap();
-              let sub_header = SubgroupHeader::new_with_explicit_id(
-                track_alias,
-                group_id,
-                1u64,
-                1u8,
-                false,
-                false,
-              );
+              let sub_header =
+                SubgroupHeader::new_with_explicit_id(track_alias, group_id, 1u64, 1u8, true, true);
 
               let header_info = HeaderInfo::Subgroup {
                 header: sub_header,
@@ -199,7 +193,7 @@ impl Client {
                     // object id starts with zero and other object ids are deltas
                     let object = SubgroupObject {
                       object_id,
-                      extension_headers: None,
+                      extension_headers: Some(vec![]),
                       object_status: None,
                       payload: Some(Bytes::from(payload)),
                     };
