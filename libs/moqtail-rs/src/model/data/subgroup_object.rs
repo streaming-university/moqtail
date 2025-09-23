@@ -1,4 +1,5 @@
 use bytes::{Buf, Bytes, BytesMut};
+use tracing::debug;
 
 use crate::model::common::pair::KeyValuePair;
 use crate::model::common::varint::{BufMutVarIntExt, BufVarIntExt};
@@ -27,6 +28,11 @@ impl SubgroupObject {
     } else {
       self.object_id
     };
+
+    debug!(
+      "SubgroupObject::serialize || object_id_delta: {} prev: {:?} object_id: {}",
+      object_id_delta, previous_object_id, self.object_id
+    );
 
     buf.put_vi(object_id_delta)?;
 
@@ -74,6 +80,11 @@ impl SubgroupObject {
     } else {
       object_id_delta
     };
+
+    debug!(
+      "SubgroupObject::deserialize || object_id_delta: {} prev: {:?} object_id: {}",
+      object_id_delta, previous_object_id, object_id
+    );
 
     let extension_headers = if has_extensions {
       let ext_len = bytes.get_vi()?;

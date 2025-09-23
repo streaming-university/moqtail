@@ -8,10 +8,10 @@ use crate::server::utils;
 use anyhow::Result;
 use bytes::Bytes;
 use moqtail::model::common::reason_phrase::ReasonPhrase;
-use moqtail::model::control::constant::SubscribeDoneStatusCode;
+use moqtail::model::control::constant::PublishDoneStatusCode;
 use moqtail::model::control::control_message::ControlMessage;
+use moqtail::model::control::publish_done::PublishDone;
 use moqtail::model::control::subscribe::Subscribe;
-use moqtail::model::control::subscribe_done::SubscribeDone;
 use moqtail::model::data::object::Object;
 use moqtail::transport::data_stream_handler::HeaderInfo;
 use std::collections::HashMap;
@@ -237,11 +237,6 @@ impl Subscription {
               };
 
               if let Some(send_stream) = send_stream {
-                debug!(
-                  "Received Object event: subscriber: {} stream_id: {} track: {}",
-                  self.client_connection_id, stream_id, self.track_alias
-                );
-
                 // Get the previous object ID for this stream
                 let previous_object_id = {
                   let send_stream_last_object_ids = self.send_stream_last_object_ids.read().await;
@@ -250,6 +245,11 @@ impl Subscription {
                     .cloned()
                     .flatten()
                 };
+
+                debug!(
+                  "Received Object event: subscriber: {} stream_id: {} track: {} previous_object_id: {:?}",
+                  self.client_connection_id, stream_id, self.track_alias, previous_object_id
+                );
 
                 // Log object properties with send status if enabled
                 let write_result = self
@@ -307,13 +307,13 @@ impl Subscription {
                 self.client_connection_id, reason, self.track_alias
               );
 
-              // Send SubscribeDone message and finish the subscription
+              // Send PublishDone message and finish the subscription
               if let Err(e) = self
-                .send_subscribe_done(SubscribeDoneStatusCode::TrackEnded, &reason)
+                .send_publish_done(PublishDoneStatusCode::TrackEnded, &reason)
                 .await
               {
                 error!(
-                  "Failed to send SubscribeDone for publisher disconnect: subscriber: {} track: {} error: {:?}",
+                  "Failed to send PublishDone for publisher disconnect: subscriber: {} track: {} error: {:?}",
                   self.client_connection_id, self.track_alias, e
                 );
               }
@@ -515,16 +515,16 @@ impl Subscription {
     utils::build_stream_id(self.track_alias, header_info)
   }
 
-  /// Send SubscribeDone message to this subscriber
-  pub async fn send_subscribe_done(
+  /// Send PublishDone message to this subscriber
+  pub async fn send_publish_done(
     &self,
-    status_code: SubscribeDoneStatusCode,
+    status_code: PublishDoneStatusCode,
     reason: &str,
   ) -> Result<(), anyhow::Error> {
     let reason_phrase = ReasonPhrase::try_new(reason.to_string())
       .map_err(|e| anyhow::anyhow!("Failed to create reason phrase: {:?}", e))?;
 
-    let subscribe_done = SubscribeDone::new(
+    let publish_done = PublishDone::new(
       self.subscribe_message.request_id,
       status_code,
       0, // stream_count - set to 0 as track is ending
@@ -533,11 +533,11 @@ impl Subscription {
 
     self
       .subscriber
-      .queue_message(ControlMessage::SubscribeDone(Box::new(subscribe_done)))
+      .queue_message(ControlMessage::PublishDone(Box::new(publish_done)))
       .await;
 
     info!(
-      "Sent SubscribeDone to subscriber {} track: {} for request_id {}",
+      "Sent PublishDone to subscriber {} track: {} for request_id {}",
       self.client_connection_id, self.track_alias, self.subscribe_message.request_id
     );
 

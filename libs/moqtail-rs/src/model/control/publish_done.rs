@@ -1,4 +1,4 @@
-use super::constant::{ControlMessageType, SubscribeDoneStatusCode};
+use super::constant::{ControlMessageType, PublishDoneStatusCode};
 use super::control_message::ControlMessageTrait;
 use crate::model::common::reason_phrase::ReasonPhrase;
 use crate::model::common::varint::{BufMutVarIntExt, BufVarIntExt};
@@ -6,17 +6,17 @@ use crate::model::error::ParseError;
 use bytes::{BufMut, Bytes, BytesMut};
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct SubscribeDone {
+pub struct PublishDone {
   pub request_id: u64,
-  pub status_code: SubscribeDoneStatusCode,
+  pub status_code: PublishDoneStatusCode,
   pub stream_count: u64,
   pub reason_phrase: ReasonPhrase,
 }
 
-impl SubscribeDone {
+impl PublishDone {
   pub fn new(
     request_id: u64,
-    status_code: SubscribeDoneStatusCode,
+    status_code: PublishDoneStatusCode,
     stream_count: u64,
     reason_phrase: ReasonPhrase,
   ) -> Self {
@@ -29,10 +29,10 @@ impl SubscribeDone {
   }
 }
 
-impl ControlMessageTrait for SubscribeDone {
+impl ControlMessageTrait for PublishDone {
   fn serialize(&self) -> Result<Bytes, ParseError> {
     let mut buf = BytesMut::new();
-    buf.put_vi(ControlMessageType::SubscribeDone)?;
+    buf.put_vi(ControlMessageType::PublishDone)?;
 
     let mut payload = BytesMut::new();
     payload.put_vi(self.request_id)?;
@@ -44,7 +44,7 @@ impl ControlMessageTrait for SubscribeDone {
       .len()
       .try_into()
       .map_err(|e: std::num::TryFromIntError| ParseError::CastingError {
-        context: "SubscribeDone::serialize(payload_length)",
+        context: "PublishDone::serialize(payload_length)",
         from_type: "usize",
         to_type: "u16",
         details: e.to_string(),
@@ -58,11 +58,11 @@ impl ControlMessageTrait for SubscribeDone {
   fn parse_payload(payload: &mut Bytes) -> Result<Box<Self>, ParseError> {
     let request_id = payload.get_vi()?;
     let status_code_raw = payload.get_vi()?;
-    let status_code = SubscribeDoneStatusCode::try_from(status_code_raw)?;
+    let status_code = PublishDoneStatusCode::try_from(status_code_raw)?;
     let stream_count = payload.get_vi()?;
     let reason_phrase = ReasonPhrase::deserialize(payload)?;
 
-    Ok(Box::new(SubscribeDone {
+    Ok(Box::new(PublishDone {
       request_id,
       status_code,
       stream_count,
@@ -71,7 +71,7 @@ impl ControlMessageTrait for SubscribeDone {
   }
 
   fn get_type(&self) -> ControlMessageType {
-    ControlMessageType::SubscribeDone
+    ControlMessageType::PublishDone
   }
 }
 
@@ -84,10 +84,10 @@ mod tests {
   #[test]
   fn test_roundtrip() {
     let request_id = 209455;
-    let status_code = SubscribeDoneStatusCode::SubscriptionEnded;
+    let status_code = PublishDoneStatusCode::SubscriptionEnded;
     let stream_count = 9;
     let reason_phrase = ReasonPhrase::try_new("It's not you, it's me.".to_string()).unwrap();
-    let subscribe_done = SubscribeDone {
+    let subscribe_done = PublishDone {
       request_id,
       status_code,
       stream_count,
@@ -95,10 +95,10 @@ mod tests {
     };
     let mut buf = subscribe_done.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();
-    assert_eq!(msg_type, ControlMessageType::SubscribeDone as u64);
+    assert_eq!(msg_type, ControlMessageType::PublishDone as u64);
     let msg_length = buf.get_u16();
     assert_eq!(msg_length as usize, buf.remaining());
-    let deserialized = SubscribeDone::parse_payload(&mut buf).unwrap();
+    let deserialized = PublishDone::parse_payload(&mut buf).unwrap();
     assert_eq!(*deserialized, subscribe_done);
     assert!(!buf.has_remaining());
   }
@@ -106,10 +106,10 @@ mod tests {
   #[test]
   fn test_excess_roundtrip() {
     let request_id = 209455;
-    let status_code = SubscribeDoneStatusCode::SubscriptionEnded;
+    let status_code = PublishDoneStatusCode::SubscriptionEnded;
     let stream_count = 9;
     let reason_phrase = ReasonPhrase::try_new("It's not you, it's me.".to_string()).unwrap();
-    let subscribe_done = SubscribeDone {
+    let subscribe_done = PublishDone {
       request_id,
       status_code,
       stream_count,
@@ -122,11 +122,11 @@ mod tests {
     let mut buf = excess.freeze();
 
     let msg_type = buf.get_vi().unwrap();
-    assert_eq!(msg_type, ControlMessageType::SubscribeDone as u64);
+    assert_eq!(msg_type, ControlMessageType::PublishDone as u64);
     let msg_length = buf.get_u16();
 
     assert_eq!(msg_length as usize, buf.remaining() - 3);
-    let deserialized = SubscribeDone::parse_payload(&mut buf).unwrap();
+    let deserialized = PublishDone::parse_payload(&mut buf).unwrap();
     assert_eq!(*deserialized, subscribe_done);
     assert_eq!(buf.chunk(), &[9u8, 1u8, 1u8]);
   }
@@ -134,10 +134,10 @@ mod tests {
   #[test]
   fn test_partial_message() {
     let request_id = 209455;
-    let status_code = SubscribeDoneStatusCode::SubscriptionEnded;
+    let status_code = PublishDoneStatusCode::SubscriptionEnded;
     let stream_count = 9;
     let reason_phrase = ReasonPhrase::try_new("It's not you, it's me.".to_string()).unwrap();
-    let subscribe_done = SubscribeDone {
+    let subscribe_done = PublishDone {
       request_id,
       status_code,
       stream_count,
@@ -145,13 +145,13 @@ mod tests {
     };
     let mut buf = subscribe_done.serialize().unwrap();
     let msg_type = buf.get_vi().unwrap();
-    assert_eq!(msg_type, ControlMessageType::SubscribeDone as u64);
+    assert_eq!(msg_type, ControlMessageType::PublishDone as u64);
     let msg_length = buf.get_u16();
     assert_eq!(msg_length as usize, buf.remaining());
 
     let upper = buf.remaining() / 2;
     let mut partial = buf.slice(..upper);
-    let deserialized = SubscribeDone::parse_payload(&mut partial);
+    let deserialized = PublishDone::parse_payload(&mut partial);
     assert!(deserialized.is_err());
   }
 }

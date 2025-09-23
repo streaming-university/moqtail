@@ -255,6 +255,8 @@ impl RecvDataStream {
     let mut recv_bytes = BytesMut::new();
     let mut timeout_at = Instant::now() + DATA_STREAM_TIMEOUT;
 
+    let mut previous_object_id: Option<u64> = None;
+
     loop {
       let bytes_cursor = recv_bytes.clone().freeze();
       if !recv_bytes.is_empty() && header_info.is_none() {
@@ -279,14 +281,12 @@ impl RecvDataStream {
         *the_header_info.lock().await = Some(header_info.clone().unwrap().1.clone());
       }
 
-      let mut previous_object_id: Option<u64> = None;
-
       loop {
         let bytes_cursor = recv_bytes.clone().freeze();
         let mut consumed = 0;
         if !recv_bytes.is_empty() {
           let header_info = header_info.clone().unwrap().1;
-          (consumed, previous_object_id) = Self::read_object(
+          let (c, object_id) = Self::read_object(
             bytes_cursor,
             &header_info,
             is_closed.clone(),
@@ -298,6 +298,14 @@ impl RecvDataStream {
             error!("Failed to parse object: {:?}", e);
             RecvDataStreamReadError::ParseError(e)
           })?;
+          previous_object_id = object_id;
+          consumed = c;
+
+          debug!(
+            "previous_object_id: {:?} consumed: {}",
+            previous_object_id, consumed
+          );
+
           notify.notify_waiters();
           recv_bytes.advance(consumed);
         }
@@ -463,7 +471,7 @@ impl RecvDataStream {
             .and_then(|subgroup_obj| {
               // TODO: Validation checks
 
-              let previous_object_id = subgroup_obj.object_id;
+              let object_id = subgroup_obj.object_id;
 
               Object::try_from_subgroup(
                 subgroup_obj,
@@ -472,7 +480,7 @@ impl RecvDataStream {
                 header.subgroup_id,
                 header.publisher_priority,
               )
-              .map(|object| (previous_object_id, object))
+              .map(|object| (object_id, object))
             })
         }
       };

@@ -9,6 +9,7 @@ use crate::server::{client::MOQTClient, session_context::SessionContext};
 use std::sync::Arc;
 mod fetch_handler;
 mod max_request_id_handler;
+mod publish_handler;
 mod publish_namespace_handler;
 mod subscribe_handler;
 use super::utils;
@@ -39,7 +40,6 @@ impl MessageHandler {
       ControlMessage::Subscribe(_)
       | ControlMessage::SubscribeOk(_)
       | ControlMessage::SubscribeUpdate(_)
-      | ControlMessage::SubscribeDone(_)
       | ControlMessage::SubscribeError(_)
       | ControlMessage::Unsubscribe(_) => {
         subscribe_handler::handle(client.clone(), control_stream_handler, msg, context.clone())
@@ -47,6 +47,9 @@ impl MessageHandler {
       }
       ControlMessage::Fetch(_) | ControlMessage::FetchOk(_) => {
         fetch_handler::handle(client.clone(), control_stream_handler, msg, context.clone()).await
+      }
+      ControlMessage::Publish(_) | ControlMessage::PublishDone(_) => {
+        publish_handler::handle(client.clone(), control_stream_handler, msg, context.clone()).await
       }
 
       m => {
