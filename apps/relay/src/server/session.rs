@@ -524,14 +524,14 @@ impl Session {
       .unwrap()
     };
 
-    let server_setup = ServerSetup::new(constant::DRAFT_11, vec![max_request_id_param]);
+    let server_setup = ServerSetup::new(constant::DRAFT_14, vec![max_request_id_param]);
 
     debug!("client setup: {:?}", client_setup.supported_versions);
     debug!("server setup: {:?}", server_setup);
 
     let client = if client_setup
       .supported_versions
-      .contains(&constant::DRAFT_11)
+      .contains(&constant::DRAFT_14)
     {
       let mut m = context.client_manager.write().await;
 

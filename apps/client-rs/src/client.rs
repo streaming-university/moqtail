@@ -73,7 +73,7 @@ impl Client {
 
     let mut control_stream_handler = ControlStreamHandler::new(send_stream, recv_stream);
 
-    let client_setup = ClientSetup::new([constant::DRAFT_11].to_vec(), [].to_vec());
+    let client_setup = ClientSetup::new([constant::DRAFT_14].to_vec(), [].to_vec());
 
     match control_stream_handler.send_impl(&client_setup).await {
       Ok(_) => info!("Client setup sent successfully"),
@@ -95,15 +95,15 @@ impl Client {
     info!("Received server setup: {:?}", server_setup);
 
     // compare the server setup with the client setup
-    if server_setup.selected_version != constant::DRAFT_11 {
+    if server_setup.selected_version != constant::DRAFT_14 {
       error!(
         "Server setup version mismatch: expected {:0X}, got {}",
-        constant::DRAFT_11,
+        constant::DRAFT_14,
         server_setup.selected_version
       );
       return Err(anyhow::anyhow!(
         "Server setup version mismatch: expected {:0X}, got {}",
-        constant::DRAFT_11,
+        constant::DRAFT_14,
         server_setup.selected_version
       ));
     }

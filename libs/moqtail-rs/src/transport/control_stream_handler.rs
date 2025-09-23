@@ -178,7 +178,7 @@ mod tests {
   use crate::model::common::varint::BufMutVarIntExt;
   use crate::model::control::client_setup::ClientSetup;
   use crate::model::control::constant::{ControlMessageType, FilterType, GroupOrder};
-  use crate::model::control::constant::{DRAFT_11, PublishNamespaceErrorCode};
+  use crate::model::control::constant::{DRAFT_14, PublishNamespaceErrorCode};
   use crate::model::control::publish_namespace::PublishNamespace;
   use crate::model::control::publish_namespace_cancel::PublishNamespaceCancel;
   use crate::model::control::publish_namespace_ok::PublishNamespaceOk;
@@ -388,7 +388,7 @@ mod tests {
   }
 
   fn create_test_client_setup() -> ClientSetup {
-    let supported_versions = vec![12345, DRAFT_11];
+    let supported_versions = vec![12345, DRAFT_14];
     let setup_parameters = vec![
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"Set me up!")).unwrap(),
@@ -400,7 +400,7 @@ mod tests {
   }
 
   fn create_test_server_setup() -> ServerSetup {
-    let selected_version = DRAFT_11;
+    let selected_version = DRAFT_14;
     let setup_parameters = vec![
       KeyValuePair::try_new_varint(0, 10).unwrap(),
       KeyValuePair::try_new_bytes(1, Bytes::from_static(b"Set me up!")).unwrap(),
