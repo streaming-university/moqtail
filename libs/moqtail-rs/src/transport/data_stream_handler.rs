@@ -684,7 +684,7 @@ mod tests {
       end_group: Some(end_group),
       subscribe_parameters,
     };
-    let header_type = SubgroupHeaderType::Type0x0D;
+    let header_type = SubgroupHeaderType::Type0x15;
     let track_alias = 999;
     let group_id = 9;
     let subgroup_id = Some(11);

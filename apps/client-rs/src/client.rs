@@ -167,8 +167,14 @@ impl Client {
 
               info!("Opening unidirectional stream for group_id: {}", group_id);
               let stream = connection.open_uni().await.unwrap().await.unwrap();
-              let sub_header =
-                SubgroupHeader::new_with_explicit_id(track_alias, group_id, 1, 1, false);
+              let sub_header = SubgroupHeader::new_with_explicit_id(
+                track_alias,
+                group_id,
+                1u64,
+                1u8,
+                false,
+                false,
+              );
 
               let header_info = HeaderInfo::Subgroup {
                 header: sub_header,
