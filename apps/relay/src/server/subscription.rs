@@ -351,6 +351,12 @@ impl Subscription {
     let stream_id = self.get_stream_id(&header_info);
 
     if let Ok(header_payload) = self.get_header_payload(&header_info).await {
+      // hex dump the header payload
+      debug!(
+        "subscription::handle_object | header payload: {:?}",
+        utils::bytes_to_hex(&header_payload)
+      );
+
       // set priority based on the current time
       // TODO: revisit this logic to set priority based on the subscription
       let priority = i32::MAX - (utils::passed_time_since_start() % i32::MAX as u128) as i32;
@@ -416,6 +422,12 @@ impl Subscription {
           return Err(e.into());
         }
       };
+
+      // print hex dump of object bytes
+      debug!(
+        "subscription::handle_object | object bytes: {}",
+        utils::bytes_to_hex(&object_bytes)
+      );
 
       self
         .subscriber
