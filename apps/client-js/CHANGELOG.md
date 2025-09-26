@@ -1,5 +1,11 @@
 # client-js
 
+## 0.5.0
+
+### Minor Changes
+
+- [#60](https://github.com/streaming-university/moqtail/pull/60) [`3fe276c`](https://github.com/streaming-university/moqtail/commit/3fe276c09cfde8eb2ce8ab0d43a81d169c6850e3) Thanks [@kerembkmz](https://github.com/kerembkmz)! - Fixed the room timeout logic and timeout display
+
 ## 0.4.0
 
 ### Minor Changes
