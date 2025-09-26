@@ -55,8 +55,8 @@ export default function JoinPage() {
     setClock(clock)
 
     socket.on('joined-room', (response: JoinResponse) => {
-      setSession(response.userId, username, response.roomState)
-      console.log('Navigating to /session', response.roomState)
+      setSession(response.userId, username, response.roomState, response.sessionDurationMinutes)
+      console.log('Navigating to /session', response.roomState, 'Duration:', response.sessionDurationMinutes, 'minutes')
       navigate('/session')
     })
 

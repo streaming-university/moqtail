@@ -5,7 +5,8 @@ type SessionContextType = {
   userId: string
   username: string
   roomState: RoomState | undefined
-  setSession: (userId: string, username: string, roomState: RoomState) => void
+  sessionDurationMinutes: number
+  setSession: (userId: string, username: string, roomState: RoomState, sessionDurationMinutes: number) => void
   clearSession: () => void
 }
 
@@ -15,21 +16,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [userId, setUserId] = useState('')
   const [username, setUsername] = useState('')
   const [roomState, setRoomState] = useState<RoomState | undefined>(undefined)
+  const [sessionDurationMinutes, setSessionDurationMinutes] = useState(10) // default fallback
 
-  function setSession(userId: string, username: string, roomState: RoomState) {
+  function setSession(userId: string, username: string, roomState: RoomState, sessionDurationMinutes: number) {
     setUserId(userId)
     setUsername(username)
     setRoomState(roomState)
+    setSessionDurationMinutes(sessionDurationMinutes)
   }
 
   function clearSession() {
     setUserId('')
     setUsername('')
     setRoomState(undefined)
+    setSessionDurationMinutes(10)
   }
 
   return (
-    <SessionContext.Provider value={{ userId, username, roomState, setSession, clearSession }}>
+    <SessionContext.Provider value={{ userId, username, roomState, sessionDurationMinutes, setSession, clearSession }}>
       {children}
     </SessionContext.Provider>
   )

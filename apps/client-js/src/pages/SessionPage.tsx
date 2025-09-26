@@ -65,7 +65,7 @@ function SessionPage() {
 
   // initialize the variables
   const [maximizedUserId, setMaximizedUserId] = useState<string | null>(null)
-  const { userId, username, roomState, clearSession } = useSession()
+  const { userId, username, roomState, sessionDurationMinutes, clearSession } = useSession()
   const [isMicOn, setIsMicOn] = useState(false)
   const [isCamOn, setisCamOn] = useState(false)
   const [isScreenSharing, setIsScreenSharing] = useState(false)
@@ -1270,7 +1270,8 @@ function SessionPage() {
     const interval = setInterval(() => {
       const now = Date.now()
       const elapsed = now - roomState.created
-      const remaining = Math.max(0, 10 * 60 * 1000 - elapsed) // 10 mins
+      const totalTimeoutMs = sessionDurationMinutes * 60 * 1000
+      const remaining = Math.max(0, totalTimeoutMs - elapsed)
       if (remaining <= 0) {
         setTimeRemaining('0:00')
         setTimeRemainingColor('text-red-500')
@@ -1294,7 +1295,7 @@ function SessionPage() {
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [roomState?.created])
+  }, [roomState?.created, sessionDurationMinutes])
 
   function getUserCount() {
     return Object.entries(users).length

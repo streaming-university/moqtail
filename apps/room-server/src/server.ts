@@ -737,8 +737,9 @@ function closeRoom(roomName: string, reason: 'timeout' | 'admin' = 'timeout') {
 
   // Send appropriate message based on closure reason
   if (reason === 'timeout') {
-    io.to(roomName).emit('room-timeout', {
+    io.to(roomName).emit('room-closed', {
       message: `Room ${roomName} has timed out and will be closed.`,
+      reason: 'timeout',
     })
   } else {
     io.to(roomName).emit('room-closed', {
@@ -850,6 +851,7 @@ io.on('connection', (socket) => {
     const joinResponse: JoinResponse = {
       userId,
       roomState,
+      sessionDurationMinutes: roomLimits.sessionDurationMinutes,
     }
     console.debug('sending joined-room', joinResponse, socket.id)
     socket.emit('joined-room', joinResponse)

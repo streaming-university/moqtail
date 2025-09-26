@@ -15,6 +15,7 @@ export interface RoomState {
 export interface JoinResponse {
   userId: string
   roomState: RoomState
+  sessionDurationMinutes: number
 }
 
 export interface RoomUser {
