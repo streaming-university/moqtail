@@ -37,7 +37,7 @@ npm install
 ### Running the Development Server
 
 ```bash
-cd ./apps/client-js-demo
+cd ./apps/client-js
 
 # Install dependencies
 npm install
@@ -59,7 +59,7 @@ The app will be available at [http://localhost:5173](http://localhost:5173) by d
 ### Running the MOQtail Room Server
 
 ```bash
-cd ./apps/ws-server
+cd ./apps/room-server
 
 # Install dependencies
 npm install
@@ -75,7 +75,7 @@ The app will be available at [http://localhost:5173](http://localhost:5173) by d
 ## 🛠️ Sample Project Structure
 
 ```
-apps/client-js-demo/
+apps/client-js/
 
 ├── public
 │   ├── ...
