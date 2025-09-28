@@ -110,16 +110,7 @@ export default function JoinPage() {
         </h1>
         <h2>Join a Room</h2>
         <div className="browser-compatibility">
-          Please use a recent version of Chrome that supports WebCodecs and WebTransport APIs. Report any issues on{' '}
-          <a
-            href="https://github.com/streaming-university/moqtail"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="github-link"
-          >
-            GitHub
-          </a>
-          .
+          Use a recent version of Google Chrome that supports the WebCodecs and WebTransport APIs.
         </div>
         <form onSubmit={handleSubmit} className="join-form">
           <input
@@ -161,8 +152,7 @@ export default function JoinPage() {
           </button>
         </form>
         <div className="privacy-notice">
-          * We collect anonymous usage statistics and logs to improve the platform.
-          <br />* Session duration in each room is limited to {roomLimits.sessionDurationMinutes} minute
+          * Session duration in each room is limited to {roomLimits.sessionDurationMinutes} minute
           {roomLimits.sessionDurationMinutes !== 1 ? 's' : ''} and session size is limited to{' '}
           {roomLimits.maxUsersPerRoom} participants.
         </div>
