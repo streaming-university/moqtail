@@ -3,10 +3,7 @@
   "changelog": ["@changesets/changelog-github", { "repo": "streaming-university/moqtail" }],
   "commit": false,
   "fixed": [],
-  "linked": [
-    ["moqtail-rs", "relay", "client-rs", "catalog-server"],
-    ["moqtail-ts", "client-js"]
-  ],
+  "linked": [["moqtail-rs", "relay", "client", "catalog-server"]],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",

@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "apps/relay",
-    "apps/client-rs",
+    "apps/client",
     "libs/moqtail-rs",
     "apps/catalog-server",
 ]
