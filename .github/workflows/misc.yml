@@ -49,3 +49,34 @@ jobs:
 
       - name: Run EditorConfig Check
         run: editorconfig-checker -format gcc
+
+  license:
+    name: License Check
+    if: github.event.action == 'opened' || github.event.action == 'synchronize'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Get all relevant changed files
+        id: changed-files
+        uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62 # v47
+        with:
+          files: |
+            **.rs
+            **.ts
+            **.tsx
+
+      - name: Install addlicense
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: go install github.com/google/addlicense@latest
+
+      - name: Check Licenses
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          addlicense -check \
+            -ignore "*" -ignore "**/vite*" -ignore "**/tsup*" \
+            -v -c "The MOQtail Authors" \
+            ${{ steps.changed-files.outputs.all_changed_files }}

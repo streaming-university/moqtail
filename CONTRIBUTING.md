@@ -8,7 +8,7 @@ MOQtail is a monorepo with Rust and TypeScript libraries and applications:
 
 - `libs/moqtail-ts/`: TypeScript MoQ protocol library
 - `libs/moqtail-rs/`: Rust MoQ protocol library
-- `apps/`: Example applications (client, relay, room-server)
+- `apps/`: Example applications (client, relay)
 - `scripts/`: Project automation scripts
 
 ## Development Guidelines

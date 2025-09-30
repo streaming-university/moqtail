@@ -7,20 +7,11 @@
   "scripts": {
     "prepare": "node .husky/install.mjs",
     "changeset": "changeset",
-    "changeset:release": "npm run build:moqtail && changeset publish",
+    "changeset:release": "npm run build && changeset publish",
     "version": "changeset version && node scripts/postversion.mjs",
-    "build:client": "npm --prefix apps/client-js run build",
-    "build:moqtail": "npm --prefix libs/moqtail-ts run build",
-    "test:client": "npm --prefix apps/client-js run test -- run",
-    "test:moqtail": "npm --prefix libs/moqtail-ts run test -- run",
-    "format:client": "npm --prefix apps/client-js run format",
-    "format:moqtail": "npm --prefix libs/moqtail-ts run format",
-    "format:room-server": "npm --prefix apps/room-server run format",
-    "build": "npm-run-all --continue-on-error build:moqtail build:client",
-    "test": "npm-run-all --continue-on-error test:client test:moqtail",
-    "format": "npm-run-all --continue-on-error format:client format:moqtail format:room-server",
-    "dev:ws": "npm --prefix apps/room-server run dev",
-    "dev:client": "npm --prefix apps/client-js run dev"
+    "build": "npm --prefix libs/moqtail-ts run build",
+    "test": "npm --prefix libs/moqtail-ts run test -- run",
+    "format": "npm --prefix libs/moqtail-ts run format"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.1",
@@ -32,7 +23,6 @@
     "glob": "^11.0.3",
     "husky": "^9.1.7",
     "lint-staged": "^16.1.2",
-    "npm-run-all": "^4.1.5",
     "prettier": "^3.5.3",
     "prompts": "^2.4.2"
   },

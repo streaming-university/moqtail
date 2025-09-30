@@ -1,5 +1,11 @@
 # moqtail-ts
 
+## 0.3.2
+
+### Patch Changes
+
+- [`d13be5e`](https://github.com/streaming-university/moqtail/commit/d13be5e2ca051d85c5230dcc3e94a5036c9bf08b) Thanks [@acbegen](https://github.com/acbegen)! - bump version to integrate the latest changes
+
 ## 0.3.1
 
 ### Patch Changes
