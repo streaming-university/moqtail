@@ -113,8 +113,3 @@ apps/client-js-demo/
 ## 🤝 Contributing
 
 Contributions are welcome! Please open issues or submit pull requests for improvements, bug fixes, or documentation updates.
-
-## 📄 License
-
-[MIT](LICENSE-MIT)
-[APACHE](LICENSE-APACHE)
