@@ -55,10 +55,11 @@ jobs:
     if: github.event.action == 'opened' || github.event.action == 'synchronize'
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Get all relevant changed files
         id: changed-files
@@ -68,6 +69,12 @@ jobs:
             **.rs
             **.ts
             **.tsx
+
+      - name: Set up Go
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
 
       - name: Install addlicense
         if: steps.changed-files.outputs.any_changed == 'true'
