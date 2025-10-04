@@ -168,7 +168,7 @@ async fn validate_publish_authorization(
 }
 
 /// Checks if a track with the given namespace and name already exists
-async fn check_track_exists(
+async fn _check_track_exists(
   _track_namespace: &moqtail::model::common::tuple::Tuple,
   _track_name: &str,
 ) -> bool {

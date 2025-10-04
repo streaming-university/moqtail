@@ -20,6 +20,7 @@ pub struct Publish {
   pub parameters: Vec<KeyValuePair>,
 }
 
+#[allow(clippy::too_many_arguments)]
 impl Publish {
   pub fn new(
     request_id: u64,

@@ -13,12 +13,7 @@ pub struct TrackStatusError {
 }
 
 impl TrackStatusError {
-  pub fn new(
-    request_id: u64,
-    error_code: SubscribeErrorCode,
-    reason_phrase: ReasonPhrase,
-    track_alias: u64,
-  ) -> Self {
+  pub fn new(request_id: u64, error_code: SubscribeErrorCode, reason_phrase: ReasonPhrase) -> Self {
     Self {
       request_id,
       error_code,

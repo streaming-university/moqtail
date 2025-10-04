@@ -52,6 +52,7 @@ pub struct Subscription {
   config: &'static AppConfig,
 }
 
+#[allow(clippy::too_many_arguments)]
 impl Subscription {
   fn create_instance(
     track_alias: u64,
